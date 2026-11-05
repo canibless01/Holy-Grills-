@@ -3,7 +3,7 @@ from app.services.feature_flags import is_feature_enabled
 from flask import Blueprint, request, jsonify, g, current_app, abort
 from app.middleware.auth import require_auth, require_role, optional_auth, assert_owns_campus, ADMIN_ROLES
 from app.middleware.rate_limit import rate_limit
-from app.utils.email import send_qr_ticket_email
+from app.services.notification_outbox import start_ticket_email_dispatch
 from app.services.event_admission import admit_event_ticket
 from app.db import get_db, get_user_client, SupabaseError, is_missing_column_error
 from app.messages import MSG
@@ -629,7 +629,7 @@ def register_for_event(event_id):
             promo_code_id = promo[0]["id"]
 
         try:
-            rpc_res = get_db().rpc("register_for_event_guest_paid", {
+            rpc_res = get_db().rpc("hg_register_guest_event_with_delivery", {
                 "p_event_id": event_id,
                 "p_guest_email": guest_email,
                 "p_guest_name": guest_name,
@@ -672,14 +672,7 @@ def register_for_event(event_id):
                 return jsonify({**resp, "ticket_id": ticket_id}), 502
             response.update(resp)
         else:
-            try:
-                send_qr_ticket_email(
-                    email=guest_email, name=guest_name, event_title=event.get("title", ""),
-                    ticket_id=ticket_id, event_id=event_id,
-                    event_date=event.get("starts_at", ""), event_location=event.get("location", ""),
-                )
-            except Exception:
-                pass
+            response['email_queued'] = start_ticket_email_dispatch(ticket_id)
 
         return jsonify(response), 201
 
@@ -715,7 +708,7 @@ def register_for_event(event_id):
         # "card" -> wallet_amount stays 0
 
     try:
-        rpc_res = get_db().rpc("register_for_event_paid", {
+        rpc_res = get_db().rpc("hg_register_event_with_delivery", {
             "p_event_id": event_id,
             "p_user_id": user_id,
             "p_tier_id": tier_id,
@@ -759,17 +752,8 @@ def register_for_event(event_id):
         if "error" in resp:
             return jsonify({**resp, "ticket_id": ticket_id}), 502
         response.update(resp)
-    elif not already and response["payment_status"] in ("paid", "not_required"):
-        try:
-            profile = db.table("profiles").select("email,full_name").eq("id", user_id).single().execute() or {}
-            send_qr_ticket_email(
-                email=(g.jwt_payload or {}).get("email") or profile.get("email") or "",
-                name=profile.get("full_name") or "", event_title=event.get("title", ""),
-                ticket_id=ticket_id, event_id=event_id,
-                event_date=event.get("starts_at", ""), event_location=event.get("location", ""),
-            )
-        except Exception:
-            pass
+    elif response["payment_status"] in ("paid", "not_required"):
+        response['email_queued'] = start_ticket_email_dispatch(ticket_id)
 
     return jsonify(response), 201
 
@@ -1039,7 +1023,7 @@ def confirm_event_ticket_payment(ticket_id: str, payment_reference: str, provide
         return ticket  # idempotent
 
     try:
-        db.rpc("hg_mark_event_ticket_paid", {
+        db.rpc("hg_pay_event_with_delivery", {
             "p_ticket_id": ticket_id,
             "p_provider": "paystack",
             "p_provider_reference": payment_reference,
@@ -1051,31 +1035,11 @@ def confirm_event_ticket_payment(ticket_id: str, payment_reference: str, provide
 
     updated = db.table("event_tickets").select("*").eq("id", ticket_id).single().execute()
 
-    # Send the QR ticket email now that payment is actually confirmed
-    try:
-        event = db.table("events").select("title,starts_at,location").eq("id", updated["event_id"]).single().execute() or {}
-        if updated.get("user_id"):
-            profile = db.table("profiles").select("email,full_name").eq("id", updated["user_id"]).single().execute() or {}
-            email, name = profile.get("email", ""), profile.get("full_name", "")
-        else:
-            email, name = updated.get("guest_email", ""), updated.get("guest_name", "")
-        email_sent = bool(send_qr_ticket_email(
-            email=email, name=name, event_title=event.get("title", ""),
-            ticket_id=ticket_id, event_id=updated["event_id"],
-            event_date=event.get("starts_at", ""), event_location=event.get("location", ""),
-        ))
-    except Exception as exc:
-        # The customer has already paid. A silent failure here means no ticket and no way
-        # for anyone to notice — log it loudly and record it on the returned row. NOTE:
-        # this function is called by the payment webhook, not by a route, so it must keep
-        # returning the ticket dict (returning a (response, status) tuple here would be
-        # handed straight back to Paystack as the webhook body).
-        logger.error("confirm_event_ticket_payment: QR ticket email failed for ticket %s (%s): %s",
-                     ticket_id, locals().get("email"), exc)
-        email_sent = False
-
+    # The payment RPC saved the email in the same transaction. A thread only
+    # wakes that row; an interrupted process is recovered by the normal scan.
     if isinstance(updated, dict):
-        updated["email_sent"] = email_sent
+        updated['email_queued'] = start_ticket_email_dispatch(ticket_id)
+        updated['email_sent'] = False  # queued is not provider acceptance
     return updated
 
 

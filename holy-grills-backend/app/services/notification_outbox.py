@@ -12,19 +12,30 @@ def dispatch_notification(notification_id):
     claim=None
     started=False
     try:
-        claim=db.rpc('hg_claim_notification_dispatch',{'p_id':notification_id})
+        claim=db.rpc('hg_claim_notification_dispatch_v2',{'p_id':notification_id})
         if not isinstance(claim,dict) or claim.get('state')!='claimed':
             return claim or {'state':'unavailable'}
         channel=claim['channel'];snapshot=claim['payload']['notification']
         def finish(outcome):
             saved=db.rpc('hg_finish_notification_dispatch',{'p_id':notification_id,'p_token':claim['token'],'p_outcome':outcome})
             return outcome if saved is True else {'state':'lease_lost'}
-        profile=db.table('profiles').select('email,campus_id,push_enabled,email_notifications').eq('id',snapshot['user_id']).single().execute()
-        if not profile:
-            return finish({'state':'skipped','error':'recipient_missing'})
-        prefs=effective_preferences(db,snapshot['user_id'],profile)
-        if channel not in permitted_channels(snapshot['type'],[channel],prefs):
-            return finish({'state':'skipped','error':'recipient_opted_out'})
+        ticket_email=claim['payload'].get('kind')=='event_ticket_email'
+        if ticket_email:
+            ticket=db.table('event_tickets').select('event_id,user_id,guest_email,status,payment_status').eq('id',claim['payload']['ticket_id']).single().execute() or {}
+            if (ticket.get('status') not in ('confirmed','checked_in') or ticket.get('payment_status') not in ('paid','not_required')
+                    or ticket.get('event_id')!=claim['payload']['event_id'] or ticket.get('user_id')!=snapshot.get('user_id')):
+                return finish({'state':'cancelled','error':'ticket_not_payable_or_owner_changed'})
+            if ticket.get('user_id'):
+                profile=db.table('profiles').select('email').eq('id',ticket['user_id']).single().execute() or {}
+            else:
+                profile={'email':ticket.get('guest_email')}
+        else:
+            profile=db.table('profiles').select('email,campus_id,push_enabled,email_notifications').eq('id',snapshot['user_id']).single().execute()
+            if not profile:
+                return finish({'state':'skipped','error':'recipient_missing'})
+            prefs=effective_preferences(db,snapshot['user_id'],profile)
+            if channel not in permitted_channels(snapshot['type'],[channel],prefs):
+                return finish({'state':'skipped','error':'recipient_opted_out'})
         blast_id=snapshot.get('blast_id')
         if blast_id:
             blast=db.table('notification_blasts').select('status').eq('id',blast_id).single().execute() or {}
@@ -37,9 +48,16 @@ def dispatch_notification(notification_id):
             if str(profile.get('email') or '').strip().lower()!=str(snapshot.get('email') or '').strip().lower():
                 return finish({'state':'skipped','error':'recipient_email_changed'})
             if prepared is None:
-                rich={key:meta[key] for key in ('body_html','images','cta_blocks') if meta.get(key)}
-                prepared=service._prepare_notification_email(snapshot['user_id'],snapshot['title'],snapshot['body'],
-                    provider=meta.get('email_provider'),rich_content=rich,blast_id=blast_id,recipient=snapshot)
+                if ticket_email:
+                    from app.utils.email import _prepare_qr_ticket_email
+                    prepared=_prepare_qr_ticket_email(snapshot['email'],snapshot['name'],meta['event_title'],
+                        claim['payload']['ticket_id'],claim['payload']['event_id'],meta.get('event_date'),meta.get('event_location'))
+                    if prepared:
+                        prepared.update(provider=service.get_email_provider(scope='transactional'),transactional=True)
+                else:
+                    rich={key:meta[key] for key in ('body_html','images','cta_blocks') if meta.get(key)}
+                    prepared=service._prepare_notification_email(snapshot['user_id'],snapshot['title'],snapshot['body'],
+                        provider=meta.get('email_provider'),rich_content=rich,blast_id=blast_id,recipient=snapshot)
             if not prepared:
                 return finish({'state':'skipped','error':'recipient_email_missing'})
         elif channel=='push':
@@ -94,3 +112,17 @@ def recover_due_notifications(limit=50):
     except Exception as exc:
         logger.warning('Notification recovery unavailable: %s',type(exc).__name__)
         return {'error':'notification_recovery_unavailable'}
+
+
+def start_ticket_email_dispatch(ticket_id):
+    """Wake the saved row; scheduler recovery still works if this process exits."""
+    import threading
+    try:
+        row=get_db().table('notification_deliveries').select('status').eq('id',ticket_id).single().execute() or {}
+        if row.get('status') not in ('queued','sending'):
+            return False
+        threading.Thread(target=dispatch_notification,args=(ticket_id,),daemon=True).start()
+        return True
+    except Exception as exc:
+        logger.warning('Ticket email immediate wake failed: %s',type(exc).__name__)
+        return False

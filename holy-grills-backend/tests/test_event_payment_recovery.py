@@ -71,13 +71,13 @@ class EventPaymentRecoveryTests(unittest.TestCase):
 
     def test_confirmation_does_not_claim_email_sent_when_provider_returns_false(self):
         db = self.db(card_amount_used=100)
-        with self.app.app_context(), patch.object(events, 'get_db', return_value=db), patch.object(events, 'send_qr_ticket_email', return_value=False):
+        with self.app.app_context(), patch.object(events, 'get_db', return_value=db), patch.object(events, 'start_ticket_email_dispatch', return_value=False):
             result = events.confirm_event_ticket_payment(TICKET, 'confirmed-reference')
-        self.assertIs(result['email_sent'], False)
+        self.assertIs(result['email_queued'], False)
 
     def test_paid_webhook_replay_never_blindly_resends_ticket_email(self):
         db = self.db(payment_status='paid')
-        with self.app.app_context(), patch.object(events, 'get_db', return_value=db), patch.object(events, 'send_qr_ticket_email') as send:
+        with self.app.app_context(), patch.object(events, 'get_db', return_value=db), patch.object(events, 'start_ticket_email_dispatch') as send:
             result = events.confirm_event_ticket_payment(TICKET, 'confirmed-reference')
         self.assertEqual(result['payment_status'], 'paid')
         send.assert_not_called(); db.rpc.assert_not_called()

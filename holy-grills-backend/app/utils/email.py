@@ -1192,7 +1192,7 @@ def get_user_email_and_name(user_id: str) -> tuple:
         return "", ""
 
 
-def send_qr_ticket_email(email: str, name: str, event_title: str, ticket_id: str, event_id: str, event_date: str = "", event_location: str = "") -> bool:
+def _prepare_qr_ticket_email(email: str, name: str, event_title: str, ticket_id: str, event_id: str, event_date: str = "", event_location: str = "") -> bool:
     """
     Send QR ticket email to guest or registered user.
     Generates QR code payload (hg-event:{event_id}:{ticket_id}) locally as base64 PNG.
@@ -1214,7 +1214,7 @@ def send_qr_ticket_email(email: str, name: str, event_title: str, ticket_id: str
     except Exception as e:
         logger.error("send_qr_ticket_email: Failed to generate local base64 QR code for ticket %s: %s", ticket_id, e)
         # Fail closed instead of leaking ticket_id to third-party external server
-        return False
+        return None
 
     safe_title = _html.escape(str(event_title or ""))
     safe_date = _html.escape(str(event_date or "TBA"))
@@ -1338,4 +1338,10 @@ Create an account to earn HP for this event!"""
 </body>
 </html>"""
 
-    return send_email_raw(to_email=email, to_name=name, subject=subject, html_body=html_body)
+    return {"to_email": email, "to_name": name, "subject": subject, "html_body": html_body}
+
+
+def send_qr_ticket_email(email, name, event_title, ticket_id, event_id, event_date="", event_location=""):
+    """Compatibility transport; event routes use the atomic saved dispatch instead."""
+    prepared = _prepare_qr_ticket_email(email, name, event_title, ticket_id, event_id, event_date, event_location)
+    return send_email_raw(**prepared) if prepared else False

@@ -1,6 +1,6 @@
 {
   "date": "2026-11-05",
-  "schema_revision": "20261105120840",
+  "schema_revision": "20261105121556",
   "database": "production with BEGIN/ROLLBACK fixtures",
   "provider_calls": 0,
   "retained_fixtures": 0,
@@ -132,6 +132,13 @@
     {
       "file": "event_reservation_financial_recovery.sql",
       "passed": true
+    },
+    {
+      "file": "event_ticket_email_outbox.sql",
+      "passed": true
     }
+  ],
+  "additional_variants": [
+    "notification_dispatch_rollback.sql using hg_claim_notification_dispatch_v2"
   ]
 }

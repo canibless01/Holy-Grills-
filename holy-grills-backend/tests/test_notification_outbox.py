@@ -21,7 +21,7 @@ def setup_dispatch():
     calls=[]
     def rpc(name,params):
         calls.append((name,deepcopy(params)))
-        if name=='hg_claim_notification_dispatch':return deepcopy(claim)
+        if name=='hg_claim_notification_dispatch_v2':return deepcopy(claim)
         return True
     db.rpc.side_effect=rpc
     with patch.object(outbox,'get_db',return_value=db),patch.object(outbox,'effective_preferences',return_value={}),patch.object(service,'_prepare_notification_email',return_value={'provider':'resend','subject':'Frozen'}),patch.object(service,'_deliver_email_attempt',return_value={'state':'accepted','provider':'resend','provider_message_id':'receipt'}) as email,patch.object(service,'_get_onesignal_creds',return_value=('app','key')),patch.object(service,'_deliver_push_attempt',return_value={'state':'accepted','provider':'onesignal'}) as push:
@@ -147,3 +147,73 @@ def test_delivery_result_is_not_reported_persisted_after_lease_loss(setup_dispat
     db,_,_,email,_=setup_dispatch;original=db.rpc.side_effect
     db.rpc.side_effect=lambda name,params: False if name=='hg_finish_notification_dispatch' else original(name,params)
     assert outbox.dispatch_notification(ID)['state']=='lease_lost';email.assert_called_once()
+
+
+def ticket_claim(setup_dispatch, **changes):
+    db,claim,calls,email,push=setup_dispatch
+    claim['payload'].update(kind='event_ticket_email',ticket_id=TOKEN,event_id=ID)
+    snapshot=claim['payload']['notification'];snapshot['user_id']=None
+    snapshot['metadata']={'event_title':'Grill <Night>','event_date':'2026-11-09','event_location':'FUTA'}
+    db.table.return_value.execute.return_value={'event_id':ID,'user_id':None,'guest_email':'Student@Example.com','status':'confirmed','payment_status':'paid',**changes}
+    return db,claim,calls,email,push
+
+
+def test_guest_ticket_builds_frozen_local_qr_and_transactional_email(setup_dispatch):
+    db,_,_,email,_=ticket_claim(setup_dispatch)
+    with patch.object(service,'get_email_provider',return_value='resend'),patch.object(outbox,'effective_preferences') as prefs:
+        assert outbox.dispatch_notification(TOKEN)['state']=='accepted'
+    prepared=email.call_args.args[0]
+    assert prepared['to_email']=='student@example.com' and prepared['transactional'] is True
+    assert 'data:image/png;base64,' in prepared['html_body']
+    assert 'Grill &lt;Night&gt;' in prepared['html_body'] and '<Night>' not in prepared['html_body']
+    assert 'api.qrserver' not in prepared['html_body'];prefs.assert_not_called()
+    assert all(call.args[0]!='profiles' for call in db.table.call_args_list)
+
+
+@pytest.mark.parametrize('changes',[{'status':'cancelled'},{'payment_status':'pending'},{'payment_status':'refunded'},{'event_id':TOKEN},{'user_id':ID}])
+def test_ticket_state_or_owner_change_cancels_dispatch(setup_dispatch,changes):
+    _,_,_,email,push=ticket_claim(setup_dispatch,**changes)
+    assert outbox.dispatch_notification(TOKEN)['state']=='cancelled'
+    email.assert_not_called();push.assert_not_called()
+
+
+def test_changed_guest_email_does_not_receive_old_ticket(setup_dispatch):
+    _,_,_,email,_=ticket_claim(setup_dispatch,guest_email='new@example.com')
+    assert outbox.dispatch_notification(TOKEN)['error']=='recipient_email_changed';email.assert_not_called()
+
+
+def test_guest_recovery_never_rebuilds_saved_provider_payload(setup_dispatch):
+    _,claim,_,email,_=ticket_claim(setup_dispatch)
+    prepared={'to_email':'student@example.com','provider':'onesignal','subject':'Frozen title','html_body':'Frozen QR','transactional':True}
+    claim['payload']['prepared']=prepared
+    with patch('app.utils.email._prepare_qr_ticket_email') as build:
+        assert outbox.dispatch_notification(TOKEN)['state']=='accepted'
+    build.assert_not_called();email.assert_called_once_with(prepared)
+
+
+def test_guest_timeout_keeps_uncertain_state_without_second_provider(setup_dispatch):
+    _,claim,_,email,push=ticket_claim(setup_dispatch)
+    claim['payload']['prepared']={'to_email':'student@example.com','provider':'onesignal','subject':'Frozen title','html_body':'Frozen QR','transactional':True}
+    email.return_value={'state':'unknown','provider':'onesignal'}
+    assert outbox.dispatch_notification(TOKEN)['state']=='uncertain'
+    email.assert_called_once();push.assert_not_called()
+
+
+@pytest.mark.parametrize('status',['sent','uncertain','failed',None])
+def test_ticket_wake_does_not_resend_terminal_or_missing_rows(status):
+    db=MagicMock();q=db.table.return_value
+    for method in ('select','eq','single'):getattr(q,method).return_value=q
+    q.execute.return_value={'status':status} if status else None
+    with patch.object(outbox,'get_db',return_value=db),patch('threading.Thread') as thread:
+        assert outbox.start_ticket_email_dispatch(TOKEN) is False
+    thread.assert_not_called()
+
+
+def test_ticket_wake_uses_saved_dispatch_id_and_existing_thread_transport():
+    db=MagicMock();q=db.table.return_value
+    for method in ('select','eq','single'):getattr(q,method).return_value=q
+    q.execute.return_value={'status':'queued'}
+    with patch.object(outbox,'get_db',return_value=db),patch('threading.Thread') as thread:
+        assert outbox.start_ticket_email_dispatch(TOKEN) is True
+    assert thread.call_args.kwargs=={'target':outbox.dispatch_notification,'args':(TOKEN,),'daemon':True}
+    thread.return_value.start.assert_called_once()
