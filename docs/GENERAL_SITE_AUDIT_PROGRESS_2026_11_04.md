@@ -61,3 +61,7 @@ Evidence and remaining verification are in [stock metadata editing](ADMIN_STOCK_
 ## Webhook and database boundary — 7 November
 
 [Database grant proof](EVENT_WEBHOOK_DATABASE_SECURITY_2026_11_07.md) removes browser table-maintenance and provider-payload write privileges while preserving scoped diagnostic reads and backend processing. [Native webhook controls](ADMIN_WEBHOOK_CONTROLS_2026_11_07.md) cover paging, WAT dates, scoped/stale reads, redaction, failed-read Retry and shared atomic replay claims. Full backend regression: 1,268 passed; browser/typecheck/lint/build pass. Event-management lifecycle and historical RPC review continue.
+
+## Event operations and retained history — 7 November
+
+[Event controls evidence](EVENT_MANAGEMENT_CONTROLS_2026_11_07.md): native paging/publication, WAT/funding inputs, locally rendered venue QR, attendee search/staff admission, read Retry, CSV defense, tier deactivation and receipt-based sales metrics now pass at mobile/desktop sizes. Direct issued-event/tier deletion is blocked by the database; two historical report RPCs now reject inactive admins. Backend 1,277 passed, native refund regressions and typecheck/lint/build pass. Organizer workspace/settlement is newly requested and next; cancellation/reschedule notices and broader exceptional cases remain separate.

@@ -10,17 +10,34 @@ import { toast } from '@/components/ui/use-toast';
 import { Modal, Field, TextInput, Pill, Toggle } from './AdminShared';
 import ImageUploader from './ImageUploader';
 import { msg } from '@/lib/messages';
+import EventCheckInScanner from '@/components/EventCheckInScanner';
+import { csvCell } from '@/lib/csvCell';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 
-const BLANK = { title: '', description: '', location: '', starts_at: '', ends_at: '', hp_reward: 30, hp_per_attendee: 30, max_attendees: 100, funding_source: 'hg_funded', is_paid: false, is_featured: false, image_url: '' };
+const BLANK = { title: '', description: '', location: '', starts_at: '', ends_at: '', hp_reward: 30, hp_per_attendee: 30, max_attendees: 100, funding_source: 'hg_funded', is_paid: false, is_featured: false, is_published: false, image_url: '' };
+
+const watInput = (value) => {
+  if (!value) return '';
+  const instant = new Date(value);
+  return Number.isNaN(instant.getTime()) ? '' : new Date(instant.getTime() + 3600000).toISOString().slice(0, 16);
+};
 
 export default function AdminEvents() {
   const { user } = useHolyGrill();
   const { campusId, adminCampusId } = useCampus();
   const eventScope = useRef(0);
   const eventLoad = useRef(0);
+  const panelLoad = useRef(0);
+  const writing = useRef(false);
+  const admissionLock = useRef(false);
+  const [offset, setOffset] = useState(0);
+  const pageSize = 25;
+  const [scannerEvent, setScannerEvent] = useState<string | null>(null);
+  const [admitting, setAdmitting] = useState(false);
+  const [admissionMessage, setAdmissionMessage] = useState('');
+  const [admissionError, setAdmissionError] = useState('');
   const historyLoad = useRef(0);
-  const canManage = (event) => user?.role === 'super_admin' || !!event.campus_id;
+  const canManage = (event) => user?.role === 'super_admin' || (!!event.campus_id && event.campus_id === (user?.campus_id || user?.profile?.campus_id));
   const [events, setEvents] = useState([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -74,32 +91,39 @@ export default function AdminEvents() {
 
   const load = async () => {
     const version = ++eventLoad.current; setLoading(true); setLoadError(false);
-    try { const rows = await mockApi.admin.getEvents(); if (version === eventLoad.current) setEvents(rows); }
+    try { const rows = await mockApi.admin.getEvents({ limit: pageSize, offset, ...(adminCampusId ? {campus_id: adminCampusId} : {}) }); if (version === eventLoad.current) setEvents(rows); }
     catch { if (version === eventLoad.current) setLoadError(true); }
     finally { if (version === eventLoad.current) setLoading(false); }
   };
   useEffect(() => {
-    eventScope.current++; historyLoad.current++;
-    setRegs(null); setRefund(null); setRefundHistory(null); setRefundReview(null); setRefundError('');
-    void load();
-    return () => {eventLoad.current++;};
+    eventScope.current++; historyLoad.current++; panelLoad.current++;
+    setOffset(0); setRegs(null); setModal(null); setQr(null); setTiersModal(null); setSalesModal(null); setEmailModal(null); setScannerEvent(null);
+    setRefund(null); setRefundHistory(null); setRefundReview(null); setRefundError(''); setAdmissionMessage(''); setAdmissionError('');
   }, [campusId, adminCampusId]);
+  useEffect(() => { void load(); return () => {eventLoad.current++;}; }, [campusId, adminCampusId, offset]);
 
   const save = async () => {
+    if (writing.current || !modal) return;
+    writing.current = true; const scope = eventScope.current;
     setBusy('save');
     const body = { ...modal.item, hp_reward: Number(modal.item.hp_reward), hp_per_attendee: Number(modal.item.hp_reward), max_attendees: Number(modal.item.max_attendees), capacity: Number(modal.item.max_attendees), is_featured: !!modal.item.is_featured, is_paid: !!modal.item.is_paid };
     try {
       let savedEvent = null;
-      if (modal.isNew) { savedEvent = await mockApi.admin.createEvent(body); toast({ title: msg('FE_ADMIN_EVENTS_EVENT_CREATED', '✅ Event created'), description: msg('FE_ADMIN_EVENTS_TITLE_IS_NOW_LIVE', '"{title}" is now live.', { title: body.title }) }); }
+      if (modal.isNew) { savedEvent = await mockApi.admin.createEvent(body); toast({ title: msg('FE_ADMIN_EVENTS_EVENT_CREATED', '✅ Event created'), description: msg('FE_EVENT_SAVED_TITLE', '"{title}" has been saved.', { title: body.title }) }); }
       else { await mockApi.admin.updateEvent(modal.item.id, body); savedEvent = { id: modal.item.id }; toast({ title: msg('FE_ADMIN_EVENTS_EVENT_UPDATED', '✅ Event updated'), description: msg('FE_ADMIN_EVENTS_TITLE_HAS_BEEN_SAVED', '"{title}" has been saved.', { title: body.title }) }); }
+      if (scope !== eventScope.current) return;
       setModal(null); await load();
-    } catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' }); }
-    setBusy(null);
+    } catch (e) { if (scope !== eventScope.current) return; toast({ title: msg('FE_ADMIN_EVENTS_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' }); }
+    finally { writing.current = false; setBusy(null); }
   };
 
-  const togglePub = async (id) => {
-    try { await mockApi.admin.toggleEventPublish(id); toast({ title: msg('FE_ADMIN_EVENTS_PUBLISH_STATUS_TOGGLED', 'Publish status toggled') }); await load(); }
-    catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
+  const togglePub = async (event) => {
+    if (writing.current) return;
+    writing.current = true; setBusy(event.id);
+    const scope = eventScope.current;
+    try { await mockApi.admin.updateEvent(event.id, {is_published: !event.is_published}); if (scope !== eventScope.current) return; toast({ title: msg('FE_ADMIN_EVENTS_PUBLISH_STATUS_TOGGLED', 'Publish status toggled') }); await load(); }
+    catch (e) { if (scope === eventScope.current) toast({ title: msg('FE_ADMIN_EVENTS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
+    finally { writing.current = false; setBusy(null); }
   };
 
   const remove = async (id) => {
@@ -109,36 +133,54 @@ export default function AdminEvents() {
     }
   };
 
-  const viewRegs = async (id) => {
-    try { setRegs({ eventId: id, data: await mockApi.admin.getEventRegistrants(id), tierFilter: '', checkinFilter: '' }); }
-    catch (e) { setRegs({ eventId: id, data: [], tierFilter: '', checkinFilter: '' }); }
+  const readPanel = async (id, setter, reader, key) => {
+    const version = ++panelLoad.current;
+    setter({eventId:id, [key]:[], loading:true, error:false, tierFilter:'', checkinFilter:'', search:''});
+    try {
+      const result = await reader(id);
+      if (version === panelLoad.current) setter({eventId:id, [key]:result, loading:false, error:false, tierFilter:'', checkinFilter:'', search:''});
+    } catch {
+      if (version === panelLoad.current) setter({eventId:id, [key]:[], loading:false, error:true, tierFilter:'', checkinFilter:'', search:''});
+    }
   };
-
+  const viewRegs = (id) => readPanel(id, setRegs, mockApi.admin.getEventRegistrants, 'data');
+  const viewTiers = (id) => readPanel(id, setTiersModal, mockApi.admin.getEventTicketTiers, 'tiers');
+  const viewSales = (id) => readPanel(id, setSalesModal, mockApi.admin.getEventTicketSales, 'data');
   const genQR = async (id) => {
-    try { setQr(await mockApi.admin.generateEventQR(id)); toast({ title: msg('FE_ADMIN_EVENTS_QR_CODE_GENERATED', 'QR code generated') }); }
-    catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
+    if (writing.current) return;
+    if (!(await confirmAction({ title: msg('FE_EVENT_QR_ROTATE', 'Generate a new venue QR? Previous venue codes will stop working.'), confirmLabel: msg('FE_EVENT_GENERATE_QR', 'Generate QR') }))) return;
+    if (writing.current) return;
+    writing.current = true; setBusy(id); const scope = eventScope.current;
+    try { const result = await mockApi.admin.generateEventQR(id); if (scope === eventScope.current) setQr(result); }
+    catch (e) { if (scope === eventScope.current) toast({ title: msg('FE_ADMIN_EVENTS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
+    finally { writing.current = false; setBusy(null); }
   };
-
-  const viewTiers = async (id) => {
-    try { setTiersModal({ eventId: id, tiers: await mockApi.admin.getEventTicketTiers(id) }); }
-    catch (e) { setTiersModal({ eventId: id, tiers: [] }); }
-  };
-
-  const viewSales = async (id) => {
-    try { setSalesModal({ eventId: id, data: await mockApi.admin.getEventTicketSales(id) }); }
-    catch (e) { setSalesModal({ eventId: id, data: null }); }
+  const admitTicket = async (eventId, token) => {
+    if (admissionLock.current) return;
+    admissionLock.current = true; setAdmitting(true); setAdmissionError(''); setAdmissionMessage('');
+    const scope = eventScope.current; const panel = panelLoad.current;
+    try {
+      const result = await apiClient.post(`/events/${eventId}/checkin`, {qr_token: token});
+      if (scope !== eventScope.current) return;
+      setAdmissionMessage(result.replayed ? msg('FE_EVENT_ALREADY_ADMITTED', 'This ticket was already checked in. No additional HP was awarded.') : msg('FE_EVENT_ADMITTED', 'Check-in recorded. Attendee HP: {hp}.', {hp:result.hp_added_to_active || 0}));
+      if (panel === panelLoad.current) await viewRegs(eventId);
+    } catch (e) { if (scope === eventScope.current) setAdmissionError(e.message || msg('FE_EVENT_ADMIT_FAILED', 'Check-in could not be confirmed. Retry the same ticket.')); }
+    finally { admissionLock.current = false; setAdmitting(false); }
   };
 
   const exportRegs = async (eventId) => {
-    setBusy('export');
+    if (writing.current) return;
+    writing.current = true; setBusy('export');
+    const scope = eventScope.current;
     try {
       // TODO(ts): the export endpoint's envelope varies (rows/data/registrants/array).
        
       const res: any = await mockApi.admin.exportEventRegistrations(eventId);
+      if (scope !== eventScope.current) return;
       const rows = res?.rows || res?.data || res?.registrants || (Array.isArray(res) ? res : []);
       if (!rows.length) { toast({ title: msg('FE_ADMIN_EVENTS_NO_REGISTRANTS_TO_EXPORT', 'No registrants to export'), description: msg('FE_ADMIN_EVENTS_THE_EXPORT_ENDPOINT_RETURNED_NO_DATA', 'The export endpoint returned no data.'), variant: 'destructive' }); return; }
       const headers = Object.keys(rows[0]);
-      const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${String(r[h] ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
+      const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${csvCell(r[h])}"`).join(','))].join('\n');
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -146,7 +188,7 @@ export default function AdminEvents() {
       URL.revokeObjectURL(url);
       toast({ title: msg('FE_ADMIN_EVENTS_CSV_EXPORTED', '✅ CSV exported'), description: `${rows.length} registrants downloaded.` });
     } catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_EXPORT_FAILED', 'Export failed'), description: e.message, variant: 'destructive' }); }
-    setBusy(null);
+    finally { writing.current = false; setBusy(null); }
   };
 
   const emailToHost = async (eventId, hostEmail) => {
@@ -164,6 +206,7 @@ export default function AdminEvents() {
   if (loadError) return <div className="text-center py-10 space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="font-bold text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;
 
   const filteredRegs = regs ? regs.data.filter(r => {
+    if (regs.search && ![r.full_name, r.email, r.phone, r.ticket_id].some(value => String(value || '').toLowerCase().includes(regs.search.trim().toLowerCase()))) return false;
     if (regs.tierFilter && (r.tier_name || r.tier || '') !== regs.tierFilter) return false;
     if (regs.checkinFilter === 'yes' && !r.checked_in) return false;
     if (regs.checkinFilter === 'no' && r.checked_in) return false;
@@ -176,6 +219,11 @@ export default function AdminEvents() {
       <div className="flex justify-end">
         <button onClick={() => setModal({ item: { ...BLANK }, isNew: true })} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold"><Plus className="w-4 h-4" /> Add Event</button>
       </div>
+      <div className="flex justify-between text-xs font-bold">
+        <button disabled={offset === 0 || !!busy} onClick={() => setOffset(value => Math.max(0, value - pageSize))}>{msg('FE_EVENT_PREVIOUS', 'Previous events')}</button>
+        <button onClick={load} disabled={!!busy}>{msg('FE_PLATFORM_RETRY', 'Retry')}</button>
+        <button disabled={events.length < pageSize || !!busy} onClick={() => setOffset(value => value + pageSize)}>{msg('FE_EVENT_NEXT', 'Next events')}</button>
+      </div>
       {events.map((e) => (
         <div key={e.id} className="rounded-2xl bg-card border border-border p-3 flex items-center gap-2 flex-wrap">
           <div className="flex-1 min-w-0">
@@ -185,15 +233,15 @@ export default function AdminEvents() {
               {e.is_featured && <Pill tone="flame">Featured</Pill>}
               {e.is_paid && <Pill tone="blue">Paid</Pill>}
             </div>
-            <div className="text-xs text-muted-foreground">{e.location} · {e.checkin_count}/{e.max_attendees} checked in · {e.hp_reward ?? e.hp_per_attendee} HP</div>
+            <div className="text-xs text-muted-foreground">{e.location} · {e.checkin_count}/{e.capacity ?? e.max_attendees ?? '∞'} checked in · {e.hp_reward ?? e.hp_per_attendee} HP</div>
           </div>
-          {canManage(e) && <Toggle checked={e.is_published} onChange={() => togglePub(e.id)} />}
+          {canManage(e) && <Toggle checked={e.is_published} disabled={!!busy} onChange={() => togglePub(e)} />}
           <button disabled={!canManage(e)} onClick={() => viewTiers(e.id)} title="Ticket Tiers" className="p-2 rounded-lg hover:bg-muted"><Ticket className="w-4 h-4 text-purple-500" /></button>
           <button onClick={() => viewSales(e.id)} title="Sales Dashboard" className="p-2 rounded-lg hover:bg-muted"><BarChart3 className="w-4 h-4 text-success" /></button>
           <button disabled={!canManage(e)} onClick={() => viewRegs(e.id)} title="Registrants" className="p-2 rounded-lg hover:bg-muted"><Eye className="w-4 h-4 text-muted-foreground" /></button>
           <button disabled={!canManage(e)} onClick={() => void openRefundHistory(e.id)} title="Refund history" className="text-primary text-xs font-bold p-2">Refunds</button>
           <button disabled={!canManage(e)} onClick={() => genQR(e.id)} title="QR" className="p-2 rounded-lg hover:bg-muted"><QrCode className="w-4 h-4 text-muted-foreground" /></button>
-          <button disabled={!canManage(e)} onClick={() => setModal({ item: { ...e }, isNew: false })} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
+          <button disabled={!canManage(e)} onClick={() => setModal({ item: { ...e, hp_reward: e.hp_per_attendee ?? e.hp_reward ?? 0, max_attendees: e.capacity ?? e.max_attendees ?? '', starts_at: watInput(e.starts_at), ends_at: watInput(e.ends_at) }, isNew: false })} title={msg('FE_EVENT_EDIT', 'Edit event')} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
           <button disabled={!canManage(e)} onClick={() => remove(e.id)} className="p-2 rounded-lg hover:tone-error"><Trash2 className="w-4 h-4 text-destructive" /></button>
         </div>
       ))}
@@ -241,8 +289,8 @@ export default function AdminEvents() {
             <Field label="Description"><textarea value={modal.item.description} onChange={(e) => setModal({ item: { ...modal.item, description: e.target.value }, isNew: modal.isNew })} rows={2} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm" /></Field>
             <Field label="Location"><TextInput value={modal.item.location} onChange={(e) => setModal({ item: { ...modal.item, location: e.target.value }, isNew: modal.isNew })} /></Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Starts"><TextInput type="datetime-local" value={modal.item.starts_at} onChange={(e) => setModal({ item: { ...modal.item, starts_at: e.target.value }, isNew: modal.isNew })} /></Field>
-              <Field label="Ends"><TextInput type="datetime-local" value={modal.item.ends_at} onChange={(e) => setModal({ item: { ...modal.item, ends_at: e.target.value }, isNew: modal.isNew })} /></Field>
+              <Field label={msg('FE_EVENT_START_WAT', 'Starts (WAT)')}><TextInput type="datetime-local" value={modal.item.starts_at} onChange={(e) => setModal({ item: { ...modal.item, starts_at: e.target.value }, isNew: modal.isNew })} /></Field>
+              <Field label={msg('FE_EVENT_END_WAT', 'Ends (WAT)')}><TextInput type="datetime-local" value={modal.item.ends_at} onChange={(e) => setModal({ item: { ...modal.item, ends_at: e.target.value }, isNew: modal.isNew })} /></Field>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Field label="HP Reward (per attendee)"><TextInput type="number" value={modal.item.hp_reward} onChange={(e) => setModal({ item: { ...modal.item, hp_reward: e.target.value }, isNew: modal.isNew })} /></Field>
@@ -251,12 +299,13 @@ export default function AdminEvents() {
             <Field label="Funding Source">
               <select value={modal.item.funding_source} onChange={(e) => setModal({ item: { ...modal.item, funding_source: e.target.value }, isNew: modal.isNew })} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">
                 <option value="hg_funded">HG Funded</option>
-                <option value="host_funded">Host Funded</option>
+                <option value="host_prepaid">Host Funded</option>
               </select>
             </Field>
             <p className="text-xs text-muted-foreground">{msg('FE_EVENT_PRICING_TIERS', 'Set ticket prices and HP discounts in Ticket Tiers after saving the event.')}</p>
             <Field label="Image"><ImageUploader value={modal.item.image_url} onChange={(url) => setModal({ item: { ...modal.item, image_url: url }, isNew: modal.isNew })} folder="events" /></Field>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-2"><Toggle checked={!!modal.item.is_published} onChange={(value) => setModal({...modal,item:{...modal.item,is_published:value}})} /><span className="text-sm font-semibold">{msg('FE_EVENT_PUBLISHED', 'Published')}</span></div>
               <div className="flex items-center gap-2"><Toggle checked={!!modal.item.is_featured} onChange={(v) => setModal({ item: { ...modal.item, is_featured: v }, isNew: modal.isNew })} /><span className="text-sm text-foreground font-semibold">Featured</span></div>
               <div className="flex items-center gap-2"><Toggle checked={!!modal.item.is_paid} onChange={(v) => setModal({ item: { ...modal.item, is_paid: v }, isNew: modal.isNew })} /><span className="text-sm text-foreground font-semibold">Paid Event</span></div>
             </div>
@@ -268,9 +317,12 @@ export default function AdminEvents() {
         )}
       </Modal>
 
-      <Modal open={!!regs} onClose={() => setRegs(null)} title="Event Registrants">
-        {regs && (
-          <div className="space-y-3">
+      <Modal open={!!regs} onClose={() => {panelLoad.current++;setRegs(null);}} title="Event Registrants">
+        {regs && <div className="space-y-3">
+          {regs.loading ? <p role="status">{msg('FE_EVENT_LOADING', 'Loading event details…')}</p> : regs.error ? <div role="alert"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={() => viewRegs(regs.eventId)}>{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div> : <>
+          <input aria-label={msg('FE_EVENT_FIND_ATTENDEE', 'Find attendee')} placeholder={msg('FE_EVENT_FIND_ATTENDEE_HELP', 'Name, email, phone or ticket ID')} value={regs.search} onChange={event => setRegs({...regs,search:event.target.value})} className="w-full p-3 border border-border rounded-xl" />
+          <button disabled={admitting} onClick={() => setScannerEvent(regs.eventId)} className="font-bold text-primary">{msg('FE_EVENT_SCAN_ATTENDEE', 'Scan attendee ticket')}</button>
+          {admissionMessage && <p role="status">{admissionMessage}</p>}{admissionError && <p role="alert" className="text-destructive">{admissionError}</p>}
             <div className="flex gap-2 flex-wrap">
               <button onClick={() => exportRegs(regs.eventId)} disabled={busy === 'export'} className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-secondary text-foreground text-xs font-bold disabled:opacity-50"><Download className="w-3.5 h-3.5" /> {busy === 'export' ? 'Exporting...' : 'Export CSV'}</button>
               <button onClick={() => setEmailModal({ eventId: regs.eventId, email: '' })} className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold"><Mail className="w-3.5 h-3.5" /> Send to Host</button>
@@ -290,49 +342,53 @@ export default function AdminEvents() {
               {filteredRegs.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-4">No registrants match your filters.</p>
               ) : filteredRegs.map((r) => (
-                <div key={r.ticket_id || r.id} className="flex items-center justify-between p-2.5 rounded-lg bg-muted text-sm">
+                <div key={r.ticket_id || r.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-2.5 rounded-lg bg-muted text-sm">
                   <div className="min-w-0">
                     <div className="font-bold text-foreground">{r.full_name || r.name || 'Attendee'}</div>
                     <div className="text-xs text-muted-foreground truncate">{r.email || '—'} · {r.ticket_id || '—'}</div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center flex-wrap gap-2 shrink-0">
                     {safeText(r.tier_name || r.tier, '') && <Pill tone="blue">{safeText(r.tier_name || r.tier, '')}</Pill>}
                     {r.checked_in ? <Pill tone="green">✓ Checked in</Pill> : <Pill tone="cocoa">Registered</Pill>}
+                    {!r.checked_in && r.status === 'confirmed' && ['paid','not_required'].includes(r.payment_status) && <button disabled={admitting} className="text-primary font-bold text-xs" onClick={() => void admitTicket(regs.eventId, `hg-event:${regs.eventId}:${r.ticket_id}`)}>{msg('FE_EVENT_CHECK_IN_ATTENDEE', 'Check in attendee')}</button>}
                     {r.refundable && <button type="button" className="text-destructive font-bold text-xs" onClick={() => {setRefundError('');setRefund({eventId:regs.eventId,ticket:r,id:crypto.randomUUID(),reason:''});}}>Refund ticket</button>}
                   </div>
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          </>}
+          </div>}
       </Modal>
 
-      <Modal open={!!salesModal} onClose={() => setSalesModal(null)} title="Ticket Sales Dashboard">
+      <Modal open={!!salesModal} onClose={() => {panelLoad.current++;setSalesModal(null);}} title="Ticket Sales Dashboard">
         {salesModal && (
           <div className="space-y-3">
+            {salesModal.loading && <p role="status">{msg('FE_EVENT_LOADING', 'Loading event details…')}</p>}
+            {salesModal.error && <div role="alert"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={() => viewSales(salesModal.eventId)}>{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>}
             {(() => {
+              if (salesModal.loading || salesModal.error) return null;
               const tiers = salesModal.data?.tiers || salesModal.data?.sales || [];
-              if (!tiers.length) return <p className="text-xs text-muted-foreground text-center py-4">No sales data available yet. Add ticket tiers to start selling.</p>;
-              const totalSold = tiers.reduce((s, t) => s + (t.quantity_sold || t.tickets_sold || t.sold_count || 0), 0);
-              const totalCap = tiers.reduce((s, t) => s + (t.quantity_available || t.capacity || t.available || 0), 0);
-              const revenue = tiers.reduce((s, t) => s + (t.quantity_sold || t.tickets_sold || t.sold_count || 0) * (t.price_wallet || t.price_naira || 0), 0);
+
+              const totalSold = salesModal.data?.summary?.confirmed_count ?? 0;
+              const totalCap = salesModal.data?.summary?.capacity ?? '∞';
+              const revenue = salesModal.data?.summary?.confirmed_cash ?? 0;
               return (
                 <>
                   <div className="grid grid-cols-3 gap-2">
-                    <div className="rounded-xl bg-muted p-3 text-center"><div className="font-heading font-extrabold text-lg text-foreground">{totalSold}</div><div className="text-[10px] text-muted-foreground">Total Sold</div></div>
+                    <div className="rounded-xl bg-muted p-3 text-center"><div className="font-heading font-extrabold text-lg text-foreground">{totalSold}</div><div className="text-[10px] text-muted-foreground">{msg('FE_EVENT_CONFIRMED_TICKETS', 'Confirmed tickets')}</div></div>
                     <div className="rounded-xl bg-muted p-3 text-center"><div className="font-heading font-extrabold text-lg text-foreground">{totalCap}</div><div className="text-[10px] text-muted-foreground">Total Capacity</div></div>
-                    <div className="rounded-xl bg-muted p-3 text-center"><div className="font-heading font-extrabold text-lg text-primary">₦{revenue.toLocaleString()}</div><div className="text-[10px] text-muted-foreground">Revenue</div></div>
+                    <div className="rounded-xl bg-muted p-3 text-center"><div className="font-heading font-extrabold text-lg text-primary">₦{revenue.toLocaleString()}</div><div className="text-[10px] text-muted-foreground">{msg('FE_EVENT_CONFIRMED_CASH', 'Cash on confirmed tickets')}</div></div>
                   </div>
                   <div className="space-y-2">
                     {tiers.map((t) => (
                       <div key={t.id} className="rounded-xl bg-card border border-border p-3">
                         <div className="flex items-center justify-between mb-1">
                           <span className="font-bold text-sm text-foreground">{t.name}</span>
-                          <Pill tone={(t.quantity_sold || t.tickets_sold || t.sold_count || 0) >= (t.quantity_available || t.capacity || t.available || 0) ? 'red' : 'green'}>{t.quantity_sold || t.tickets_sold || t.sold_count || 0}/{t.quantity_available || t.capacity || t.available || 0} sold</Pill>
+                          <Pill tone={(t.confirmed_count || 0) >= (t.quantity_available || t.capacity || t.available || 0) ? 'red' : 'green'}>{t.confirmed_count || 0}/{t.quantity_available || t.capacity || t.available || 0} sold</Pill>
                         </div>
                         <div className="text-xs text-muted-foreground">₦{t.price_wallet || t.price_naira || 0} · {t.price_hp || 0} HP</div>
                         <div className="mt-1.5 h-1.5 rounded-full bg-secondary overflow-hidden">
-                          <div className="h-full bg-gradient-cta" style={{ width: `${Math.min(100, ((t.quantity_sold || t.tickets_sold || t.sold_count || 0) / (t.quantity_available || t.capacity || t.available || 1)) * 100)}%` }} />
+                          <div className="h-full bg-gradient-cta" style={{ width: `${Math.min(100, ((t.confirmed_count || 0) / (t.quantity_available || t.capacity || t.available || 1)) * 100)}%` }} />
                         </div>
                       </div>
                     ))}
@@ -359,18 +415,22 @@ export default function AdminEvents() {
       <Modal open={!!qr} onClose={() => setQr(null)} title="Event Check-in QR">
         {qr && (
           <div className="text-center space-y-3">
+            {qr.qr_image && <><img src={qr.qr_image} alt={msg('FE_EVENT_VENUE_QR', 'Venue check-in QR code')} className="w-64 h-64 mx-auto object-contain bg-white" /><a href={qr.qr_image} download={`event-${qr.event_id}-venue-qr.png`} className="font-bold text-primary">{msg('FE_EVENT_DOWNLOAD_QR', 'Download venue QR')}</a></>}
             <div className="p-4 rounded-xl bg-foreground/90 text-primary/60 font-mono text-sm break-all">{qr.qr_payload}</div>
             <p className="text-xs text-muted-foreground">Display this QR at the venue. Attendees scan it to check in and claim HP.</p>
           </div>
         )}
       </Modal>
 
-      {tiersModal && <TicketTiersModal eventId={tiersModal.eventId} initialTiers={tiersModal.tiers} onClose={() => setTiersModal(null)} />}
+      {scannerEvent && <EventCheckInScanner eventId={scannerEvent} onScan={token => { const id = scannerEvent; setScannerEvent(null); void admitTicket(id,token); }} onClose={() => setScannerEvent(null)} />}
+      {tiersModal && (tiersModal.loading || tiersModal.error) && <Modal open onClose={() => {panelLoad.current++;setTiersModal(null);}} title="Ticket Tiers"><p role={tiersModal.error ? 'alert' : 'status'}>{tiersModal.error ? msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.") : msg('FE_EVENT_LOADING', 'Loading event details…')}</p>{tiersModal.error && <button onClick={() => viewTiers(tiersModal.eventId)}>{msg('FE_PLATFORM_RETRY', 'Retry')}</button>}</Modal>}
+      {tiersModal && !tiersModal.loading && !tiersModal.error && <TicketTiersModal eventId={tiersModal.eventId} initialTiers={tiersModal.tiers} onClose={() => {panelLoad.current++;setTiersModal(null);}} />}
     </div>
   );
 }
 
 function TicketTiersModal({ eventId, initialTiers, onClose }) {
+  const tierWriting = useRef(false);
   const [tiers, setTiers] = useState(initialTiers || []);
   const [adding, setAdding] = useState(false);
   const [editTier, setEditTier] = useState(null);
@@ -378,7 +438,8 @@ function TicketTiersModal({ eventId, initialTiers, onClose }) {
   const [busy, setBusy] = useState(null);
 
   const addTier = async () => {
-    setBusy('add');
+    if (tierWriting.current) return;
+    tierWriting.current = true; setBusy('add');
     try {
       const body = { name: newTier.name, price_naira: Number(newTier.price_wallet), price_naira_full: newTier.price_full === '' ? null : Number(newTier.price_full), price_hp: Number(newTier.price_hp), capacity: newTier.quantity_available === '' ? null : Number(newTier.quantity_available), description: newTier.description };
       const created = await mockApi.admin.createEventTicketTier(eventId, body);
@@ -387,11 +448,12 @@ function TicketTiersModal({ eventId, initialTiers, onClose }) {
       setAdding(false);
       toast({ title: msg('FE_ADMIN_EVENTS_TIER_ADDED', '✅ Tier added'), description: `"${body.name}" tier created.` });
     } catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
-    setBusy(null);
+    tierWriting.current = false; setBusy(null);
   };
 
   const saveEditTier = async () => {
-    setBusy(editTier.id);
+    if (tierWriting.current) return;
+    tierWriting.current = true; setBusy(editTier.id);
     try {
       const body = { name: editTier.name, price_naira: Number(editTier.price_wallet), price_naira_full: editTier.price_full === '' ? null : Number(editTier.price_full), price_hp: Number(editTier.price_hp), capacity: editTier.quantity_available === '' ? null : Number(editTier.quantity_available), description: editTier.description || '' };
       const updated = await mockApi.admin.updateEventTicketTier(eventId, editTier.id, body);
@@ -399,15 +461,24 @@ function TicketTiersModal({ eventId, initialTiers, onClose }) {
       setEditTier(null);
       toast({ title: msg('FE_ADMIN_EVENTS_TIER_UPDATED', '✅ Tier updated'), description: `"${body.name}" saved.` });
     } catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
-    setBusy(null);
+    tierWriting.current = false; setBusy(null);
   };
 
   const deleteTier = async (tierId, name) => {
     if (!(await confirmAction({ title: `Delete "${name}" tier?`, destructive: true }))) return;
-    setBusy(tierId);
+    if (tierWriting.current) return;
+    tierWriting.current = true; setBusy(tierId);
     try { await mockApi.admin.deleteEventTicketTier(eventId, tierId); setTiers(tiers.filter(t => t.id !== tierId)); toast({ title: msg('FE_ADMIN_EVENTS_TIER_DELETED', 'Tier deleted'), description: `"${name}" removed.` }); }
     catch (e) { toast({ title: msg('FE_ADMIN_EVENTS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
-    setBusy(null);
+    tierWriting.current = false; setBusy(null);
+  };
+
+  const toggleTier = async (tier) => {
+    if (tierWriting.current) return;
+    tierWriting.current = true; setBusy(tier.id);
+    try { const result = await mockApi.admin.updateEventTicketTier(eventId,tier.id,{is_active: tier.is_active === false}); setTiers(rows => rows.map(row => row.id === tier.id ? {...row,...result} : row)); }
+    catch (e) { toast({title:msg('FE_ADMIN_EVENTS_FAILED','Failed'),description:e.message,variant:'destructive'}); }
+    finally {tierWriting.current = false;setBusy(null);}
   };
 
   return (
@@ -435,6 +506,7 @@ function TicketTiersModal({ eventId, initialTiers, onClose }) {
               <>
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-bold text-sm text-foreground">{t.name}</span>
+                    <Toggle label={msg('FE_EVENT_TIER_ACTIVE', 'Sell {tier} tickets', {tier:t.name})} checked={t.is_active !== false} disabled={!!busy} onChange={() => void toggleTier(t)} />
                   <div className="flex gap-1">
                     <button onClick={() => setEditTier({ ...t, price_wallet: t.price_naira ?? 0, price_full: t.price_naira_full ?? '', quantity_available: t.capacity ?? '' })} className="p-1 rounded-lg hover:bg-secondary"><Pencil className="w-3.5 h-3.5 text-muted-foreground" /></button>
                     <button onClick={() => deleteTier(t.id, t.name)} disabled={busy === t.id} className="p-1 rounded-lg hover:tone-error"><Trash2 className="w-3.5 h-3.5 text-destructive" /></button>

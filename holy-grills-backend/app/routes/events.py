@@ -1,7 +1,7 @@
 from functools import wraps
 from app.services.feature_flags import is_feature_enabled
 from flask import Blueprint, request, jsonify, g, current_app, abort
-from app.middleware.auth import require_auth, require_role, optional_auth, assert_owns_campus, ADMIN_ROLES
+from app.middleware.auth import require_auth, require_role, optional_auth, assert_owns_campus, ADMIN_ROLES, resolve_scoped_campus_id
 from app.middleware.rate_limit import rate_limit
 from app.services.notification_outbox import start_ticket_email_dispatch
 from app.services.event_admission import admit_event_ticket
@@ -13,7 +13,7 @@ from app.utils.validators import (
     validate_datetime_order, sanitize_string, validate_email, validate_phone, validate_date,
 )
 from app.utils.logger import get_logger
-from app.utils.campus_scope import assert_can_modify, resolve_write_campus
+from app.utils.campus_scope import assert_can_modify, resolve_write_campus, as_campus_id, campus_or_global
 from app.utils.admin_helpers import as_int, as_number, as_instant, as_text, page_args
 from datetime import datetime, timezone
 import math
@@ -119,7 +119,7 @@ def list_events():
         db.table("events")
         .select("id,title,slug,description,location,starts_at,ends_at,hp_reward,hp_promo_enabled,is_featured,campus_id,is_global")
         .eq("is_published", "true")
-        .gte("starts_at", now)
+        .or_(f"ends_at.gt.{now},and(ends_at.is.null,starts_at.gte.{now})")
     )
     events = q.order("starts_at").execute() or []
     if campus_id:
@@ -312,12 +312,14 @@ def admin_list_events():
     db = get_user_client()
     try:
         limit, offset = page_args()
+        selected_campus = as_campus_id(request.args.get("campus_id"))
     except ValueError:
-        return jsonify({"error": MSG.PAGINATION_INVALID}), 400
-    q = db.table("events").select("*")
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    campus_id = resolve_scoped_campus_id(selected_campus)
+    q = campus_or_global(db.table("events").select("*"), campus_id, none_means_all=True)
     if request.args.get("published_only", "false").lower() == "true":
         q = q.eq("is_published", "true")
-    events = q.order("starts_at", ascending=False).limit(limit).offset(offset).execute() or []
+    events = q.order("starts_at", ascending=False).order("id", ascending=False).limit(limit).offset(offset).execute() or []
     if events:
         tickets = get_db().table("event_tickets").select("id,event_id").in_("event_id", [e["id"] for e in events]).execute() or []
         checkins = get_db().table("event_checkins").select("ticket_id").in_("ticket_id", [t["id"] for t in tickets]).execute() if tickets else []
@@ -374,6 +376,10 @@ def update_event(event_id):
         "hp_per_attendee", "funding_source", "max_attendees",
         "hp_required", "total_value", "is_paid", "image_url",
     }
+    if data.get("funding_source") == "host_funded":
+        data["funding_source"] = "host_prepaid"
+    if "funding_source" in data and data["funding_source"] not in ("hg_funded", "host_prepaid", None):
+        return jsonify({"error": MSG.EVENT_REQUEST_INVALID}), 400
     # Prefer hp_per_attendee; sync to hp_reward for backward compat
     if "hp_per_attendee" in data and "hp_reward" not in data:
         data["hp_reward"] = data["hp_per_attendee"]
@@ -511,10 +517,17 @@ def generate_event_qr(event_id):
     qr_token = _uuid.uuid4().hex
     get_db().table("event_door_tokens").upsert({"event_id": event_id, "qr_token": qr_token}, on_conflict="event_id").execute()
     qr_payload = f"hg-event:{event_id}:{qr_token}"
+    # Render locally. The private door token must never be sent to a QR SaaS.
+    import base64, io, qrcode
+    image = qrcode.make(qr_payload)
+    image_file = io.BytesIO()
+    image.save(image_file, format="PNG")
+    image_url = "data:image/png;base64," + base64.b64encode(image_file.getvalue()).decode("ascii")
     return jsonify({
         "event_id": event_id,
         "qr_token": qr_token,
         "qr_payload": qr_payload,
+        "qr_image": image_url,
         "instructions": "Encode qr_payload as a QR code. Attendees scan it at checkin.",
     }), 200
 
@@ -1334,6 +1347,10 @@ def create_event():
                 raise ValueError
     except ValueError:
         return jsonify({"error": MSG.EVENT_REQUEST_INVALID}), 400
+    if data.get("funding_source") == "host_funded":
+        data["funding_source"] = "host_prepaid"
+    if "funding_source" in data and data["funding_source"] not in ("hg_funded", "host_prepaid", None):
+        return jsonify({"error": MSG.EVENT_REQUEST_INVALID}), 400
     import re, uuid as _uuid
     base_slug = re.sub(r"[^a-z0-9]+", "-", data["title"].lower()).strip("-")[:54]
     data["slug"] = f"{base_slug}-{_uuid.uuid4().hex[:5]}"
@@ -1408,9 +1425,12 @@ def create_event_tier(event_id):
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
     assert_can_modify(event.get("campus_id"))
 
-    data = request.get_json(force=True, silent=True) or {}
-    name = (data.get("name") or "").strip()
-    if not name:
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.EVENT_REQUEST_INVALID}), 400
+    try:
+        name = as_text(data.get("name"), 120)
+    except ValueError:
         return jsonify({"error": MSG.TIER_NAME_REQUIRED}), 400
 
     price_naira = data.get("price_naira", 0)
@@ -1496,8 +1516,10 @@ def update_event_tier(tier_id):
         return jsonify({"error": MSG.TIER_NOT_FOUND}), 404
     assert_can_modify(tier.get("campus_id"))
 
-    data = request.get_json(force=True, silent=True) or {}
-    ALLOWED = {"name", "price_naira", "price_naira_full", "price_hp", "capacity", "description", "features", "terms", "color", "icon", "is_early_bird", "early_bird_deadline"}
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.EVENT_REQUEST_INVALID}), 400
+    ALLOWED = {"name", "price_naira", "price_naira_full", "price_hp", "capacity", "description", "features", "terms", "color", "icon", "is_early_bird", "early_bird_deadline", "is_active"}
     safe = {k: v for k, v in data.items() if k in ALLOWED}
 
     for _k in ("price_naira", "price_naira_full", "price_hp"):
@@ -1509,6 +1531,10 @@ def update_event_tier(tier_id):
     cash = safe.get("price_naira", tier.get("price_naira"))
     if full is not None and cash is not None and full < cash:
         return jsonify({"error": MSG.TIER_FACE_VALUE_INVALID}), 400
+    if not safe:
+        return jsonify({"error": MSG.NO_VALID_FIELDS}), 400
+    if "is_active" in safe and not isinstance(safe["is_active"], bool):
+        return jsonify({"error": MSG.EVENT_REQUEST_INVALID}), 400
     if "is_early_bird" in safe and not isinstance(safe["is_early_bird"], bool):
         return jsonify({"error": MSG.EVENT_REQUEST_INVALID}), 400
     if ("price_naira" in safe or "price_naira_full" in safe) and "price_hp" not in safe:
@@ -1537,7 +1563,10 @@ def update_event_tier(tier_id):
         return jsonify({"error": MSG.TIER_EARLY_BIRD_DEADLINE_REQUIRED}), 400
 
     if "name" in safe:
-        safe["name"] = sanitize_string(safe["name"], max_len=120)
+        try:
+            safe["name"] = as_text(safe["name"], 120)
+        except ValueError:
+            return jsonify({"error": MSG.TIER_NAME_REQUIRED}), 400
     if "description" in safe:
         safe["description"] = sanitize_string(safe["description"], max_len=500)
     if "capacity" in safe and safe["capacity"] is not None:
@@ -1687,7 +1716,7 @@ def list_event_registrants(event_id):
       404:
         description: Event not found
     """
-    db = get_user_client()
+    db = get_user_client(paginate=True)
     event = db.table("events").select("id,title,starts_at,location,campus_id").eq("id", event_id).single().execute()
     if not event:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
@@ -1909,6 +1938,43 @@ def send_registrants_to_host(event_id):
         "excluded_cancelled": counts["excluded_cancelled"],
         "include_unpaid": counts["include_unpaid"],
     }), 200
+
+
+@events_bp.route("/<event_id>/sales", methods=["GET"])
+@require_role("admin")
+def event_ticket_sales(event_id):
+    """Operational ticket counts and recorded cash, not current-price estimates."""
+    from decimal import Decimal
+    db = get_user_client(paginate=True)
+    event = db.table("events").select("id,campus_id,capacity").eq("id", event_id).single().execute()
+    if not event:
+        return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
+    assert_can_modify(event.get("campus_id"))
+    tiers = db.table("event_ticket_tiers").select("id,name,capacity,sold_count,price_naira,price_hp").eq("event_id", event_id).order("price_naira").execute() or []
+    tickets = db.table("event_tickets").select("id,tier_id,status,payment_status,wallet_amount_used,card_amount_used,hp_amount_paid").eq("event_id", event_id).order("id").execute() or []
+    groups = {tier["id"]: {**tier, "confirmed_count": 0, "pending_count": 0, "confirmed_cash": Decimal(0), "confirmed_hp": 0} for tier in tiers}
+    summary = {"confirmed_count": 0, "pending_count": 0, "cancelled_count": 0, "confirmed_cash": Decimal(0), "confirmed_hp": 0, "capacity": event.get("capacity")}
+    for ticket in tickets:
+        target = groups.get(ticket.get("tier_id"))
+        if ticket.get("status") in TICKET_EXCLUDED_STATUSES:
+            summary["cancelled_count"] += 1
+            continue
+        if ticket.get("status") == "confirmed" and ticket.get("payment_status") in TICKET_COUNTED_PAYMENT_STATUSES:
+            cash = Decimal(str(ticket.get("wallet_amount_used") or 0)) + Decimal(str(ticket.get("card_amount_used") or 0))
+            hp = int(ticket.get("hp_amount_paid") or 0)
+            for row in (summary, target):
+                if row is not None:
+                    row["confirmed_count"] += 1
+                    row["confirmed_cash"] += cash
+                    row["confirmed_hp"] += hp
+        else:
+            summary["pending_count"] += 1
+            if target is not None:
+                target["pending_count"] += 1
+    summary["confirmed_cash"] = float(summary["confirmed_cash"])
+    for row in groups.values():
+        row["confirmed_cash"] = float(row["confirmed_cash"])
+    return jsonify({"summary": summary, "tiers": list(groups.values())}), 200
 
 
 @events_bp.route("/<event_id>/tiers/comparison", methods=["GET"])

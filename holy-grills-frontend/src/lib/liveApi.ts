@@ -1035,7 +1035,7 @@ const admin = {
   },
 
   // --- Events (verified: /events/admin, /events/:id, /events/:id/qr) ---
-  async getEvents() { return unwrap(await apiClient.get('/events/admin'), 'events'); },
+  async getEvents(params = {}) { return unwrap(await apiClient.get('/events/admin', params), 'events'); },
   async createEvent(body) { return apiClient.post('/events', body); },
   async updateEvent(id, body) { return apiClient.patch(`/events/${id}`, body); },
   async toggleEventPublish(id) {
@@ -1062,25 +1062,7 @@ const admin = {
   // compatibility but is intentionally unused in the URL.
   async updateEventTicketTier(eventId, tierId, body) { return apiClient.patch(`/events/tiers/${tierId}`, body); },
   async deleteEventTicketTier(eventId, tierId) { return apiClient.delete(`/events/tiers/${tierId}`); },
-  // No /events/<id>/tickets sales route exists — the enriched tier comparison
-  // view (GET /events/<id>/tiers/comparison) carries sold_count/available, so
-  // normalise it into the { tiers[] } shape the Sales dashboard expects.
-  async getEventTicketSales(id) {
-    const tiers = unwrap(await apiClient.get(`/events/${id}/tiers/comparison`), 'tiers');
-    return {
-      tiers: (tiers || []).map((t) => ({
-        id: t.id,
-        name: t.name,
-        price_wallet: t.price_naira ?? 0,
-        price_naira: t.price_naira ?? 0,
-        price_hp: t.price_hp ?? 0,
-        quantity_sold: t.sold_count ?? 0,
-        tickets_sold: t.sold_count ?? 0,
-        quantity_available: t.capacity ?? t.available ?? 0,
-        capacity: t.capacity ?? null,
-      })),
-    };
-  },
+  async getEventTicketSales(id) { return apiClient.get(`/events/${id}/sales`); },
   // Event registrant export / email-to-host (GET /admin/events/:id/tickets, /export, POST send-to-host)
   // Registrants live at /events/<id>/registrants (NOT /admin/events/<id>/tickets).
   // The JSON response is { event, registrants, total }; the export builds CSV
