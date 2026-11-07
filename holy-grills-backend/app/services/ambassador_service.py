@@ -185,8 +185,8 @@ def tag_ambassador(actor_id: str, target_profile: dict) -> dict:
         "untagged_at": None,
     }
     if existing:
-        row = db.table(AMBASSADOR_TABLE).update(payload).eq(
-            "profile_id", target_profile["id"]).execute()
+        row = db.table(AMBASSADOR_TABLE).eq(
+            "profile_id", target_profile["id"]).update(payload).execute()
         row = row[0] if isinstance(row, list) else row
     else:
         row = db.table(AMBASSADOR_TABLE).insert(payload).execute()
@@ -200,9 +200,9 @@ def tag_ambassador(actor_id: str, target_profile: dict) -> dict:
 def untag_ambassador(actor_id: str, ambassador_id: str) -> dict:
     db = get_db()
     row = _active_ambassador(db, ambassador_id)
-    updated = db.table(AMBASSADOR_TABLE).update({
+    updated = db.table(AMBASSADOR_TABLE).eq("profile_id", ambassador_id).update({
         "status": "inactive", "untagged_at": datetime.now(timezone.utc).isoformat(),
-    }).eq("profile_id", ambassador_id).execute()
+    }).execute()
     audit(actor_id, "ambassador_untagged", ambassador_id,
           before={"status": "active"}, campus_id=row.get("campus_id"))
     return (updated[0] if isinstance(updated, list) and updated else updated) or row
@@ -392,13 +392,13 @@ def _auto_issue_milestone_grant(ambassador: dict, milestone: dict,
     except AmbassadorError:
         logger.exception("auto-issue failed for claim %s", claim.get("id"))
         return claim
-    updated = db.table("ambassador_milestone_claims").update({
+    updated = db.table("ambassador_milestone_claims").eq("id", claim["id"]).update({
         "status": "issued",
         "grant_id": grant["id"],
         "decided_by": actor["id"],
         "decided_at": _iso(datetime.now(timezone.utc)),
         "decision_note": "Auto-issued by configured milestone rule",
-    }).eq("id", claim["id"]).execute()
+    }).execute()
     rows = updated if isinstance(updated, list) else [updated]
     return rows[0] if rows else claim
 
@@ -486,7 +486,7 @@ def persist_review_metrics(db, ambassador_id: str, month: str) -> dict:
     existing = db.table("ambassador_monthly_reviews").select("id").eq(
         "ambassador_id", ambassador_id).eq("month", month).single().execute()
     if existing:
-        db.table("ambassador_monthly_reviews").update(payload).eq("id", existing["id"]).execute()
+        db.table("ambassador_monthly_reviews").eq("id", existing["id"]).update(payload).execute()
     else:
         db.table("ambassador_monthly_reviews").insert({
             "ambassador_id": ambassador_id, "month": month, **payload,
@@ -523,7 +523,7 @@ def submit_recommendation(db, actor_id: str, ambassador_id: str, month: str,
         "recommended_at": datetime.now(timezone.utc).isoformat(),
     }
     if existing:
-        db.table("ambassador_monthly_reviews").update(patch).eq("id", existing["id"]).execute()
+        db.table("ambassador_monthly_reviews").eq("id", existing["id"]).update(patch).execute()
     else:
         db.table("ambassador_monthly_reviews").insert({
             "ambassador_id": ambassador_id, "month": month, **patch,
@@ -548,7 +548,7 @@ def record_decision(db, actor_id: str, ambassador_id: str, month: str,
         "decided_at": datetime.now(timezone.utc).isoformat(),
     }
     if existing:
-        db.table("ambassador_monthly_reviews").update(patch).eq("id", existing["id"]).execute()
+        db.table("ambassador_monthly_reviews").eq("id", existing["id"]).update(patch).execute()
     else:
         db.table("ambassador_monthly_reviews").insert({
             "ambassador_id": ambassador_id, "month": month, **patch,

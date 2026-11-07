@@ -84,3 +84,24 @@ def test_registration_options_transient_error_is_retryable():
     with patch('app.routes.auth.get_db',return_value=db):
         response=app.test_client().get('/api/auth/registration-options')
     assert response.status_code==503
+
+@pytest.mark.parametrize('operation', ['reactivate','remove','metrics','recommendation','decision'])
+def test_related_ambassador_writes_use_filtered_real_transport(operation):
+    from app.services import ambassador_service as svc
+    ambassador={'profile_id':'student','campus_id':CAMPUS,'status':'inactive' if operation=='reactivate' else 'active'}
+    metrics={'assigned_count':1,'seen_count':1,'shared_count':0,'completion_rate':0,'signups_count':0,'orders_count':0}
+    if operation in ('reactivate','remove'): rows=[ambassador]
+    elif operation=='metrics': rows=[{'id':'review'}]
+    elif operation=='recommendation': rows=[ambassador,{'id':'review'},{'id':'review'}]
+    else: rows=[ambassador,{'id':'review'}]
+    db=client_with_rows(*rows)
+    with Flask(__name__).test_request_context(), patch.object(svc,'get_db',return_value=db), patch.object(svc,'audit'), patch.object(svc,'build_review',return_value=metrics):
+        g.user_role='admin';g.campus_id=CAMPUS
+        if operation=='reactivate':svc.tag_ambassador('actor',{'id':'student','campus_id':CAMPUS})
+        elif operation=='remove':svc.untag_ambassador('actor','student')
+        elif operation=='metrics':svc.persist_review_metrics(db,'student','2026-11')
+        elif operation=='recommendation':svc.submit_recommendation(db,'actor','student','2026-11','recommend','Checked')
+        else:svc.record_decision(db,'actor','student','2026-11','approved','Checked')
+    patches=db._session.patch.call_args_list
+    assert len(patches)==(2 if operation=='recommendation' else 1)
+    assert all(c.kwargs['params']==({'profile_id':'eq.student'} if operation in ('reactivate','remove') else {'id':'eq.review'}) for c in patches)
