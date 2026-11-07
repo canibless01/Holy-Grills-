@@ -58,7 +58,14 @@ export default function Register() {
         setAcademicLevels(snapshot.levels);
         loadedReference.current = `${snapshot.campus_id || form.campus_id}:${referenceRetry}`;
         if (!form.campus_id && snapshot.campus_id) setForm(old => ({ ...old, campus_id: snapshot.campus_id }));
-      } catch { if (active) setReferencesError(true); }
+      } catch (error) {
+        if (active) {
+          // A previously selected campus may have been retired. Keep the
+          // active campus selector available so the student can recover.
+          if (Array.isArray(error.detail?.campuses)) setCampuses(error.detail.campuses);
+          setReferencesError(true);
+        }
+      }
       finally { if (active) setReferencesLoading(false); }
     };
     load();

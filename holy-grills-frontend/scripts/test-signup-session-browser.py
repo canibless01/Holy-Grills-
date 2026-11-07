@@ -10,12 +10,15 @@ with sync_playwright() as p:
   context=browser.new_context(viewport={'width':1365,'height':950})
   script=f"localStorage.setItem('hg_campus_id','{C}');localStorage.setItem('hg_install_dismissed',String(Date.now()));"
   if role!='guest':script+=f"localStorage.setItem('hg_access_token','synthetic');localStorage.setItem('hg_user_role','{role}');localStorage.setItem('hg_user_campus_id','{C}');"
+  if role=='guest':script+="localStorage.setItem('hg_campus_id','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');"
   context.add_init_script(script)
   calls=[];writes=[];held=[];errors=[]
   def api(route):
    r=route.request;path=urlparse(r.url).path;calls.append(path);data={}
    if path.endswith('/auth/logout'):held.append(route);return
    if path.endswith('/auth/me'):data={'id':ID,'role':role,'full_name':'Local audit','campus_id':C,'is_active':True}
+   elif path.endswith('/auth/registration-options') and 'aaaaaaaa' in r.url:
+    route.fulfill(status=400,content_type='application/json',body=json.dumps({'error':'That campus is not available','campuses':[{'id':C,'name':'FUTA'}]}));return
    elif path.endswith('/auth/registration-options'):data={'campus_id':C,'campuses':[{'id':C,'name':'FUTA'}],'departments':[{'id':D,'name':'Medicine and Surgery (MBBS)','faculty':'School of Clinical Sciences'}],'levels':[{'id':L,'name':'300 Level','value':'300'}]}
    elif path.endswith('/auth/register'):writes.append(r.post_data_json);route.fulfill(status=400,content_type='application/json',body='{"error":"Stopped safely before real signup"}');return
    elif path.endswith('/campuses'):data={'campuses':[{'id':C,'name':'FUTA','slug':'futa','is_active':True}]}
@@ -31,6 +34,8 @@ with sync_playwright() as p:
   page=context.new_page();page.on('pageerror',lambda e:errors.append(str(e)))
   if role=='guest':
    page.goto(BASE+'/register')
+   expect(page.get_by_text('This list is temporarily unavailable. Please try again.',exact=False)).to_be_visible()
+   page.get_by_role('combobox',name='Campus',exact=True).select_option(C)
    page.get_by_role('combobox',name='School / faculty').select_option(label='School of Clinical Sciences')
    expect(page.get_by_text('Medicine and Surgery (MBBS)',exact=True)).to_be_attached(timeout=15000)
    page.get_by_label('Full Name',exact=True).fill('Synthetic Student');page.get_by_label('Email',exact=True).fill('audit@example.invalid')
@@ -45,8 +50,8 @@ with sync_playwright() as p:
    page.get_by_role('button',name='Create Account',exact=True).click()
    expect(page.get_by_text('Stopped safely before real signup')).to_be_visible()
    assert writes[0]['department_id']==D and writes[0]['academic_level_id']==L,writes
-   assert calls.count('/api/auth/registration-options')==1,calls
-   reports.append({'role':role,'one_reference_request':True,'MBBS_rendered':True,'console_errors':errors})
+   assert calls.count('/api/auth/registration-options')==2,calls
+   reports.append({'role':role,'one_snapshot_per_campus':True,'retired_campus_recovery':True,'MBBS_rendered':True,'console_errors':errors})
   elif role in ['community_manager','admin','super_admin']:
    page.goto(BASE+'/'+('community-manager' if role=='community_manager' else 'admin')+'?section=ambassadorpromo')
    expect(page.get_by_text('Synthetic promo',exact=True)).to_be_visible(timeout=15000)
