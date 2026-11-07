@@ -1,46 +1,48 @@
+import { lazy, Suspense } from 'react';
+import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { msg } from '@/lib/messages';
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { ShieldAlert, LogOut } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import BrandLogo from '@/components/BrandLogo';
 import AdminLayout from '@/components/admin/AdminLayout';
-import AdminDashboard from '@/components/admin/AdminDashboard';
-import AdminAnalytics from '@/components/admin/AdminAnalytics';
-import AdminEconomics from '@/components/admin/AdminEconomics';
-import AdminUsers from '@/components/admin/AdminUsers';
-import AdminOrders from '@/components/admin/AdminOrders';
-import AdminDelivery from '@/components/admin/AdminDelivery';
-import AdminPromos from '@/components/admin/AdminPromos';
-import AdminFeatureFlags from '@/components/admin/AdminFeatureFlags';
-import AdminSystemSettings from '@/components/admin/AdminSystemSettings';
-import AdminSystem from '@/components/admin/AdminSystem';
-import AdminMenu from '@/components/admin/AdminMenu';
-import AdminAddons from '@/components/admin/AdminAddons';
-import AdminEvents from '@/components/admin/AdminEvents';
-import AdminRewards from '@/components/admin/AdminRewards';
-import AdminMarketplace from '@/components/admin/AdminMarketplace';
-import AdminNotifications from '@/components/admin/AdminNotifications';
-import AdminLeaderboard from '@/components/admin/AdminLeaderboard';
-import AdminDepartments from '@/components/admin/AdminDepartments';
-import AdminStorefront from '@/components/admin/AdminStorefront';
-import AdminOnboarding from '@/components/admin/AdminOnboarding';
-import AdminCampuses from '@/components/admin/AdminCampuses';
-import AdminHpMultipliers from '@/components/admin/AdminHpMultipliers';
-import AdminChallenges from '@/components/admin/AdminChallenges';
-import AdminAbandonedCarts from '@/components/admin/AdminAbandonedCarts';
-import AdminOrderLocks from '@/components/admin/AdminOrderLocks';
-import AdminFreeCredits from '@/components/admin/AdminFreeCredits';
-import AdminExclusiveSpin from '@/components/admin/AdminExclusiveSpin';
-import AdminReviews from '@/components/admin/AdminReviews';
-import AdminCatering from '@/components/admin/AdminCatering';
-import AdminStore from '@/components/admin/AdminStore';
-import AdminWalletTransactions from '@/components/admin/AdminWalletTransactions';
-import AdminAcademicCalendar from '@/components/admin/AdminAcademicCalendar';
-import AdminWebhooks from '@/components/admin/AdminWebhooks';
-import AdminAmbassadors from '@/components/admin/AdminAmbassadors';
-import AdminAmbassadorPromo from '@/components/admin/AdminAmbassadorPromo';
-import AdminAmbassadorReviews from '@/components/admin/AdminAmbassadorReviews';
-import { isAuthenticated, clearTokens } from '@/lib/apiClient';
+const AdminDashboard = lazy(() => import('@/components/admin/AdminDashboard'));
+const AdminAnalytics = lazy(() => import('@/components/admin/AdminAnalytics'));
+const AdminEconomics = lazy(() => import('@/components/admin/AdminEconomics'));
+const AdminUsers = lazy(() => import('@/components/admin/AdminUsers'));
+const AdminOrders = lazy(() => import('@/components/admin/AdminOrders'));
+const AdminDelivery = lazy(() => import('@/components/admin/AdminDelivery'));
+const AdminPromos = lazy(() => import('@/components/admin/AdminPromos'));
+const AdminFeatureFlags = lazy(() => import('@/components/admin/AdminFeatureFlags'));
+const AdminSystemSettings = lazy(() => import('@/components/admin/AdminSystemSettings'));
+const AdminSystem = lazy(() => import('@/components/admin/AdminSystem'));
+const AdminMenu = lazy(() => import('@/components/admin/AdminMenu'));
+const AdminAddons = lazy(() => import('@/components/admin/AdminAddons'));
+const AdminEvents = lazy(() => import('@/components/admin/AdminEvents'));
+const AdminRewards = lazy(() => import('@/components/admin/AdminRewards'));
+const AdminMarketplace = lazy(() => import('@/components/admin/AdminMarketplace'));
+const AdminNotifications = lazy(() => import('@/components/admin/AdminNotifications'));
+const AdminLeaderboard = lazy(() => import('@/components/admin/AdminLeaderboard'));
+const AdminDepartments = lazy(() => import('@/components/admin/AdminDepartments'));
+const AdminStorefront = lazy(() => import('@/components/admin/AdminStorefront'));
+const AdminOnboarding = lazy(() => import('@/components/admin/AdminOnboarding'));
+const AdminCampuses = lazy(() => import('@/components/admin/AdminCampuses'));
+const AdminHpMultipliers = lazy(() => import('@/components/admin/AdminHpMultipliers'));
+const AdminChallenges = lazy(() => import('@/components/admin/AdminChallenges'));
+const AdminAbandonedCarts = lazy(() => import('@/components/admin/AdminAbandonedCarts'));
+const AdminOrderLocks = lazy(() => import('@/components/admin/AdminOrderLocks'));
+const AdminFreeCredits = lazy(() => import('@/components/admin/AdminFreeCredits'));
+const AdminExclusiveSpin = lazy(() => import('@/components/admin/AdminExclusiveSpin'));
+const AdminReviews = lazy(() => import('@/components/admin/AdminReviews'));
+const AdminCatering = lazy(() => import('@/components/admin/AdminCatering'));
+const AdminStore = lazy(() => import('@/components/admin/AdminStore'));
+const AdminWalletTransactions = lazy(() => import('@/components/admin/AdminWalletTransactions'));
+const AdminAcademicCalendar = lazy(() => import('@/components/admin/AdminAcademicCalendar'));
+const AdminWebhooks = lazy(() => import('@/components/admin/AdminWebhooks'));
+const AdminAmbassadors = lazy(() => import('@/components/admin/AdminAmbassadors'));
+const AdminAmbassadorPromo = lazy(() => import('@/components/admin/AdminAmbassadorPromo'));
+const AdminAmbassadorReviews = lazy(() => import('@/components/admin/AdminAmbassadorReviews'));
+import { isAuthenticated } from '@/lib/apiClient';
 import { useCampus } from '@/lib/campusContext';
 import { sectionsForRole } from '@/lib/adminSections';
 
@@ -84,8 +86,7 @@ const TITLES = {
 };
 
 export default function Admin({ communityWorkspace = false }: { communityWorkspace?: boolean }) {
-  const { user, isLoading } = useHolyGrill();
-  const navigate = useNavigate();
+  const { user, isLoading, logout } = useHolyGrill();
   const [searchParams, setSearchParams] = useSearchParams();
   // A community_manager only carries the three ambassador sections. Their
   // default landing page is the ambassador roster; any other section id in
@@ -134,7 +135,7 @@ export default function Admin({ communityWorkspace = false }: { communityWorkspa
           <h1 className="font-heading font-extrabold text-xl text-foreground">Access denied</h1>
           <p className="text-sm text-muted-foreground mt-1">Admin rights required.</p>
           <button
-            onClick={() => { clearTokens(); navigate('/login', { replace: true }); }}
+            onClick={() => { void logout(); }}
             className="mt-5 inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-primary text-white text-xs font-bold active:scale-95 transition"
           >
             <LogOut className="w-3.5 h-3.5" /> Back to login
@@ -194,15 +195,11 @@ export default function Admin({ communityWorkspace = false }: { communityWorkspa
       title={TITLES[active] || 'Admin'}
       subtitle={communityWorkspace || user?.role === 'community_manager' ? msg('FE_CM_WORKSPACE_SUBTITLE', 'Holy Grills · Community Manager') : 'Holy Grills · Admin Panel'}
       allowedIds={allowedIds}
-      onSignOut={() => {
-        clearTokens();
-        localStorage.removeItem('hg_admin_campus_id');
-        navigate('/login', { replace: true });
-      }}
+      onSignOut={() => { void logout(); }}
     >
       {/* Remount the section when the campus scope changes so its data is
           re-fetched with the new X-Campus-ID header. */}
-      <div key={adminCampusId || 'all-campuses'}>{renderSection()}</div>
+      <div key={adminCampusId || 'all-campuses'}><Suspense fallback={<StaffPanelSkeleton />}>{renderSection()}</Suspense></div>
     </AdminLayout>
   );
 }

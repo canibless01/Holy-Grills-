@@ -10,7 +10,7 @@ try {
  await build({entryPoints:['src/lib/apiClient.ts'],bundle:true,format:'esm',platform:'node',outfile:file,define:{'import.meta.env.VITE_API_BASE_URL':'"https://test.invalid/api"'}});
  const store=()=>{const m=new Map();return{getItem:k=>m.get(k)??null,setItem:(k,v)=>m.set(k,v),removeItem:k=>m.delete(k)}};
  globalThis.window={localStorage:store(),sessionStorage:store()};
- const {apiClient,setTokens}=await import(pathToFileURL(file));
+ const {apiClient,setTokens,clearTokens}=await import(pathToFileURL(file));
  let calls=[];
  globalThis.fetch=(url,options)=>new Promise(resolve=>calls.push({url,options,resolve}));
  const finish=(call,status=200)=>call.resolve(new Response(JSON.stringify(status===200?{ok:true}:{error:'Temporary failure'}),{status,headers:{'content-type':'application/json'}}));
@@ -24,8 +24,9 @@ try {
  assert.equal(calls.length,6);finish(calls[4]);finish(calls[5]);await Promise.all([scoped1,scoped2]);
  setTokens('account-a','refresh-a');const ownA=apiClient.get('/orders');
  setTokens('account-b','refresh-b');const ownB=apiClient.get('/orders');
- assert.equal(calls.length,8);finish(calls[6]);finish(calls[7]);await Promise.all([ownA,ownB]);
+ assert.equal(calls.length,8);finish(calls[6]);finish(calls[7]);await Promise.all([assert.rejects(ownA,/Session changed/),ownB]);
+ const stale=apiClient.get('/wallet');clearTokens();finish(calls.at(-1));await assert.rejects(stale,/Session changed/);
  const p1=apiClient.post('/orders',{items:[]}),p2=apiClient.post('/orders',{items:[]});
- assert.equal(calls.length,10);finish(calls[8]);finish(calls[9]);await Promise.all([p1,p2]);
+ assert.equal(calls.length,11);finish(calls[9]);finish(calls[10]);await Promise.all([p1,p2]);
  console.log('PASS shared simultaneous reads; fresh reads/retries/account/campus isolation; mutations stay independent');
 }finally{await rm(temp,{recursive:true,force:true})}

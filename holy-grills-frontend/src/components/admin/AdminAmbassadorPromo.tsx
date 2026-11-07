@@ -57,7 +57,7 @@ export default function AdminAmbassadorPromo() {
       {messages.map((m) => (
         <PromoMessageRow key={m.id} message={m} open={openId === m.id}
           onToggle={() => setOpenId((id) => (id === m.id ? null : m.id))}
-          onChanged={load} />
+          />
       ))}
 
       {createOpen && <CreatePromoModal onClose={() => setCreateOpen(false)} onSaved={() => { setCreateOpen(false); load(); }} />}
@@ -65,24 +65,32 @@ export default function AdminAmbassadorPromo() {
   );
 }
 
-function PromoMessageRow({ message, open, onToggle, onChanged }: { message: any; open: boolean; onToggle: () => void; onChanged: () => void }) {
+function PromoMessageRow({ message, open, onToggle }: { message: any; open: boolean; onToggle: () => void }) {
   const [assignments, setAssignments] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
   const [sharingId, setSharingId] = useState<string | null>(null);
   const loaded = useRef(false);
+  const [assignmentError, setAssignmentError] = useState(false);
+  const [assignmentLoading, setAssignmentLoading] = useState(false);
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     if (!open || loaded.current) return;
-    loaded.current = true;
-    liveApi.ambassadors.promoAssignments(message.id).then(setAssignments).catch((e) => toast({ title: e.message, variant: 'destructive' }));
-  }, [open, message.id]);
+    let active = true;
+    setAssignmentLoading(true); setAssignmentError(false);
+    liveApi.ambassadors.promoAssignments(message.id).then(rows => {
+      if (active) { setAssignments(rows); loaded.current = true; }
+    }).catch(e => {
+      if (active) { setAssignmentError(true); toast({ title: e.message, variant: 'destructive' }); }
+    }).finally(() => { if (active) setAssignmentLoading(false); });
+    return () => { active = false; };
+  }, [open, message.id, retry]);
 
   const setStatus = async (assignmentId: string, status: string) => {
     setBusy(true);
     try {
       const updated = await liveApi.ambassadors.setAssignmentStatus(assignmentId, status);
       setAssignments((rows) => rows.map((r) => (r.id === assignmentId ? { ...r, ...updated } : r)));
-      onChanged();
     } catch (e) {
       toast({ title: e.message, variant: 'destructive' });
     } finally { setBusy(false); }
@@ -117,6 +125,8 @@ function PromoMessageRow({ message, open, onToggle, onChanged }: { message: any;
 
       {open && (
         <div className="border-t border-border p-3 space-y-2">
+          {assignmentLoading && <p role="status">Loading assignments…</p>}
+          {assignmentError && <button onClick={() => setRetry(value => value + 1)} className="underline text-destructive">Could not load assignments. Retry</button>}
           {assignments.map((a) => (
             <div key={a.id} className="rounded-xl border border-border p-3 space-y-2">
               <div className="flex items-center justify-between gap-2 flex-wrap">

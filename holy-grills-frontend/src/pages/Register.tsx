@@ -1,4 +1,4 @@
-import { useState, useEffect, useId } from 'react';
+import { useState, useEffect, useId, useRef } from 'react';
 import { Link, useSearchParams, useLocation } from 'react-router-dom';
 import { ArrowRight, Mail, Lock, User, Phone, Calendar, Gift, ChevronDown, AlertCircle, Info, Eye, EyeOff, BookOpen, GraduationCap, MapPin, Search } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
@@ -40,7 +40,10 @@ export default function Register() {
   const [referencesError, setReferencesError] = useState(false);
   const [referencesLoading, setReferencesLoading] = useState(true);
   const [referenceRetry, setReferenceRetry] = useState(0);
+  const loadedReference = useRef<string | null>(null);
   useEffect(() => {
+    const key = `${form.campus_id}:${referenceRetry}`;
+    if (loadedReference.current === key) return;
     let active = true;
     setReferencesLoading(true);
     setReferencesError(false);
@@ -48,20 +51,13 @@ export default function Register() {
     setAcademicLevels([]);
     const load = async () => {
       try {
-        const campusRows = await liveApi.campuses.list();
+        const snapshot = await liveApi.auth.registrationOptions(form.campus_id ? { campus_id: form.campus_id } : {}, referenceRetry > 0);
         if (!active) return;
-        setCampuses(campusRows);
-        if (!form.campus_id && campusRows.length === 1) {
-          setForm(old => ({ ...old, campus_id: campusRows[0].id }));
-          return;
-        }
-        const [departmentRows, levelRows] = await Promise.all([
-          liveApi.departments.list(form.campus_id ? { campus_id: form.campus_id } : {}),
-          liveApi.academicLevels.list(form.campus_id ? { campus_id: form.campus_id } : {}),
-        ]);
-        if (!active) return;
-        setDepartments(departmentRows);
-        setAcademicLevels(levelRows);
+        setCampuses(snapshot.campuses);
+        setDepartments(snapshot.departments);
+        setAcademicLevels(snapshot.levels);
+        loadedReference.current = `${snapshot.campus_id || form.campus_id}:${referenceRetry}`;
+        if (!form.campus_id && snapshot.campus_id) setForm(old => ({ ...old, campus_id: snapshot.campus_id }));
       } catch { if (active) setReferencesError(true); }
       finally { if (active) setReferencesLoading(false); }
     };
@@ -134,6 +130,8 @@ export default function Register() {
         phone,
         date_of_birth: form.date_of_birth,
         campus_id: form.campus_id || undefined,
+        department_id: form.department_id,
+        academic_level_id: form.academic_level_id,
         department: departments.find((d) => d.id === form.department_id)?.name || undefined,
         academic_level: (() => { const l = academicLevels.find((x) => x.id === form.academic_level_id); return l ? (l.value || l.name || l.label || l.level) : undefined; })(),
         referred_by_code: form.referred_by || undefined,

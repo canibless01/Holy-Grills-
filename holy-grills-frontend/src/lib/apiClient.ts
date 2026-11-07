@@ -134,6 +134,7 @@ type RequestOptions = RequestInit & { _retried?: boolean; timeoutMs?: number };
 const PUBLIC_STOREFRONT_READS = new Set([
   '/storefront/sections', '/storefront/banners', '/storefront/early-supporters',
   '/storefront/config/public', '/storefront/feature-flags',
+  '/auth/registration-options', '/campuses',
 ]);
 
 /**
@@ -249,6 +250,7 @@ async function request(path: string, options: RequestOptions = {}) {
   }
 
   const data = await res.json().catch(() => null);
+  if (version !== sessionVersion) throw new ApiError(0, 'Session changed — please retry.');
   if (options.method && !['GET', 'HEAD'].includes(options.method)) invalidateCatalogReads();
 
   if (!res.ok) {
@@ -311,6 +313,7 @@ async function requestRaw(path: string, options: RequestOptions = {}) {
   }
 
   const text = await res.text();
+  if (version !== sessionVersion) throw new ApiError(0, 'Session changed — please retry.');
 
   if (!res.ok) {
     let msg = `Request failed (${res.status})`;

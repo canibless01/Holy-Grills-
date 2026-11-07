@@ -207,6 +207,12 @@ class TableQuery:
         return self
 
     @staticmethod
+    def _scalar_val(value):
+        # requests encodes the parameter. Quotes in a simple eq/ilike value are
+        # literal text in PostgREST, unlike the quoted literals inside in.(...).
+        return str(value).lower() if isinstance(value, bool) else str(value)
+
+    @staticmethod
     def _escape_val(v) -> str:
         """Format filter values for PostgREST query parameters."""
         if v is None:
@@ -222,34 +228,34 @@ class TableQuery:
         if value is None:
             self._filters.append(f"{column}=is.null")
         else:
-            self._filters.append(f"{column}=eq.{self._escape_val(value)}")
+            self._filters.append(f"{column}=eq.{self._scalar_val(value)}")
         return self
 
     def neq(self, column: str, value) -> "TableQuery":
         if value is None:
             self._filters.append(f"{column}=is.not.null")
         else:
-            self._filters.append(f"{column}=neq.{self._escape_val(value)}")
+            self._filters.append(f"{column}=neq.{self._scalar_val(value)}")
         return self
 
     def gt(self, column: str, value) -> "TableQuery":
-        self._filters.append(f"{column}=gt.{self._escape_val(value)}")
+        self._filters.append(f"{column}=gt.{self._scalar_val(value)}")
         return self
 
     def gte(self, column: str, value) -> "TableQuery":
-        self._filters.append(f"{column}=gte.{self._escape_val(value)}")
+        self._filters.append(f"{column}=gte.{self._scalar_val(value)}")
         return self
 
     def lt(self, column: str, value) -> "TableQuery":
-        self._filters.append(f"{column}=lt.{self._escape_val(value)}")
+        self._filters.append(f"{column}=lt.{self._scalar_val(value)}")
         return self
 
     def lte(self, column: str, value) -> "TableQuery":
-        self._filters.append(f"{column}=lte.{self._escape_val(value)}")
+        self._filters.append(f"{column}=lte.{self._scalar_val(value)}")
         return self
 
     def ilike(self, column: str, pattern: str) -> "TableQuery":
-        self._filters.append(f"{column}=ilike.{self._escape_val(pattern)}")
+        self._filters.append(f"{column}=ilike.{self._scalar_val(pattern)}")
         return self
 
     def in_(self, column: str, values: list) -> "TableQuery":
@@ -454,7 +460,7 @@ class _NotProxy:
         if value is None:
             self._query._filters.append(f"{column}=not.is.null")
         else:
-            self._query._filters.append(f"{column}=not.eq.{TableQuery._escape_val(value)}")
+            self._query._filters.append(f"{column}=not.eq.{TableQuery._scalar_val(value)}")
         return self._query
 
     def in_(self, column: str, values: list) -> "TableQuery":

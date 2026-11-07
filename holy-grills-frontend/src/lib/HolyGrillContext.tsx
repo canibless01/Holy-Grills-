@@ -1,4 +1,4 @@
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { liveApi, isAuthenticated, clearTokens } from './liveApi';
 import { apiClient } from './apiClient';
@@ -116,7 +116,7 @@ const normalizeHpBalance = (me) => {
 // The specifier must match App.tsx's lazy(() => import(...)) exactly, so the
 // browser reuses the same chunk instead of fetching a second copy.
 const warmRouteChunk = (loader) => {
-  try { void loader(); } catch { /* a failed warm-up must never break sign-in */ }
+  try { void loader().catch(() => {}); } catch { /* a failed warm-up must never break sign-in */ }
 };
 
 const warmPostLoginChunks = (role) => {
@@ -126,7 +126,7 @@ const warmPostLoginChunks = (role) => {
   // neither navigation waits on a chunk fetch.
   if (role === 'kitchen') warmRouteChunk(() => import('@/pages/Kitchen'));
   else if (role === 'rider') warmRouteChunk(() => import('@/pages/Rider'));
-  else if (role === 'admin' || role === 'super_admin') warmRouteChunk(() => import('@/pages/Admin'));
+  else if (role === 'admin' || role === 'super_admin' || role === 'community_manager') warmRouteChunk(() => import('@/pages/Admin'));
   else warmRouteChunk(() => import('@/pages/Dashboard'));
   warmRouteChunk(() => import('@/pages/Menu'));
 };
@@ -134,6 +134,7 @@ const warmPostLoginChunks = (role) => {
 export const HolyGrillProvider = ({ children }) => {
   const featureVersion = useFeatureFlags();
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const publicPage = ['/', '/menu', '/faq', '/contact', '/our-story', '/terms'].includes(pathname) || pathname.startsWith('/menu/');
   useMessages();
   const [user, setUser] = useState(null);
@@ -320,7 +321,6 @@ export const HolyGrillProvider = ({ children }) => {
             refreshHp(),
             refreshWallet(),
             refreshSavedItems(),
-            liveApi.auth.getStreak().then(setStreak).catch(() => {}),
             loadSystemSettings().then(setSystemSettings).catch(() => {}),
             loadFeatureFlags().catch(() => {}),
             loadTiers().catch(() => {}),
@@ -386,7 +386,7 @@ export const HolyGrillProvider = ({ children }) => {
     // Warm the destination chunk in the same breath, so the redirect lands on a
     // rendered page instead of the Suspense fallback.
     warmPostLoginChunks(profile?.role || data?.user?.role);
-    Promise.allSettled([refreshCart(), refreshNotifications(), refreshHp(), refreshWallet(), refreshSavedItems(), liveApi.auth.getStreak().then(setStreak).catch(() => {}), loadSystemSettings().then(setSystemSettings).catch(() => {}), loadFeatureFlags().catch(() => {}), loadTiers().catch(() => {})]);
+    Promise.allSettled([refreshCart(), refreshNotifications(), refreshHp(), refreshWallet(), refreshSavedItems(), loadSystemSettings().then(setSystemSettings).catch(() => {}), loadFeatureFlags().catch(() => {}), loadTiers().catch(() => {})]);
     return { ...data, role: profile.role || data?.user?.role || 'student' };
   };
 
@@ -411,7 +411,7 @@ export const HolyGrillProvider = ({ children }) => {
 
   const logout = async () => {
     restoreVersion.current += 1; welcomeRecoveryUser.current = null;
-    try { await liveApi.auth.logout(); } catch { /* ignore */ }
+    void liveApi.auth.logout().catch(() => {});
     clearTokens();
     localStore.removeItem('hg_admin_campus_id');
     localStore.removeItem('hg_admin_scope_all');
@@ -422,8 +422,9 @@ export const HolyGrillProvider = ({ children }) => {
     logoutOneSignal().catch(() => {});
     setUser(null); setHpBalance(null); setWallet(null);
     setNotifications([]); setUnreadCount(0); setStreak(null); setSavedItems([]);
-    setAuthed(false);
+    setAuthed(false); setIsLoading(false); setSessionError(null);
     loadGuestCart();
+    navigate('/login', { replace: true });
   };
 
   const addToCart = async (body) => {

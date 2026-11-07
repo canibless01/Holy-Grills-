@@ -24,7 +24,7 @@ def _redirect_url(path_key: str, default_path: str):
     return base + current_app.config.get(path_key, default_path)
 
 
-def register(email: str, password: str, full_name: str, phone: str = None, date_of_birth: str = None, referred_by_code: str = None, department: str = None, academic_level: str = None, campus_id: str = None, nickname: str = None, promotional_emails: bool = False) -> dict:
+def register(email: str, password: str, full_name: str, phone: str = None, date_of_birth: str = None, referred_by_code: str = None, department: str = None, academic_level: str = None, campus_id: str = None, nickname: str = None, promotional_emails: bool = False, department_id: str = None, academic_level_id: str = None) -> dict:
     """
     Create a Supabase Auth user and profile.
     Returns Supabase auth session (access_token, refresh_token, user).
@@ -68,7 +68,7 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     dept_id = dept_faculty = None
     if dept_name:
         try:
-            dept_row = resolve_department(db, dept_name, campus_id)
+            dept_row = resolve_department(db, dept_name, campus_id, **({"row_id": department_id} if department_id else {}))
         except SupabaseError as e:
             logger.error("register: department lookup failed for %r: %s", dept_name, e)
             raise ValueError(MSG.REGISTER_FAILED_RETRY)
@@ -80,7 +80,7 @@ def register(email: str, password: str, full_name: str, phone: str = None, date_
     level_value = None
     if academic_level:
         try:
-            level_row = resolve_level(db, str(academic_level).strip(), campus_id)
+            level_row = resolve_level(db, str(academic_level).strip(), campus_id, **({"row_id": academic_level_id} if academic_level_id else {}))
         except SupabaseError as e:
             logger.error("register: academic level lookup failed for %r: %s", academic_level, e)
             raise ValueError(MSG.REGISTER_FAILED_RETRY)

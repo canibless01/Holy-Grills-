@@ -218,8 +218,10 @@ export const optOutOneSignal = async () => {
  */
 export const logoutOneSignal = async () => {
   registeredUserId = null; identifiedUserId = null; storedDevice = null; identityGeneration += 1;
+  const generation = identityGeneration;
   if (sdkInstance) {
     await identityTask?.promise.catch(() => {});
+    if (generation !== identityGeneration || registeredUserId) return;
     try { await sdkInstance.logout(); } catch (e) { /* ignore */ }
   }
 };

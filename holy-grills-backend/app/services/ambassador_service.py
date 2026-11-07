@@ -644,12 +644,16 @@ def set_assignment_status(db, actor_id: str, assignment_id: str,
         raise AmbassadorError(MSG.AMBASSADOR_ASSIGNMENT_NOT_FOUND, status=404)
     ambassador = db.table(AMBASSADOR_TABLE).select("*").eq(
         "profile_id", row["ambassador_id"]).single().execute()
+    if not ambassador:
+        raise AmbassadorError(MSG.AMBASSADOR_NOT_FOUND, status=404)
     assert_campus_access(ambassador)
     patch = {"status": status, "updated_by": actor_id}
     if evidence_note is not None:
         patch["evidence_note"] = evidence_note[:500]
-    updated = db.table("ambassador_promo_assignments").update(patch).eq(
-        "id", assignment_id).execute()
+    updated = db.table("ambassador_promo_assignments").eq(
+        "id", assignment_id).update(patch).execute()
+    if not updated:
+        raise AmbassadorError(MSG.AMBASSADOR_ASSIGNMENT_NOT_FOUND, status=404)
     audit(actor_id, "ambassador_promo_status", assignment_id,
           after={"status": status}, campus_id=ambassador.get("campus_id"))
     return (updated[0] if isinstance(updated, list) and updated else updated) or row

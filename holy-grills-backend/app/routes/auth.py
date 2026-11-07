@@ -175,6 +175,10 @@ def register():
         if data.get(field) is not None and not isinstance(data[field], str):
             return jsonify({"error": MSG.AUTH_FIELD_INVALID.format(field=field)}), 400
 
+    for field in ("department_id", "academic_level_id"):
+        if data.get(field) is not None and not validate_uuid(data[field]):
+            return jsonify({"error": MSG.AUTH_FIELD_INVALID.format(field=field)}), 400
+
     required = {"phone": MSG.REGISTER_PHONE_REQUIRED, "date_of_birth": MSG.REGISTER_DOB_REQUIRED,
                 "department": MSG.REGISTER_DEPARTMENT_REQUIRED, "academic_level": MSG.REGISTER_LEVEL_REQUIRED}
     for field, message in required.items():
@@ -215,6 +219,7 @@ def register():
             referred_by_code=data.get("referred_by_code"), department=data.get("department"),
             academic_level=data.get("academic_level"), campus_id=campus_id, nickname=data.get("nickname"),
             promotional_emails=data.get("promotional_emails", False),
+            **{key: data[key] for key in ("department_id", "academic_level_id") if data.get(key)},
         )
     except ValueError as e:
         err_msg = str(e)
@@ -1368,3 +1373,21 @@ def search_users():
             logger.error("search_users: fallback failed: %s", e2)
             return jsonify({"error": MSG.SEARCH_FAILED}), 500
     return jsonify({"results": results}), 200
+
+
+@auth_bp.route('/registration-options', methods=['GET'])
+def registration_options():
+    """One public, consistent reference snapshot; never creates an Auth account."""
+    campus = request.args.get('campus_id') or request.headers.get('X-Campus-ID')
+    if campus and not validate_uuid(campus):
+        return jsonify({'error': MSG.INVALID_CAMPUS_ID}), 400
+    try:
+        result = get_db().rpc('hg_registration_options', {'p_campus_id': campus or None})
+    except (SupabaseError, _req.RequestException):
+        logger.exception('Registration reference snapshot unavailable')
+        return jsonify({'error': MSG.REFERENCE_DATA_UNAVAILABLE}), 503
+    if not isinstance(result, dict):
+        return jsonify({'error': MSG.REFERENCE_DATA_UNAVAILABLE}), 503
+    if result.get('error'):
+        return jsonify({'error': MSG.CAMPUS_NOT_AVAILABLE,'campuses':result.get('campuses',[])}),400
+    return jsonify(result)

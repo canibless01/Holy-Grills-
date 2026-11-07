@@ -45,6 +45,7 @@ const naWrite = (method) => () => {
 
 // ========== AUTH ==========
 const auth = {
+  async registrationOptions(params = {}, force = false) { return apiClient.get('/auth/registration-options', params, undefined, { cacheMs: force ? 0 : 60000 }); },
   async login(body) {
     const data = await apiLogin(body.email, body.password);
     return data;
@@ -62,7 +63,15 @@ const auth = {
   // through here or it is silently dropped.
   async updateProfilePhoto(body) { return apiClient.post('/auth/profile/photo', body); },
   async changePassword(body) { return apiClient.post('/auth/change-password', body); },
-  async logout() { const r = await apiClient.post('/auth/logout'); clearTokens(); return r; },
+  async logout() {
+    // Capture this session before local logout. Never refresh or clear a newer login.
+    const token = getToken();
+    if (!token) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+    try { await fetch(`${API_BASE_URL}/auth/logout`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, signal: controller.signal }); }
+    finally { clearTimeout(timer); }
+  },
   async logoutAll() { const r = await apiClient.post('/auth/logout-all-devices'); clearTokens(); return r; },
   async deleteAccount(body) { const r = await apiClient.delete('/auth/account', body); clearTokens(); return r; },
   // Email-request step: POST /auth/reset-password { email } — sends the reset email.
@@ -1381,10 +1390,10 @@ const admin = {
 // Public student endpoints (departments.py / academic_levels.py) — NOT the
 // /admin/* versions. Used by Profile to let students pick their department + level.
 const departments = {
-  async list(params = {}) { return unwrap(await apiClient.get('/departments', params), 'departments'); },
+  async list(params = {}) { return unwrap(await apiClient.get('/departments', params, undefined, { cacheMs: 60000 }), 'departments'); },
 };
 const academicLevels = {
-  async list(params = {}) { return unwrap(await apiClient.get('/academic-levels', params), 'levels', 'academic_levels'); },
+  async list(params = {}) { return unwrap(await apiClient.get('/academic-levels', params, undefined, { cacheMs: 60000 }), 'levels', 'academic_levels'); },
   // Single-level detail — GET /academic-levels/:level_id (public).
   async get(id) { return apiClient.get(`/academic-levels/${id}`); },
 };
@@ -1394,7 +1403,7 @@ const academicLevels = {
 // everyone to select; if the public endpoint is absent this resolves to [] and
 // the gate never activates (single-campus / global fallback).
 const campuses = {
-  async list() { return unwrap(await apiClient.get('/campuses'), 'campuses'); },
+  async list() { return unwrap(await apiClient.get('/campuses', undefined, undefined, { cacheMs: 60000 }), 'campuses'); },
 };
 
 // ========== DELIVERY ==========
