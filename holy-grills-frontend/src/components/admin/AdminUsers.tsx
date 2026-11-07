@@ -309,10 +309,11 @@ function UserWorkspace({ campusId }) {
                       </select>
                       <button
                         onClick={() => (u.is_active ? setConfirmToggle(u) : handleToggle(u))}
-                        disabled={updating === u.id || (u.is_active && u.role === 'super_admin' && me?.role !== 'super_admin')}
-                        title={u.is_active
-                          ? (u.role === 'super_admin' && me?.role !== 'super_admin' ? 'Only a super admin can deactivate a super admin' : 'Deactivate account')
-                          : 'Reactivate account'}
+                        disabled={updating === u.id || isSelf || (['admin', 'super_admin'].includes(u.role) && me?.role !== 'super_admin')}
+                        title={isSelf ? msg('FE_ADMIN_USERS_YOU_CANNOT_DEACTIVATE_YOUR_OWN_ACCOUNT', 'You cannot deactivate your own account.')
+                          : ['admin', 'super_admin'].includes(u.role) && me?.role !== 'super_admin'
+                          ? msg('FE_USER_ADMIN_ACCOUNT_SUPER_ONLY', 'Only a super admin can change this admin account.')
+                          : u.is_active ? 'Deactivate account' : 'Reactivate account'}
                         className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-center active:scale-95 transition disabled:opacity-50 ${u.is_active ? 'text-destructive bg-destructive/10 hover:bg-destructive/20' : 'text-success bg-success/10 hover:bg-success/20'}`}
                       >
                         {updating === u.id

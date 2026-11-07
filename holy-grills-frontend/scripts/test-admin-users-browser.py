@@ -103,9 +103,13 @@ try:
   page.get_by_role('button',name='Confirm removal of 105 HP',exact=True).click();expect(page.get_by_text('✕ Controlled expiry balance changed',exact=True)).to_be_visible();assert users[a][1]['hp_balance']==110
   page.get_by_role('button',name='Preview deduction',exact=True).click();page.get_by_role('button',name='Confirm removal of 110 HP',exact=True).click();expect(page.get_by_text('110 HP removed. Current balance: 0 HP.',exact=True)).to_be_visible();assert users[a][1]['hp_balance']==0 and len(expiry_receipts)==2
   ctx.close()
+  users[a][0]['role']='community_manager';users[a][2]['role']='admin'
   role='admin';hold=False;ctx=browser.new_context(viewport={'width':1280,'height':1000});ctx.route('**/api/**',fixture);ctx.add_init_script("sessionStorage.setItem('hg_access_token','controlled');localStorage.setItem('hg_user_role','admin');localStorage.setItem('hg_user_campus_id','"+a+"');localStorage.setItem('hg_admin_campus_id','"+b+"');")
   page=ctx.new_page();page.on('pageerror',lambda e:errors.append(str(e)));page.goto('http://127.0.0.1:5264/admin?section=users');expect(page.get_by_text('A member 0',exact=True)).to_be_visible();assert reads[-1][0]==a;expect(page.locator('select[title="Change role"]').first.get_by_role('option',name='Super Admin',exact=True)).to_have_count(0)
+  expect(page.get_by_title('Deactivate account',exact=True).first).to_be_enabled();page.get_by_title('Deactivate account',exact=True).first.click();page.get_by_role('button',name='Deactivate',exact=True).click();expect(page.get_by_title('Reactivate account',exact=True).first).to_be_enabled();assert users[a][0]['is_active'] is False
+  page.get_by_title('Reactivate account',exact=True).first.click();expect(page.get_by_title('Reactivate account',exact=True)).to_have_count(0);assert users[a][0]['is_active'] is True
+  expect(page.get_by_title('Only a super admin can change this admin account.',exact=True)).to_be_disabled()
   ctx.close();browser.close();assert not errors,errors
- print('PASS: directory campus/stale reply isolation; drawer failed history Retry; single grant validation/latch/response-loss identity; role/active reflection; cross-page bulk names, preview, partial-loss safe retry; regular-admin role restrictions; HP programme grant identity/replay; expiry preview/latch/replay, late earning preservation, stale balance refusal and all-mode confirmation')
+ print('PASS: directory campus/stale reply isolation; drawer failed history Retry; single grant validation/latch/response-loss identity; role/active reflection; cross-page bulk names, preview, partial-loss safe retry; regular-admin role restrictions; HP programme grant identity/replay; expiry preview/latch/replay, late earning preservation, stale balance refusal and all-mode confirmation; campus admin community-manager deactivate/reactivate and protected admin accounts')
 finally:
  os.killpg(proc.pid,signal.SIGTERM);proc.wait(timeout=10)

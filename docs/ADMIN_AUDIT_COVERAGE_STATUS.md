@@ -73,3 +73,7 @@ Targeted Economics campus/date/error/retry and Analytics date/CSV controls are n
 ### Manual HP expiry — 5 November 2026
 
 [Preview, confirmation and receipt evidence](ADMIN_HP_EXPIRY_EVIDENCE_2026_11_05.md) covers native partial/all-mode deductions, failures/retries/stale previews, private grants and role/campus guards with real rolled-back ledger tests. Scheduled expiry and broader programme/identity cases remain separate.
+
+### Community-manager account control — 7 November 2026
+
+[Owner-confirmed hierarchy](COMMUNITY_MANAGER_ACCOUNT_HIERARCHY_2026_11_07.md) is verified through the API, native directory and fresh Supabase rollback cases. Own-campus manager activation/deactivation belongs to campus admins; global admin-account control remains with super admins. No database restriction was added.

@@ -45,6 +45,8 @@ ORDER_STATUSES = (
 _TOTAL_SPENT_CAP = 5000
 # Campus admins manage only these roles; admin and super_admin accounts belong to super_admin.
 _CAMPUS_ADMIN_MANAGED_ROLES = ("student", "kitchen", "rider")
+# Campus admins may activate/deactivate their own community managers as well.
+_CAMPUS_ADMIN_ACCOUNT_ROLES = (*_CAMPUS_ADMIN_MANAGED_ROLES, "community_manager")
 # The same "no longer open" set the orders code already uses.
 _TERMINAL_ORDER_STATUSES = ("delivered", "cancelled", "refunded")
 _ANONYMIZED_EMAIL_SUFFIX = "@deleted.holygrills.com.ng"  # written by hg_anonymize_user
@@ -419,7 +421,7 @@ def deactivate_user(user_id):
     if not target:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
     assert_can_modify(target.get("campus_id"))
-    if getattr(g, "user_role", None) != "super_admin" and target.get("role") not in _CAMPUS_ADMIN_MANAGED_ROLES:
+    if getattr(g, "user_role", None) != "super_admin" and target.get("role") not in _CAMPUS_ADMIN_ACCOUNT_ROLES:
         return jsonify({"error": MSG.ADMIN_ACCOUNT_CHANGE_SUPER_ONLY}), 403
     if not target.get("is_active"):
         return jsonify({"message": MSG.ADMIN_USER_ALREADY_DEACTIVATED, "user_id": user_id}), 200
@@ -486,7 +488,7 @@ def activate_user(user_id):
     if not profile:
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
     assert_can_modify(profile.get("campus_id"))
-    if getattr(g, "user_role", None) != "super_admin" and profile.get("role") not in _CAMPUS_ADMIN_MANAGED_ROLES:
+    if getattr(g, "user_role", None) != "super_admin" and profile.get("role") not in _CAMPUS_ADMIN_ACCOUNT_ROLES:
         return jsonify({"error": MSG.ADMIN_ACCOUNT_CHANGE_SUPER_ONLY}), 403
     if str(profile.get("email") or "").endswith(_ANONYMIZED_EMAIL_SUFFIX):
         # The user deleted their own account: the data is gone, so it cannot be brought back.

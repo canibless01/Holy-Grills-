@@ -429,6 +429,7 @@ class MSG:
     FE_USER_GRANT_REPLAY = "This grant was already applied."
     FE_USER_TAB_FAILED = "This history could not be loaded. Retry to see the current records."
     FE_USER_BULK_RESULT = "Granted: {awarded} · already applied: {replayed} · failed: {failed} · skipped: {skipped}"
+    FE_USER_ADMIN_ACCOUNT_SUPER_ONLY = "Only a super admin can change this admin account."
     FE_USER_NEW_GRANT = "Start new grant"
     FE_USER_GRANT_BUTTON = "Grant HP"
     FE_USER_GRANT_RECIPIENT = "Grant recipient"

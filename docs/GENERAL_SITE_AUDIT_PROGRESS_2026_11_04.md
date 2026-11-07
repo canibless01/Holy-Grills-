@@ -49,3 +49,7 @@ Evidence and remaining verification are in [stock metadata editing](ADMIN_STOCK_
 ## Manual expiry continuation — 5 November
 
 [Expiry evidence](ADMIN_HP_EXPIRY_EVIDENCE_2026_11_05.md): native preview/confirmation and service-only ledger receipt support make partial/all-active administrative expiry safe across repeats, lost responses, changed balances and later earnings. Backend 1,161 tests, native browser checks and fresh Supabase rollback cases pass. Recipient discovery, wider staff/profile boundaries, scheduled expiry and remaining settings/feature consumers remain open.
+
+## Owner-confirmed staff hierarchy — 7 November
+
+[Community-manager account control](COMMUNITY_MANAGER_ACCOUNT_HIERARCHY_2026_11_07.md): campus admins may deactivate/reactivate their own community managers. The database already supported the intended hierarchy; API/UI restrictions were corrected, with no database restriction added. Cross-campus/admin-account protections remain. Backend 1,236 tests, native UI and fresh Supabase rollback cases pass.
