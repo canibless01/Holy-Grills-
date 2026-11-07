@@ -920,7 +920,7 @@ class MSG:
     WEBHOOK_INVALID_SIGNATURE    = "Invalid signature"
     WEBHOOK_INVALID_JSON         = "Invalid JSON"
     FE_EVENT_TIER_ACTIVE = "Sell {tier} tickets"
-    FE_EVENT_SAVED_TITLE = '"{title}" has been saved.'
+    FE_EVENT_SAVED_TITLE = "\"{title}\" has been saved."
     FE_EVENT_QR_ROTATE = "Generate a new venue QR? Previous venue codes will stop working."
     FE_EVENT_GENERATE_QR = "Generate QR"
     FE_EVENT_ALREADY_ADMITTED = "This ticket was already checked in. No additional HP was awarded."
