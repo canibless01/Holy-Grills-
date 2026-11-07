@@ -60,7 +60,8 @@ export default function Profile() {
     if (!user) return;
     setReferenceReady(false); setReferenceError(false);
     try {
-      const [deps, levels] = await Promise.all([liveApi.departments.list(), liveApi.academicLevels.list()]);
+      const snapshot = await liveApi.auth.registrationOptions({ campus_id: user.campus_id || user.profile?.campus_id });
+      const deps = snapshot.departments, levels = snapshot.levels;
       setDepartments(deps); setAcademicLevels(levels);
       const saved = user.profile?.academic_level || user.academic_level;
       const matching = levels.find(l => l.value === saved || l.name === saved);

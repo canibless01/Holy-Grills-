@@ -8,7 +8,6 @@ import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { formatNaira, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, getTierAccent, getTierProgress, getTierProgressGradient, getTierOverallProgress } from '@/lib/hgUtils';
 import { orderLockMaxReschedules, referralHp } from '@/lib/appConfig';
-import DashboardSkeleton from '@/components/skeletons/DashboardSkeleton';
 import CountUp from '@/components/CountUp';
 import MascotStandee from '@/components/mascot/MascotStandee';
 import AmbassadorProgrammeCard from '@/components/AmbassadorProgrammeCard';
@@ -21,7 +20,11 @@ export default function Dashboard() {
   const [recentOrders, setRecentOrders] = useState([]);
   const [orderLocks, setOrderLocks] = useState([]);
   const rank = useCurrentRank();
-  const [loading, setLoading] = useState(true);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [locksLoading, setLocksLoading] = useState(true);
+  const [ordersError, setOrdersError] = useState(false);
+  const [locksError, setLocksError] = useState(false);
+  const [retry, setRetry] = useState(0);
   const [now, setNow] = useState(Date.now());
 
   // Tick every 60s so the order-lock countdown stays live without a reload.
@@ -31,19 +34,20 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const [orders, locks] = await Promise.all([
-          liveApi.orders.list({ limit: 10 }).catch(() => []),
-          liveApi.orderLocks.list().catch(() => []),
-        ]);
-        setRecentOrders(Array.isArray(orders) ? orders : []);
-        setOrderLocks(Array.isArray(locks) ? locks : []);
-      } catch (e) { console.error(e); }
-      setLoading(false);
-    };
-    load();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    let current = true;
+    setOrdersLoading(true); setLocksLoading(true);
+    setOrdersError(false); setLocksError(false);
+    setRecentOrders([]); setOrderLocks([]);
+    liveApi.orders.list({ limit: 10 }).then(orders => {
+      if (current) setRecentOrders(Array.isArray(orders) ? orders : []);
+    }).catch(() => { if (current) setOrdersError(true); })
+      .finally(() => { if (current) setOrdersLoading(false); });
+    liveApi.orderLocks.list().then(locks => {
+      if (current) setOrderLocks(Array.isArray(locks) ? locks : []);
+    }).catch(() => { if (current) setLocksError(true); })
+      .finally(() => { if (current) setLocksLoading(false); });
+    return () => { current = false; };
+  }, [user?.id, retry]);
 
   const hpActive = hpBalance?.active || 0;
   const streakDays = streak?.streak_count ?? streak?.current_streak ?? streak?.days ?? streak?.count ?? 0;
@@ -84,7 +88,7 @@ export default function Dashboard() {
   const orderPlacedAt = latestOrder ? new Date(latestOrder.created_date || latestOrder.created_at) : null;
   const msSinceOrder = orderPlacedAt ? now - orderPlacedAt.getTime() : null;
   const within24h = msSinceOrder !== null && msSinceOrder < 24 * 60 * 60 * 1000;
-  const showLockPrompt = !activeLocks.length && latestOrder && within24h;
+  const showLockPrompt = !ordersLoading && !locksLoading && !ordersError && !locksError && !activeLocks.length && latestOrder && within24h;
   const hoursLeft = showLockPrompt ? Math.max(0, 24 - Math.floor(msSinceOrder / (60 * 60 * 1000))) : 0;
 
   const statTiles = [
@@ -98,7 +102,6 @@ export default function Dashboard() {
     { label: 'Leaderboard', subtitle: user?.role !== 'student' ? 'Student rankings' : rank?.unranked ? 'Not ranked yet' : `${rank?.period_type === 'all_time' ? 'Overall' : 'Monthly'} rank ${rank?.rank ? '#' + myRank : '—'}`, icon: Trophy, to: '/leaderboard', bg: 'bg-primary', span: 'col-span-2 sm:col-span-1' },
   ];
 
-  if (loading) return <DashboardSkeleton />;
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -243,13 +246,23 @@ export default function Dashboard() {
         </Link>
       )}
 
+      {locksError && <p role="alert" className="text-sm text-destructive">
+        {msg('FE_DASHBOARD_LOCKS_UNAVAILABLE', 'Order locks could not be loaded.')}{' '}
+        <button onClick={() => setRetry(value => value + 1)} className="underline">{msg('FE_LOOKUP_RETRY', 'Retry')}</button>
+      </p>}
       {/* Recent Orders */}
       <div>
         <div className="flex items-center justify-between mb-2">
           <h2 className="font-heading font-bold text-lg text-foreground">Recent Orders</h2>
           <Link to="/orders" className={`text-xs font-bold ${accent.text}`}>See all →</Link>
         </div>
-        {recentOrders.length === 0 ? (
+        {ordersLoading ? (
+          <div role="status" aria-label={msg('FE_DASHBOARD_ORDERS_LOADING', 'Loading recent orders')} className="h-24 rounded-2xl bg-muted animate-pulse" />
+        ) : ordersError ? (
+          <p role="alert" className="text-sm text-destructive">{msg('FE_DASHBOARD_ORDERS_UNAVAILABLE', 'Recent orders could not be loaded.')}{' '}
+            <button onClick={() => setRetry(value => value + 1)} className="underline">{msg('FE_LOOKUP_RETRY', 'Retry')}</button>
+          </p>
+        ) : recentOrders.length === 0 ? (
           <div className="rounded-2xl bg-card border border-border p-6 text-center">
             <MascotStandee mascot="waving" className="w-24 h-24 mx-auto mb-1" alt="No orders yet" />
             <p className="text-sm text-muted-foreground">No orders yet</p>

@@ -64,11 +64,12 @@ export default function Home() {
   const myRankValue = typeof rankNo === 'number' && rankNo > 0 ? rankNo : null;
 
   useResumeEffect((background) => {
+    if (!campusId) return;
     let live = true;
     if (!background) { setFeaturedItems([]); setLoading(true); }
     const load = async () => {
       try {
-        const items = await liveApi.menu.getItems({});
+        const items = await liveApi.menu.getItems({ campus_id: campusId, available_only: 'true' });
         if (!live) return;
         // Filter for featured items client-side, fallback to any available
         // items so the carousel always has content.

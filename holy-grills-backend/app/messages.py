@@ -17,6 +17,15 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_CHECKOUT_MEAL_LOADING = "Loading your meal discounts…"
+    FE_CHECKOUT_MEAL_FAILED = "Your meal discounts could not be loaded."
+    FE_ADMIN_AMBASSADOR_APPROVE_REVIEW = "Approve review"
+    AMBASSADOR_GRANT_TERMS_INVALID = "Use whole numbers: validity 1–365 days and uses 1–100. Additional-grant authorisation must be true or false."
+    FE_DASHBOARD_LOCKS_UNAVAILABLE = "Order locks could not be loaded."
+    FE_DASHBOARD_ORDERS_LOADING = "Loading recent orders"
+    FE_DASHBOARD_ORDERS_UNAVAILABLE = "Recent orders could not be loaded."
+    FE_WALLET_HISTORY_UNAVAILABLE = "Some transaction history could not be loaded."
+    FE_WALLET_BALANCE_LOADING = "Loading wallet balance"
     FE_SUNDAY_CLOSED_TITLE = "We’re closed on Sundays"
     FE_SUNDAY_MONDAY_BODY = "We don’t open on Sundays. Place your order today and we’ll prepare and deliver it on Monday."
     FE_SUNDAY_NEXT_BODY = "We don’t open on Sundays. You can still place your order for the next available delivery day."
