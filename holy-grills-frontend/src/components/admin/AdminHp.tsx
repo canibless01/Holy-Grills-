@@ -3,6 +3,7 @@ import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
 import { useCampus } from '@/lib/campusContext';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { msg } from '@/lib/messages';
+import AdminUserPicker from './AdminUserPicker';
 import { Flame, TrendingUp, TrendingDown, Sparkles, Play } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
@@ -44,6 +45,7 @@ function HpWorkspace({ campusId }) {
   const [grantAmount, setGrantAmount] = useState<string | number>(100);
   const [grantReason, setGrantReason] = useState('Manual grant');
   const [grantMsg, setGrantMsg] = useState(null);
+  const [grantBusy, setGrantBusy] = useState(false);
 
   // expire HP
   const [expireUserId, setExpireUserId] = useState('');
@@ -66,7 +68,7 @@ function HpWorkspace({ campusId }) {
   useEffect(() => { load(); }, []);
 
   const runBulk = async () => {
-    if (bulkWriting.current) return;
+    if (bulkWriting.current || !segment) return;
     bulkWriting.current = true;
     setSubmitting(true);
     const body: Record<string, unknown> = { amount: Number(amount), reason: reason.trim(), ...(campusId ? { campus_id: campusId } : {}) };
@@ -89,12 +91,12 @@ function HpWorkspace({ campusId }) {
 
   const runGrant = async () => {
     if (!grantUserId || grantWriting.current) return;
-    grantWriting.current = true;
+    grantWriting.current = true; setGrantBusy(true);
     try {
       const { request_id, ...payload } = grantIntent.body({ user_id: grantUserId, amount: Number(grantAmount), notes: grantReason.trim() });
       setGrantMsg(await mockApi.admin.grantHpToUser(grantUserId, { ...payload, grant_id: request_id })); await load();
     } catch (e) { setGrantMsg({ error: e.message }); }
-    finally { grantWriting.current = false; }
+    finally { grantWriting.current = false; setGrantBusy(false); }
   };
 
   const expiryKey = JSON.stringify([expireUserId, expireAmount, expireReason.trim()]);
@@ -157,14 +159,11 @@ function HpWorkspace({ campusId }) {
         <Card>
           <SectionHeader title="Bulk HP Grant" action={<Pill tone="flame">admin</Pill>} />
           <p className="text-[11px] text-muted-foreground mb-3">Grant HP to all active users or one user. Dry-run first to preview (POST /admin/hp/bulk-grant).</p>
-          <div className="space-y-3">
+          <fieldset disabled={submitting} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <Field label="Amount (HP)"><TextInput type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
               <Field label="Recipients">
-                <select value={segment} onChange={(e) => setSegment(e.target.value)} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">
-                  <option value="all">All active users</option>
-                  {users.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-                </select>
+                <AdminUserPicker users={users} value={segment} onChange={setSegment} campusId={campusId} disabled={submitting} label={msg('FE_USER_BULK_RECIPIENT', 'Bulk recipient')} searchLabel={msg('FE_USER_BULK_SEARCH', 'Find bulk recipient')} allLabel={msg('FE_USER_ALL_ACTIVE_SCOPE', 'All active users in this scope')} />
               </Field>
             </div>
             <Field label="Reason"><TextInput value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
@@ -182,10 +181,10 @@ function HpWorkspace({ campusId }) {
               <Toggle checked={dryRun} onChange={setDryRun} />
               <span className="text-xs font-semibold text-foreground">Dry run (preview only — no HP credited)</span>
             </div>
-            <button onClick={runBulk} disabled={submitting} className="flex items-center gap-1.5 w-full py-2.5 rounded-full bg-gradient-cta text-white text-sm font-bold disabled:opacity-50">
+            <button onClick={runBulk} disabled={submitting || !segment} className="flex items-center gap-1.5 w-full py-2.5 rounded-full bg-gradient-cta text-white text-sm font-bold disabled:opacity-50">
               <Play className="w-4 h-4" /> {dryRun ? 'Preview grant' : 'Grant HP'}
             </button>
-            {result && !result.error && !result.dry_run && !result.failed_count && <button onClick={() => { bulkIntent.clear(); setResult(null); setBulkPreviewKey(''); setDryRun(true); }} className="text-xs font-bold text-primary">{msg('FE_USER_NEW_GRANT', 'Start new grant')}</button>}
+            {result && !result.error && !result.dry_run && !result.failed_count && <button onClick={() => { if (!bulkWriting.current) { bulkIntent.clear(); setResult(null); setBulkPreviewKey(''); setDryRun(true); } }} className="text-xs font-bold text-primary">{msg('FE_USER_NEW_GRANT', 'Start new grant')}</button>}
             {result && (
               <div className="rounded-xl bg-muted border border-border p-3 text-xs space-y-1">
                 {result.error ? <span className="text-destructive">✕ {result.error}</span> : (
@@ -204,7 +203,7 @@ function HpWorkspace({ campusId }) {
                 )}
               </div>
             )}
-          </div>
+          </fieldset>
         </Card>
 
         <Card>
@@ -212,17 +211,14 @@ function HpWorkspace({ campusId }) {
           <p className="text-[11px] text-muted-foreground mb-3">Grant HP to one user (POST /hp/admin/grant — body: user_id, amount, notes).</p>
           <div className="space-y-3">
             <Field label="User">
-              <select aria-label={msg('FE_USER_GRANT_RECIPIENT', 'Grant recipient')} value={grantUserId} onChange={(e) => setGrantUserId(e.target.value)} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">
-                <option value="">Select user…</option>
-                {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} · {u.hp_balance} HP</option>)}
-              </select>
+              <AdminUserPicker users={users} value={grantUserId} onChange={setGrantUserId} campusId={campusId} disabled={grantBusy} label={msg('FE_USER_GRANT_RECIPIENT', 'Grant recipient')} searchLabel={msg('FE_USER_GRANT_SEARCH', 'Find grant recipient')} />
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Amount (HP)"><TextInput aria-label={msg('FE_USER_GRANT_LABEL', 'HP amount')} type="number" value={grantAmount} onChange={(e) => setGrantAmount(e.target.value)} /></Field>
-              <Field label="Notes"><TextInput aria-label={msg('FE_USER_GRANT_REASON', 'Grant reason')} value={grantReason} onChange={(e) => setGrantReason(e.target.value)} /></Field>
+              <Field label="Amount (HP)"><TextInput aria-label={msg('FE_USER_GRANT_LABEL', 'HP amount')} disabled={grantBusy} type="number" value={grantAmount} onChange={(e) => setGrantAmount(e.target.value)} /></Field>
+              <Field label="Notes"><TextInput aria-label={msg('FE_USER_GRANT_REASON', 'Grant reason')} disabled={grantBusy} value={grantReason} onChange={(e) => setGrantReason(e.target.value)} /></Field>
             </div>
-            <button onClick={runGrant} disabled={!grantUserId} className="w-full py-2.5 rounded-full bg-foreground text-white text-sm font-bold disabled:opacity-50">Grant to user</button>
-            {grantMsg && !grantMsg.error && <button onClick={() => { grantIntent.clear(); setGrantMsg(null); }} className="text-xs font-bold text-primary">{msg('FE_USER_NEW_GRANT', 'Start new grant')}</button>}
+            <button onClick={runGrant} disabled={!grantUserId || grantBusy} className="w-full py-2.5 rounded-full bg-foreground text-white text-sm font-bold disabled:opacity-50">Grant to user</button>
+            {grantMsg && !grantMsg.error && <button disabled={grantBusy} onClick={() => { if (!grantWriting.current) { grantIntent.clear(); setGrantMsg(null); } }} className="text-xs font-bold text-primary">{msg('FE_USER_NEW_GRANT', 'Start new grant')}</button>}
             {grantMsg && (
               <div className={`rounded-xl p-3 text-xs ${grantMsg.error ? 'tone-error border border-destructive/30 text-destructive' : 'tone-success border border-success/30 text-success'}`}>
                 {grantMsg.error ? `✕ ${grantMsg.error}` : grantMsg.replayed ? msg('FE_USER_GRANT_REPLAY', 'This grant was already applied.') : <>✓ {grantMsg.amount} HP granted. New balance: <span className="font-bold">{grantMsg.new_balance?.toLocaleString()}</span> HP</>}
@@ -237,10 +233,7 @@ function HpWorkspace({ campusId }) {
         <p className="text-[11px] text-muted-foreground mb-3">{msg('FE_HP_EXPIRY_HELP', 'Preview the deduction before confirming. Leave the amount blank to remove the active HP shown in the preview.')}</p>
         <div className="space-y-3">
           <Field label="User">
-            <select aria-label={msg('FE_HP_EXPIRY_RECIPIENT', 'Deduction recipient')} disabled={expiryBusy} value={expireUserId} onChange={(e) => { setExpireUserId(e.target.value); setExpirePreview(null); }} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">
-              <option value="">Select user…</option>
-              {users.map((u) => <option key={u.id} value={u.id}>{u.full_name} · {u.hp_balance} HP</option>)}
-            </select>
+            <AdminUserPicker users={users} value={expireUserId} onChange={id => { setExpireUserId(id); setExpirePreview(null); }} campusId={campusId} disabled={expiryBusy} label={msg('FE_HP_EXPIRY_RECIPIENT', 'Deduction recipient')} searchLabel={msg('FE_USER_EXPIRY_SEARCH', 'Find deduction recipient')} />
           </Field>
           <Field label="Amount (HP) — leave blank to expire all"><TextInput aria-label={msg('FE_HP_EXPIRY_AMOUNT', 'HP to remove (blank for all active HP)')} disabled={expiryBusy} type="number" min="1" step="1" value={expireAmount} onChange={(e) => { setExpireAmount(e.target.value); setExpirePreview(null); }} /></Field>
           <Field label={msg('FE_HP_EXPIRY_REASON', 'Deduction reason')}><TextInput aria-label={msg('FE_HP_EXPIRY_REASON', 'Deduction reason')} disabled={expiryBusy} maxLength={200} value={expireReason} onChange={e => { setExpireReason(e.target.value); setExpirePreview(null); }} /></Field>

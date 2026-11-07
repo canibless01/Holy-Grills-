@@ -5,7 +5,7 @@ from urllib.parse import urlparse,parse_qs
 from playwright.sync_api import sync_playwright,expect
 repo=Path(__file__).resolve().parents[1];out=Path(tempfile.mkdtemp(prefix='hg-users-'))
 a='11111111-1111-4111-8111-111111111111';b='22222222-2222-4222-8222-222222222222';actor='44444444-4444-4444-8444-444444444444'
-role='super_admin';reads=[];hold=False;held=[];read_fail=False;wallet_fail=False;single_loss=True;bulk_loss=True;single_writes=[];bulk_writes=[];receipts={};errors=[];expiry_loss=True;expiry_writes=[];expiry_receipts={}
+role='super_admin';reads=[];hold=False;held=[];read_fail=False;wallet_fail=False;single_loss=True;bulk_loss=True;single_writes=[];bulk_writes=[];receipts={};errors=[];expiry_loss=True;expiry_writes=[];expiry_receipts={};search_hold=False;search_routes=[]
 expect.set_options(timeout=15000)
 users={c:[{'id':str(uuid.UUID(int=i+100+(0 if c==a else 1000))),'full_name':f'{label} member {i}','email':f'user-{i}@example.invalid','role':'student','campus_id':c,'is_active':True,'hp_balance':100,'wallet_balance':0,'created_at':'2026-11-05T12:00:00Z'} for i in range(25)] for c,label in ((a,'A'),(b,'B'))}
 def member(uid):return next(u for group in users.values() for u in group if u['id']==uid)
@@ -19,6 +19,7 @@ def fixture(route):
   campus=q.get('campus_id',[None])[0];reads.append((campus,q));assert campus in (a,b)
   if read_fail:route.fulfill(status=503,json={'error':'Controlled directory failure'});return
   if hold and campus==a:held.append(route);return
+  if search_hold and q.get('q')==['user-24@example.invalid']:search_routes.append(route);return
   rows=users[campus]
   if q.get('q'):rows=[u for u in rows if q['q'][0].lower() in u['full_name'].lower() or q['q'][0].lower() in u['email'].lower()]
   if q.get('role'):rows=[u for u in rows if u['role']==q['role'][0]]
@@ -41,7 +42,7 @@ def fixture(route):
   data={'amount':body['amount'],'awarded':0 if replay else body['amount'],'replayed':replay,'new_balance':u['hp_balance']}
  elif path.endswith('/admin/hp/bulk-grant'):
   body=req.post_data_json;bulk_writes.append(body);assert body['campus_id']==a
-  if body['dry_run']:data={'grant_id':body['grant_id'],'matched_count':len(body['user_ids'])}
+  if body['dry_run']:data={'dry_run':True,'grant_id':body['grant_id'],'matched_count':len(body['user_ids']),'amount_per_user':body['amount'],'total_hp_to_award':len(body['user_ids'])*body['amount']}
   else:
    awarded=0;replayed=0
    for uid in body['user_ids']:
@@ -92,16 +93,26 @@ try:
   read_fail=True;page.reload();expect(page.get_by_text("We couldn't load this page. Please try again.",exact=True)).to_be_visible();read_fail=False;page.get_by_role('button',name='Retry',exact=True).click();expect(page.get_by_text('B member 0',exact=True)).to_be_visible()
   hold=False;page.get_by_role('button',name='Campus B',exact=True).click();page.get_by_role('button',name='Campus A',exact=True).click()
   page.goto('http://127.0.0.1:5264/admin?section=hp');expect(page.get_by_label('Grant recipient',exact=True)).to_be_visible();assert reads[-1][0]==a
-  page.get_by_label('Grant recipient',exact=True).select_option(users[a][1]['id']);page.get_by_label('HP amount',exact=True).fill('20');page.get_by_label('Grant reason',exact=True).fill('Programme browser grant');single_loss=True
+  expect(page.get_by_label('Grant recipient',exact=True).locator('option[value="'+users[a][24]['id']+'"]')).to_have_count(0)
+  search_hold=True;page.get_by_label('Find grant recipient',exact=True).fill('user-24@example.invalid');page.wait_for_timeout(350);assert search_routes
+  page.get_by_label('Find grant recipient',exact=True).fill('user-1@example.invalid');expect(page.get_by_label('Grant recipient',exact=True).locator('option[value="'+users[a][1]['id']+'"]')).to_have_count(1)
+  for route in search_routes:route.fulfill(status=200,json=[users[a][24]])
+  expect(page.get_by_label('Grant recipient',exact=True).locator('option[value="'+users[a][24]['id']+'"]')).to_have_count(0)
+  search_hold=False;read_fail=True;page.get_by_label('Find grant recipient',exact=True).fill('user-24@example.invalid');expect(page.get_by_role('alert')).to_contain_text('Controlled directory failure');read_fail=False;page.get_by_role('alert').get_by_role('button',name='Retry',exact=True).click();expect(page.get_by_label('Grant recipient',exact=True).locator('option[value="'+users[a][24]['id']+'"]')).to_have_count(1)
+  page.get_by_label('Grant recipient',exact=True).select_option(users[a][24]['id']);page.get_by_label('HP amount',exact=True).fill('20');page.get_by_label('Grant reason',exact=True).fill('Programme browser grant');single_loss=True
   page.get_by_role('button',name='Grant to user',exact=True).evaluate('(b)=>{b.click();b.click()}');expect(page.get_by_text('✕ Controlled committed single grant response loss',exact=True)).to_be_visible()
-  page.get_by_role('button',name='Grant to user',exact=True).click();expect(page.get_by_text('This grant was already applied.',exact=True)).to_be_visible();assert len(single_writes)==4 and single_writes[2]==single_writes[3] and users[a][1]['hp_balance']==120
-  page.get_by_label('Deduction recipient',exact=True).select_option(users[a][1]['id']);page.get_by_label('HP to remove (blank for all active HP)',exact=True).fill('25');page.get_by_label('Deduction reason',exact=True).fill('Controlled expiry')
+  page.get_by_role('button',name='Grant to user',exact=True).click();expect(page.get_by_text('This grant was already applied.',exact=True)).to_be_visible();assert len(single_writes)==4 and single_writes[2]==single_writes[3] and users[a][24]['hp_balance']==170
+  expect(page.get_by_label('Grant recipient',exact=True)).to_have_value(users[a][24]['id'])
+  page.get_by_label('Find deduction recipient',exact=True).fill('user-24@example.invalid');expect(page.get_by_label('Deduction recipient',exact=True).locator('option[value="'+users[a][24]['id']+'"]')).to_have_count(1)
+  page.get_by_label('Deduction recipient',exact=True).select_option(users[a][24]['id']);page.get_by_label('HP to remove (blank for all active HP)',exact=True).fill('25');page.get_by_label('Deduction reason',exact=True).fill('Controlled expiry')
   expect(page.get_by_role('button',name='Confirm removal of 25 HP',exact=True)).to_have_count(0);page.get_by_role('button',name='Preview deduction',exact=True).click();expect(page.get_by_role('button',name='Confirm removal of 25 HP',exact=True)).to_be_visible()
-  page.get_by_role('button',name='Confirm removal of 25 HP',exact=True).evaluate('(b)=>{b.click();b.click()}');expect(page.get_by_text('✕ Controlled committed expiry response loss',exact=True)).to_be_visible();assert users[a][1]['hp_balance']==105
-  page.get_by_role('button',name='Confirm removal of 25 HP',exact=True).click();expect(page.get_by_text('This deduction was already applied. Current balance: 105 HP.',exact=True)).to_be_visible();assert len(expiry_writes)==2 and expiry_writes[0]==expiry_writes[1] and users[a][1]['hp_balance']==105
-  page.get_by_label('HP to remove (blank for all active HP)',exact=True).fill('');page.get_by_role('button',name='Preview deduction',exact=True).click();expect(page.get_by_role('button',name='Confirm removal of 105 HP',exact=True)).to_be_visible();users[a][1]['hp_balance']+=5
-  page.get_by_role('button',name='Confirm removal of 105 HP',exact=True).click();expect(page.get_by_text('✕ Controlled expiry balance changed',exact=True)).to_be_visible();assert users[a][1]['hp_balance']==110
-  page.get_by_role('button',name='Preview deduction',exact=True).click();page.get_by_role('button',name='Confirm removal of 110 HP',exact=True).click();expect(page.get_by_text('110 HP removed. Current balance: 0 HP.',exact=True)).to_be_visible();assert users[a][1]['hp_balance']==0 and len(expiry_receipts)==2
+  page.get_by_role('button',name='Confirm removal of 25 HP',exact=True).evaluate('(b)=>{b.click();b.click()}');expect(page.get_by_text('✕ Controlled committed expiry response loss',exact=True)).to_be_visible();assert users[a][24]['hp_balance']==155
+  page.get_by_role('button',name='Confirm removal of 25 HP',exact=True).click();expect(page.get_by_text('This deduction was already applied. Current balance: 155 HP.',exact=True)).to_be_visible();assert len(expiry_writes)==2 and expiry_writes[0]==expiry_writes[1] and users[a][24]['hp_balance']==155
+  page.get_by_label('HP to remove (blank for all active HP)',exact=True).fill('');page.get_by_role('button',name='Preview deduction',exact=True).click();expect(page.get_by_role('button',name='Confirm removal of 155 HP',exact=True)).to_be_visible();users[a][24]['hp_balance']+=5
+  page.get_by_role('button',name='Confirm removal of 155 HP',exact=True).click();expect(page.get_by_text('✕ Controlled expiry balance changed',exact=True)).to_be_visible();assert users[a][24]['hp_balance']==160
+  page.get_by_role('button',name='Preview deduction',exact=True).click();page.get_by_role('button',name='Confirm removal of 160 HP',exact=True).click();expect(page.get_by_text('160 HP removed. Current balance: 0 HP.',exact=True)).to_be_visible();assert users[a][24]['hp_balance']==0 and len(expiry_receipts)==2
+  page.get_by_label('Find bulk recipient',exact=True).fill('not-a-real-matching-user');expect(page.get_by_label('Bulk recipient',exact=True)).to_have_value('');expect(page.get_by_role('button',name='Preview grant',exact=True)).to_be_disabled()
+  page.get_by_label('Find bulk recipient',exact=True).fill('user-24@example.invalid');expect(page.get_by_label('Bulk recipient',exact=True).locator('option[value="'+users[a][24]['id']+'"]')).to_have_count(1);page.get_by_label('Bulk recipient',exact=True).select_option(users[a][24]['id']);page.get_by_role('button',name='Preview grant',exact=True).click();expect(page.get_by_text('Dry-run preview',exact=True)).to_be_visible();assert bulk_writes[-1]['user_ids']==[users[a][24]['id']] and bulk_writes[-1]['dry_run'] and users[a][24]['hp_balance']==0
   ctx.close()
   users[a][0]['role']='community_manager';users[a][2]['role']='admin'
   role='admin';hold=False;ctx=browser.new_context(viewport={'width':1280,'height':1000});ctx.route('**/api/**',fixture);ctx.add_init_script("sessionStorage.setItem('hg_access_token','controlled');localStorage.setItem('hg_user_role','admin');localStorage.setItem('hg_user_campus_id','"+a+"');localStorage.setItem('hg_admin_campus_id','"+b+"');")
@@ -110,6 +121,6 @@ try:
   page.get_by_title('Reactivate account',exact=True).first.click();expect(page.get_by_title('Reactivate account',exact=True)).to_have_count(0);assert users[a][0]['is_active'] is True
   expect(page.get_by_title('Only a super admin can change this admin account.',exact=True)).to_be_disabled()
   ctx.close();browser.close();assert not errors,errors
- print('PASS: directory campus/stale reply isolation; drawer failed history Retry; single grant validation/latch/response-loss identity; role/active reflection; cross-page bulk names, preview, partial-loss safe retry; regular-admin role restrictions; HP programme grant identity/replay; expiry preview/latch/replay, late earning preservation, stale balance refusal and all-mode confirmation; campus admin community-manager deactivate/reactivate and protected admin accounts')
+ print('PASS: directory campus/stale reply isolation; drawer failed history Retry; single grant validation/latch/response-loss identity; role/active reflection; cross-page bulk names, preview, partial-loss safe retry; regular-admin role restrictions; HP programme grant identity/replay; expiry preview/latch/replay, late earning preservation, stale balance refusal and all-mode confirmation; campus admin community-manager deactivate/reactivate and protected admin accounts; email lookup beyond first page, stale search isolation, search Retry and selected identity retention')
 finally:
  os.killpg(proc.pid,signal.SIGTERM);proc.wait(timeout=10)

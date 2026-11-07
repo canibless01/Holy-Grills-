@@ -53,3 +53,7 @@ Evidence and remaining verification are in [stock metadata editing](ADMIN_STOCK_
 ## Owner-confirmed staff hierarchy — 7 November
 
 [Community-manager account control](COMMUNITY_MANAGER_ACCOUNT_HIERARCHY_2026_11_07.md): campus admins may deactivate/reactivate their own community managers. The database already supported the intended hierarchy; API/UI restrictions were corrected, with no database restriction added. Cross-campus/admin-account protections remain. Backend 1,236 tests, native UI and fresh Supabase rollback cases pass.
+
+## HP recipient discovery — 7 November
+
+[Recipient-search evidence](ADMIN_HP_RECIPIENT_SEARCH_2026_11_07.md): single/bulk grants and manual expiry search the existing scoped directory beyond its initial page. Native browser tests prove stale-response isolation, failure/Retry, identity retention and empty-selection bulk safety. TypeScript and targeted ESLint pass; no database migration or real grants are involved. Remaining settings/consumer and wider staff/identity cases remain open.
