@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Webhook, RefreshCw, Check, X, AlertTriangle, Clock } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
@@ -6,6 +6,7 @@ import { formatDateTime, timeAgo } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Skeleton, EmptyState, Pill, BreakdownTiles } from './ui/AdminKit';
 import { msg } from '@/lib/messages';
+import { useCampus } from '@/lib/campusContext';
 
 // GET /admin/webhook-events — the platform's recent webhook delivery log.
 // Each row carries the provider, event, status, HTTP code, and timestamps so
@@ -31,6 +32,13 @@ const statusTone = (s) => {
 };
 
 export default function AdminWebhooks() {
+  const { adminCampusId } = useCampus();
+  const readVersion = useRef(0);
+  const writeLock = useRef(false);
+  const scopeVersion = useRef(0);
+  const [error, setError] = useState('');
+  const [offset, setOffset] = useState(0);
+  const pageSize = 50;
   const [events, setEvents] = useState(null);
   const [expanded, setExpanded] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -38,38 +46,43 @@ export default function AdminWebhooks() {
   const [retrying, setRetrying] = useState(null);
 
   const load = async () => {
-    setRefreshing(true);
+    const version = ++readVersion.current;
+    setRefreshing(true); setError('');
     try {
-      const params: Record<string, unknown> = {};
+      const params: Record<string, unknown> = { limit: pageSize, offset, ...(adminCampusId ? {campus_id: adminCampusId} : {}) };
       if (filters.provider) params.provider = filters.provider;
       if (filters.status) params.status = filters.status;
       if (filters.from_date) params.from_date = filters.from_date;
       if (filters.to_date) params.to_date = filters.to_date;
       const list = await liveApi.admin.getWebhookEvents(params);
       const arr = (Array.isArray(list) ? list : []).sort((a, b) => new Date(b.created_at || b.received_at || 0).getTime() - new Date(a.created_at || a.received_at || 0).getTime());
-      setEvents(arr);
+      if (version === readVersion.current) setEvents(arr);
     } catch (e) {
-      toast({ title: msg('FE_ADMIN_WEBHOOKS_COULDN_T_LOAD_WEBHOOK_EVENTS', "Couldn't load webhook events"), description: e.message, variant: 'destructive' });
-      setEvents([]);
-    }
-    setRefreshing(false);
+      if (version === readVersion.current) { setError(e.message || msg('FE_ADMIN_WEBHOOKS_COULDN_T_LOAD_WEBHOOK_EVENTS', "Couldn't load webhook events")); setEvents(null); }
+    } finally { if (version === readVersion.current) setRefreshing(false); }
   };
 
-  useEffect(() => { load(); }, [filters.provider, filters.status, filters.from_date, filters.to_date]);
+  useEffect(() => { scopeVersion.current++; setOffset(0); setExpanded(null); }, [adminCampusId]);
+  useEffect(() => { setExpanded(null); setEvents(null); void load(); return () => { readVersion.current++; }; }, [filters.provider, filters.status, filters.from_date, filters.to_date, adminCampusId, offset]);
+  const changeFilters = (next) => { setOffset(0); setFilters(next); };
 
   // Replays one failed delivery from the payload the backend stored. Safe to repeat:
   // every handler is idempotent, and this is the only repair available once the
   // provider has stopped retrying (Paystack gives up after a few days).
   const retryEvent = async (e) => {
+    if (writeLock.current) return;
+    writeLock.current = true;
+    const scope = scopeVersion.current;
     setRetrying(e.id);
     try {
       await liveApi.admin.retryWebhookEvent(e.id);
+      if (scope !== scopeVersion.current) return;
       toast({ title: msg('FE_ADMIN_WEBHOOKS_RETRIED', 'Delivery reprocessed'), description: e.reference || e.event_type || '' });
       await load();
     } catch (err) {
+      if (scope !== scopeVersion.current) return;
       toast({ title: msg('FE_ADMIN_WEBHOOKS_RETRY_FAILED', "Retry failed"), description: err.message, variant: 'destructive' });
-    }
-    setRetrying(null);
+    } finally { writeLock.current = false; setRetrying(null); }
   };
 
   const successCount = (events || []).filter((e) => normalizedStatus(e.status) === 'success').length;
@@ -77,25 +90,31 @@ export default function AdminWebhooks() {
 
   return (
     <div className="space-y-4">
+      {error && <div role="alert" className="text-sm text-destructive"><p>{error}</p><button onClick={load} className="font-bold">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 text-sm font-bold text-foreground">
-          <Webhook className="w-4 h-4 text-primary" /> {events ? `${events.length} event${events.length === 1 ? '' : 's'}` : 'Loading…'}
+          <Webhook className="w-4 h-4 text-primary" /> {events ? msg('FE_WEBHOOK_PAGE_COUNT', '{count} deliveries on this page', {count: events.length}) : refreshing ? msg('FE_WEBHOOK_LOADING', 'Loading deliveries…') : '—'}
         </div>
         <button onClick={load} disabled={refreshing} className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-secondary text-foreground text-sm font-bold active:scale-95 transition disabled:opacity-50">
           <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} /> Refresh
         </button>
       </div>
 
+      <div className="flex items-center justify-between text-xs font-bold">
+        <button disabled={offset === 0 || refreshing} onClick={() => setOffset(value => Math.max(0, value - pageSize))}>{msg('FE_WEBHOOK_PREVIOUS', 'Previous deliveries')}</button>
+        <span>{msg('FE_WEBHOOK_PAGE', 'Page {page}', {page: offset / pageSize + 1})}</span>
+        <button disabled={refreshing || !events || events.length < pageSize} onClick={() => setOffset(value => value + pageSize)}>{msg('FE_WEBHOOK_NEXT', 'Next deliveries')}</button>
+      </div>
       <Card className="p-3 flex flex-col sm:flex-row sm:items-center gap-2.5">
         <input
           value={filters.provider}
-          onChange={(e) => setFilters({ ...filters, provider: e.target.value })}
+          onChange={(e) => changeFilters({ ...filters, provider: e.target.value })}
           placeholder="Provider (e.g. paystack)"
           className="px-3 py-2 rounded-xl border border-border text-sm flex-1 min-w-[120px]"
         />
         <select
           value={filters.status}
-          onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+          onChange={(e) => changeFilters({ ...filters, status: e.target.value })}
           className="px-3 py-2 rounded-xl border border-border text-sm"
         >
           <option value="">All statuses</option>
@@ -104,9 +123,9 @@ export default function AdminWebhooks() {
           <option value="pending">Pending</option>
         </select>
         <div className="flex items-center gap-1.5">
-          <input type="date" value={filters.from_date} onChange={(e) => setFilters({ ...filters, from_date: e.target.value })} className="px-2 py-2 rounded-xl border border-border text-sm" />
+          <input type="date" value={filters.from_date} onChange={(e) => changeFilters({ ...filters, from_date: e.target.value })} className="px-2 py-2 rounded-xl border border-border text-sm" />
           <span className="text-xs text-muted-foreground">→</span>
-          <input type="date" value={filters.to_date} onChange={(e) => setFilters({ ...filters, to_date: e.target.value })} className="px-2 py-2 rounded-xl border border-border text-sm" />
+          <input type="date" value={filters.to_date} onChange={(e) => changeFilters({ ...filters, to_date: e.target.value })} className="px-2 py-2 rounded-xl border border-border text-sm" />
         </div>
       </Card>
 
@@ -119,14 +138,14 @@ export default function AdminWebhooks() {
         </div>
       )}
 
-      {events == null ? (
+      {events == null && !error ? (
         <div className="space-y-2.5">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-16" />)}</div>
-      ) : events.length === 0 ? (
+      ) : error ? null : events.length === 0 ? (
         <Card>
           <EmptyState
             icon={Webhook}
-            title="No webhook events recorded"
-            body="Outgoing webhook deliveries appear here as they happen, with status and response details."
+            title={msg('FE_WEBHOOK_EMPTY', 'No webhook events recorded')}
+            body={msg('FE_WEBHOOK_EMPTY_BODY', 'Incoming payment-provider events appear here with their processing status.')}
           />
         </Card>
       ) : (
@@ -166,7 +185,7 @@ export default function AdminWebhooks() {
                       {failed && e.id && (
                         <button
                           onClick={() => retryEvent(e)}
-                          disabled={retrying === e.id}
+                          disabled={retrying !== null}
                           className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-primary text-primary-foreground text-xs font-bold active:scale-95 transition disabled:opacity-50"
                         >
                           <RefreshCw className={`w-3.5 h-3.5 ${retrying === e.id ? 'animate-spin' : ''}`} /> Retry delivery

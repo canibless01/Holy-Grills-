@@ -57,3 +57,7 @@ Evidence and remaining verification are in [stock metadata editing](ADMIN_STOCK_
 ## HP recipient discovery — 7 November
 
 [Recipient-search evidence](ADMIN_HP_RECIPIENT_SEARCH_2026_11_07.md): single/bulk grants and manual expiry search the existing scoped directory beyond its initial page. Native browser tests prove stale-response isolation, failure/Retry, identity retention and empty-selection bulk safety. TypeScript and targeted ESLint pass; no database migration or real grants are involved. Remaining settings/consumer and wider staff/identity cases remain open.
+
+## Webhook and database boundary — 7 November
+
+[Database grant proof](EVENT_WEBHOOK_DATABASE_SECURITY_2026_11_07.md) removes browser table-maintenance and provider-payload write privileges while preserving scoped diagnostic reads and backend processing. [Native webhook controls](ADMIN_WEBHOOK_CONTROLS_2026_11_07.md) cover paging, WAT dates, scoped/stale reads, redaction, failed-read Retry and shared atomic replay claims. Full backend regression: 1,268 passed; browser/typecheck/lint/build pass. Event-management lifecycle and historical RPC review continue.

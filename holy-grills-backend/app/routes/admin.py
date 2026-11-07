@@ -2712,17 +2712,16 @@ def list_webhook_events():
     db = get_db()  # still service role — the app does the campus scoping explicitly below
     campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
 
-    # B-25: limit/offset were parsed with plain int() and no bounds — bad input 500'd.
     try:
-        limit = int(request.args.get("limit", 50))
-    except (TypeError, ValueError):
-        limit = 50
-    limit = max(1, min(limit, 200))
-    try:
-        offset = int(request.args.get("offset", 0))
-    except (TypeError, ValueError):
-        offset = 0
-    offset = max(0, offset)
+        limit, offset = page_args()
+        from_day = as_date(request.args["from_date"]) if request.args.get("from_date") else None
+        to_day = as_date(request.args["to_date"]) if request.args.get("to_date") else None
+        if from_day and to_day and from_day > to_day:
+            raise ValueError
+        lower = wat_day_bounds_utc(from_day)[0] if from_day else None
+        upper = wat_day_bounds_utc(to_day)[1] if to_day else None
+    except (ValueError, OverflowError):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
 
     q = db.table("webhook_events").select("*")
     # A delivery that FAILED used to be stored with campus_id NULL (the campus is only
@@ -2749,22 +2748,18 @@ def list_webhook_events():
         status = WEBHOOK_STATUS_ALIASES.get(status.strip().lower(), status.strip().lower())
         q = q.eq("status", status)
 
-    from_date = request.args.get("from_date")
-    if from_date:
-        q = q.gte("created_at", from_date)
-
-    to_date = request.args.get("to_date")
-    if to_date:
-        q = q.lte("created_at", to_date + ("T23:59:59Z" if "T" not in to_date else ""))
-
-    rows = q.order("created_at", ascending=False).limit(limit).offset(offset).execute() or []
+    if lower:
+        q = q.gte("created_at", lower)
+    if upper:
+        q = q.lt("created_at", upper)
+    rows = q.order("created_at", ascending=False).order("id", ascending=False).limit(limit).offset(offset).execute() or []
 
     # A global (campus_id NULL) row can belong to any campus, so only super_admins get
     # its raw payload. Everyone else still sees the delivery, its status and its error —
     # which is what makes a failed charge visible at all.
     if getattr(g, "user_role", None) != "super_admin":
         rows = [
-            {**row, "payload": None, "payload_redacted": True}
+            {**{key: row.get(key) for key in ("id", "provider", "event_type", "status", "created_at", "processed_at", "campus_id")}, "payload_redacted": True}
             if not row.get("campus_id") and row.get("status") == "failed" else row
             for row in rows
         ]
@@ -2812,7 +2807,7 @@ def retry_webhook_event(event_id):
         except (TypeError, ValueError):
             payload = None
 
-    from app.routes.webhooks import _campus_for_payload, reprocess_stored_event
+    from app.routes.webhooks import _campus_for_payload, reprocess_stored_event, _claim_provider_event
 
     if getattr(g, "user_role", None) != "super_admin":
         row_campus = row.get("campus_id")
@@ -2828,13 +2823,22 @@ def retry_webhook_event(event_id):
 
     status = str(row.get("status") or "")
     if status == "processed":
-        return jsonify({"message": "Delivery already processed", "status": status}), 200
+        return jsonify({"message": MSG.WEBHOOK_ALREADY_PROCESSED, "status": status}), 200
     if status == "processing":
-        return jsonify({"error": "Delivery is currently in flight"}), 409
+        return jsonify({"error": MSG.WEBHOOK_IN_PROGRESS}), 409
 
     provider = row.get("provider") or "paystack"
     event_type = row.get("event_type")
     reference = row.get("reference")
+    if status != "failed" or provider not in ("paystack", "flutterwave") or not reference or not event_type or not isinstance(payload, dict):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    # Share the provider callback's atomic failed -> processing claim. Competing
+    # admin retries and provider retries must never run a handler simultaneously.
+    claim = _claim_provider_event(provider, event_type, reference, payload)
+    if claim == "processed":
+        return jsonify({"message": MSG.WEBHOOK_ALREADY_PROCESSED, "status": "processed"}), 200
+    if claim != "claimed":
+        return jsonify({"error": MSG.WEBHOOK_IN_PROGRESS}), 409
     try:
         campus = reprocess_stored_event(provider, event_type, payload)
     except Exception as exc:                                  # noqa: BLE001
@@ -2857,7 +2861,7 @@ def retry_webhook_event(event_id):
         fields["campus_id"] = campus
     db.table("webhook_events").eq("id", event_id).update(fields).execute()
     return jsonify({
-        "message": "Delivery reprocessed",
+        "message": MSG.WEBHOOK_REPROCESSED,
         "status": "processed",
         "provider": provider,
         "event_type": event_type,
