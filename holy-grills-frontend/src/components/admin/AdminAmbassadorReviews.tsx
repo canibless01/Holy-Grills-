@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Check, X, Gift, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
@@ -15,15 +15,20 @@ export default function AdminAmbassadorReviews() {
   const [month, setMonth] = useState(thisMonth());
   const [reviews, setReviews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [grantFor, setGrantFor] = useState<any | null>(null);
+  const loadVersion = useRef(0);
+  const monthRef = useRef(month);
+  monthRef.current = month;
 
   const load = useCallback(async () => {
-    setLoading(true);
-    try { setReviews(await liveApi.ambassadors.listReviews(month)); }
-    catch (e) { toast({ title: e.message, variant: 'destructive' }); }
-    finally { setLoading(false); }
+    const version = ++loadVersion.current;
+    setLoading(true); setLoadError(false);
+    try { const rows = await liveApi.ambassadors.listReviews(month); if (version === loadVersion.current) setReviews(rows); }
+    catch (e) { if (version === loadVersion.current) { setLoadError(true); toast({ title: e.message, variant: 'destructive' }); } }
+    finally { if (version === loadVersion.current) setLoading(false); }
   }, [month]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setGrantFor(null); void load(); return () => { loadVersion.current += 1; }; }, [load]);
 
   const recommend = async (review: any, recommendation: 'recommend' | 'do_not_recommend') => {
     const note = window.prompt(
@@ -31,20 +36,24 @@ export default function AdminAmbassadorReviews() {
         ? 'Recommendation note (optional): why should they receive the monthly benefit?'
         : 'Reason for not recommending (optional):',
       review.recommendation_note || '',
-    ) || '';
+    );
+    if (note === null) return;
     try {
-      await liveApi.ambassadors.recommend(review.ambassador_id, { month, recommendation, note });
+      const updated = await liveApi.ambassadors.recommend(review.ambassador_id, { month, recommendation, note });
+      if (month !== monthRef.current) return;
+      setReviews(rows => rows.map(row => row.ambassador_id === review.ambassador_id ? { ...row, ...updated } : row));
       toast({ title: 'Recommendation saved' });
-      load();
     } catch (e) { toast({ title: e.message, variant: 'destructive' }); }
   };
 
   const decide = async (review: any, decision: 'approved' | 'rejected') => {
-    const note = window.prompt(`Decision note for ${decision} (optional):`, review.decision_note || '') || '';
+    const note = window.prompt(`Decision note for ${decision} (optional):`, review.decision_note || '');
+    if (note === null) return;
     try {
-      await liveApi.ambassadors.decide(review.ambassador_id, { month, decision, note });
+      const updated = await liveApi.ambassadors.decide(review.ambassador_id, { month, decision, note });
+      if (month !== monthRef.current) return;
+      setReviews(rows => rows.map(row => row.ambassador_id === review.ambassador_id ? { ...row, ...updated } : row));
       toast({ title: `Marked ${decision}` });
-      load();
     } catch (e) { toast({ title: e.message, variant: 'destructive' }); }
   };
 
@@ -52,6 +61,9 @@ export default function AdminAmbassadorReviews() {
 
   return (
     <div className="space-y-4">
+      {loadError && <p role="alert" className="text-sm text-destructive">{msg('FE_AMBASSADOR_WORKSPACE_READ_FAILED', 'Programme data could not be loaded.')}{' '}
+        <button onClick={() => { void load(); }} className="underline">{msg('FE_LOOKUP_RETRY', 'Retry')}</button>
+      </p>}
       <div className="flex items-center gap-3 flex-wrap">
         <Field label={msg('FE_ADMIN_AMBASSADOR_MONTH', 'Programme month')}>
           <input type="month" value={month} onChange={(e) => setMonth(e.target.value)}
@@ -60,7 +72,7 @@ export default function AdminAmbassadorReviews() {
         <span className="text-xs text-muted-foreground self-end pb-2">{reviews.length} ambassador{reviews.length === 1 ? '' : 's'}</span>
       </div>
 
-      {reviews.length === 0 && (
+      {!loadError && reviews.length === 0 && (
         <Card className="p-8 text-center text-sm text-muted-foreground">No active ambassadors for this campus yet.</Card>
       )}
 
@@ -74,7 +86,7 @@ export default function AdminAmbassadorReviews() {
       {grantFor && (
         <GrantModal review={grantFor} month={month}
           onClose={() => setGrantFor(null)}
-          onSaved={() => { setGrantFor(null); load(); }} />
+          onSaved={() => { if (month !== monthRef.current) return; setGrantFor(null); void load(); }} />
       )}
     </div>
   );
@@ -144,7 +156,7 @@ function ReviewCard({ review, isFinancialAdmin, onRecommend, onDecide, onGrant, 
           <>
             <button onClick={() => onDecide(review, 'approved')}
               className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-success text-white text-[11px] font-bold">
-              <Check className="w-3.5 h-3.5" />{msg('FE_ADMIN_AMBASSADOR_APPROVE', 'Approve & grant reward')}
+              <Check className="w-3.5 h-3.5" />{msg('FE_ADMIN_AMBASSADOR_APPROVE_REVIEW', 'Approve review')}
             </button>
             <button onClick={() => onDecide(review, 'rejected')}
               className="px-3 py-1.5 rounded-full border border-destructive/40 text-destructive text-[11px] font-bold">
@@ -160,7 +172,7 @@ function ReviewCard({ review, isFinancialAdmin, onRecommend, onDecide, onGrant, 
 
       {open && (
         <div className="border-t border-border pt-3 space-y-2">
-          {review.recommendation !== 'none' && (
+          {review.recommendation && review.recommendation !== 'none' && (
             <div className="text-[11px]">
               <span className="font-bold">Recommendation: </span>
               <Pill tone={review.recommendation === 'recommend' ? 'green' : 'red'}>{review.recommendation.replace('_', ' ')}</Pill>
@@ -205,17 +217,19 @@ function GrantModal({ review, month, onClose, onSaved }: { review: any; month: s
     reason: '', override_duplicate: false,
   });
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
 
   const submit = async () => {
-    setBusy(true);
+    if (busyRef.current) return;
+    busyRef.current = true; setBusy(true);
     try {
       await liveApi.ambassadors.createGrant({
         ambassador_id: review.ambassador_id,
         reward_type: form.reward_type,
         amount: Number(form.amount),
-        validity_days: Number(form.validity_days) || undefined,
-        uses_count: Number(form.uses_count) || 1,
+        validity_days: Number(form.validity_days),
+        uses_count: form.reward_type === 'meal_discount' ? Number(form.uses_count) : 1,
         reason: form.reason,
         month,
         override_duplicate: form.override_duplicate,
@@ -228,12 +242,12 @@ function GrantModal({ review, month, onClose, onSaved }: { review: any; month: s
       } else {
         toast({ title: e.message, variant: 'destructive' });
       }
-    } finally { setBusy(false); };
+    } finally { busyRef.current = false; setBusy(false); };
   };
 
   return (
     <Modal open onClose={onClose} title={msg('FE_ADMIN_AMBASSADOR_GRANT_TITLE', 'Issue programme reward')}>
-      <div className="space-y-3">
+      <form className="space-y-3" onSubmit={event => { event.preventDefault(); void submit(); }}>
         <Field label={msg('FE_ADMIN_AMBASSADOR_GRANT_TYPE', 'Reward type')}>
           <select value={form.reward_type} onChange={(e) => set('reward_type', e.target.value)}
             className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">
@@ -244,19 +258,19 @@ function GrantModal({ review, month, onClose, onSaved }: { review: any; month: s
           <Field label={form.reward_type === 'meal_discount'
             ? msg('FE_ADMIN_AMBASSADOR_MEAL_MAX_VALUE', 'Maximum meal value (₦)')
             : msg('FE_ADMIN_AMBASSADOR_GRANT_AMOUNT', 'Amount / quantity')}>
-            <TextInput type="number" min={1} value={form.amount} onChange={(e) => set('amount', e.target.value)} />
+            <TextInput type="number" required min={form.reward_type === 'meal_discount' ? 0.01 : 1} max={form.reward_type === 'free_side' ? 20 : 1000000} step={form.reward_type === 'meal_discount' ? 0.01 : 1} value={form.amount} onChange={(e) => set('amount', e.target.value)} />
           </Field>
           <Field label={msg('FE_ADMIN_AMBASSADOR_GRANT_VALIDITY', 'Validity (days)')}>
-            <TextInput type="number" min={1} value={form.validity_days} onChange={(e) => set('validity_days', e.target.value)} />
+            <TextInput type="number" required min={1} max={365} step={1} value={form.validity_days} onChange={(e) => set('validity_days', e.target.value)} />
           </Field>
         </div>
         {form.reward_type === 'meal_discount' && (
           <Field label={msg('FE_ADMIN_AMBASSADOR_GRANT_USES', 'Number of uses')}>
-            <TextInput type="number" min={1} value={form.uses_count} onChange={(e) => set('uses_count', e.target.value)} />
+            <TextInput type="number" required min={1} max={100} step={1} value={form.uses_count} onChange={(e) => set('uses_count', e.target.value)} />
           </Field>
         )}
         <Field label={msg('FE_ADMIN_AMBASSADOR_GRANT_REASON', 'Reason')}>
-          <textarea rows={2} value={form.reason} onChange={(e) => set('reason', e.target.value)}
+          <textarea required maxLength={500} rows={2} value={form.reason} onChange={(e) => set('reason', e.target.value)}
             className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm"
             placeholder={`Ambassador programme benefit — ${month}`} />
         </Field>
@@ -264,11 +278,11 @@ function GrantModal({ review, month, onClose, onSaved }: { review: any; month: s
           <input type="checkbox" checked={form.override_duplicate} onChange={(e) => set('override_duplicate', e.target.checked)} />
           {msg('FE_ADMIN_AMBASSADOR_GRANT_OVERRIDE', 'I authorise an additional grant this month')}
         </label>
-        <button disabled={busy || !form.reason.trim() || Number(form.amount) <= 0} onClick={submit}
+        <button disabled={busy || !form.reason.trim() || Number(form.amount) <= 0} type="submit"
           className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm disabled:opacity-50">
           {busy ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Issue reward'}
         </button>
-      </div>
+      </form>
     </Modal>
   );
 }

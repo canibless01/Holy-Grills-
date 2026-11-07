@@ -6,14 +6,16 @@ from app.services import notification_service as service
 from app.services.notification_preferences import effective_preferences,permitted_channels,category_for_notification
 
 class Query:
-    def __init__(self,db,table):self.db,self.table,self.filters=db,table,{}
+    def __init__(self,db,table):self.db,self.table,self.filters=db,table,{};self.one=False
     def select(self,*args):return self
     def eq(self,k,v):self.filters[k]=v;return self
-    def single(self):return self
+    def single(self):self.one=True;return self
+    def limit(self,*args):return self
     def execute(self):
         if self.table in self.db.fail:raise RuntimeError('unavailable')
         rows=self.db.rows.get(self.table,[])
-        return next((copy.deepcopy(r) for r in rows if all(r.get(k)==v for k,v in self.filters.items())),None)
+        matched=[copy.deepcopy(r) for r in rows if all(r.get(k)==v for k,v in self.filters.items())]
+        return (matched[0] if matched else None) if self.one else matched
     def insert(self,row):
         rows=self.db.rows.setdefault(self.table,[])
         if row.get('id') and any(r.get('id')==row['id'] for r in rows):raise SupabaseError('duplicate',409,{'code':'23505'})
@@ -81,3 +83,20 @@ class NotificationDeliveryTests(unittest.TestCase):
             rows=service.send_notification('user','order_placed',template_data={'order_id':'9920CE8C','name':'Student'},reference_id=order_id,reference_type='order',channels=['in_app'])
         self.assertIn('9920CE8C',rows[0]['body'])
         self.assertEqual(rows[0]['action_url'],'/orders/'+order_id)
+
+class AmbassadorGrantNoticeTests(unittest.TestCase):
+    setUp = NotificationDeliveryTests.setUp
+    def test_grant_notice_replay_has_one_receipt_per_grant_and_channel(self):
+        with self.app.app_context(),patch.object(service,'get_db',return_value=self.db),patch.object(service.threading,'Thread') as dispatch:
+            for ref in ('grant-one','grant-one','grant-two'):
+                rows=service.send_notification('user','ambassador_grant_issued',title='Reward approved',body='Ready at checkout',reference_id=ref,reference_type='ambassador_grant',channels=['push','email','in_app'])
+                self.assertEqual(len(rows),3)
+        self.assertEqual(len(self.db.rows['notifications']),6)
+        self.assertEqual(dispatch.call_count,4)
+
+    def test_legacy_grant_receipt_is_reused_without_external_resend(self):
+        self.db.rows['notifications']=[{'id':'legacy-random-id','user_id':'user','type':'ambassador_grant_issued','reference_id':'old-grant','channel':'push'}]
+        with self.app.app_context(),patch.object(service,'get_db',return_value=self.db),patch.object(service.threading,'Thread') as dispatch:
+            rows=service.send_notification('user','ambassador_grant_issued',title='Reward approved',body='Ready',reference_id='old-grant',reference_type='ambassador_grant',channels=['push'])
+        self.assertEqual(rows[0]['id'],'legacy-random-id');self.assertEqual(len(self.db.rows['notifications']),1)
+        dispatch.assert_not_called()

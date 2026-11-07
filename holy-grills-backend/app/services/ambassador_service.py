@@ -12,10 +12,12 @@ Design principles (see docs/AMBASSADOR_PROGRAMME.md):
 """
 import calendar
 import uuid
+import re
+from copy import deepcopy
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
-from flask import current_app, g
+from flask import current_app, g, has_request_context, request
 
 from app.constants import ADMIN_ROLES
 from app.db import get_db, SupabaseError
@@ -54,19 +56,44 @@ def current_month() -> str:
 
 
 def parse_month(month: str | None) -> str:
+    if month is not None and not isinstance(month, str):
+        raise AmbassadorError(MSG.AMBASSADOR_INVALID_MONTH)
     month = (month or "").strip() or current_month()
+    if not re.fullmatch(r"[0-9]{4}-(0[1-9]|1[0-2])", month):
+        raise AmbassadorError(MSG.AMBASSADOR_INVALID_MONTH)
     try:
         datetime.strptime(month, "%Y-%m")
-    except (TypeError, ValueError):
+    except ValueError:
         raise AmbassadorError(MSG.AMBASSADOR_INVALID_MONTH)
     return month
+
+
+def _request_read(db, key, read):
+    """Reuse metric reads only within this request and authorization scope."""
+    if not has_request_context():
+        return read()
+    current_request = request._get_current_object()
+    cache = getattr(g, '_ambassador_metric_reads', None)
+    if cache is None or getattr(g, '_ambassador_metric_request', None) is not current_request:
+        cache = g._ambassador_metric_reads = {}
+        g._ambassador_metric_request = current_request
+    scoped = (id(db), getattr(g, 'user_id', None), getattr(g, 'user_role', None),
+              getattr(g, 'campus_id', None), key)
+    if scoped not in cache:
+        cache[scoped] = read()
+    return deepcopy(cache[scoped])
+
+
+def _invalidate_metric_reads():
+    if has_request_context():
+        g.pop('_ambassador_metric_reads', None)
 
 
 def month_bounds(month: str) -> tuple[datetime, datetime]:
     year, mon = map(int, month.split("-"))
     start = datetime(year, mon, 1, tzinfo=timezone.utc)
     last_day = calendar.monthrange(year, mon)[1]
-    end = datetime(year, mon, last_day, 23, 59, 59, tzinfo=timezone.utc)
+    end = datetime(year, mon, last_day, 23, 59, 59, 999999, tzinfo=timezone.utc)
     return start, end
 
 
@@ -128,6 +155,7 @@ def record_click(ref_code: str, anonymous_id: str = None,
                  visitor_user_id: str = None, campus_id: str = None) -> dict:
     if not ref_code or not str(ref_code).strip():
         return {"attributed": False, "reason": "missing_code"}
+    _invalidate_metric_reads()
     result = get_db().rpc("hg_ambassador_record_click", {
         "p_ref_code": str(ref_code).strip(),
         "p_visitor_user_id": visitor_user_id,
@@ -138,6 +166,7 @@ def record_click(ref_code: str, anonymous_id: str = None,
 
 
 def merge_visitor(anonymous_id: str, user_id: str) -> dict:
+    _invalidate_metric_reads()
     result = get_db().rpc("hg_ambassador_merge_visitor", {
         "p_anonymous_id": anonymous_id,
         "p_user_id": user_id,
@@ -148,6 +177,7 @@ def merge_visitor(anonymous_id: str, user_id: str) -> dict:
 def attribute_delivered_order(order_id: str) -> dict:
     """Called from the order lifecycle when an order reaches 'delivered'."""
     try:
+        _invalidate_metric_reads()
         result = get_db().rpc("hg_ambassador_attribute_order", {"p_order_id": order_id})
         return result if isinstance(result, dict) else {"attributed": False}
     except Exception:
@@ -157,6 +187,7 @@ def attribute_delivered_order(order_id: str) -> dict:
 
 def reverse_attributed_order(order_id: str, reason: str = "order_refunded") -> dict:
     try:
+        _invalidate_metric_reads()
         result = get_db().rpc("hg_ambassador_reverse_order", {
             "p_order_id": order_id, "p_reason": reason,
         })
@@ -220,7 +251,15 @@ def _profile_basics(db, user_ids: list[str]) -> dict[str, dict]:
     return {r["id"]: r for r in rows}
 
 
-def attributed_signups(db, ambassador_id: str, month: str | None = None) -> list[dict]:
+def _instant(value):
+    try:
+        parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+        return (parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def _attributed_signups(db, ambassador_id: str) -> list[dict]:
     """New accounts whose first qualifying pre-signup click belongs here.
 
     Existing users clicking an ambassador link are attributed customers/orders,
@@ -234,23 +273,23 @@ def attributed_signups(db, ambassador_id: str, month: str | None = None) -> list
     trail = db.table("ambassador_link_clicks").select(
         "id,ambassador_id,visitor_user_id,created_at").in_("visitor_user_id",list(visitor_ids)).execute() or []
     days = int(setting_or_config(db,'ambassador_attribution_window_days',7,minimum=1,maximum=365))
-    def instant(value):
-        try:
-            parsed = datetime.fromisoformat(str(value).replace('Z','+00:00'))
-            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-        except (TypeError,ValueError): return None
     result=[]
     for profile in profiles:
-        created=instant(profile.get('created_at'))
-        if created is None or (month and created.strftime('%Y-%m') != month): continue
+        created=_instant(profile.get('created_at'))
+        if created is None: continue
         qualifying=[]
         for click in trail:
-            clicked=instant(click.get('created_at'))
+            clicked=_instant(click.get('created_at'))
             if click.get('visitor_user_id')==profile['id'] and click.get('ambassador_id') != profile['id'] and clicked and created-timedelta(days=days) <= clicked <= created:
                 qualifying.append((clicked,str(click.get('id') or ''),click))
         first=min(qualifying,key=lambda entry:(entry[0],entry[1]))[2] if qualifying else None
         if first and first.get('ambassador_id')==ambassador_id: result.append(profile)
     return result
+
+
+def attributed_signups(db, ambassador_id: str, month: str | None = None) -> list[dict]:
+    rows = _request_read(db, ('signups', ambassador_id), lambda: _attributed_signups(db, ambassador_id))
+    return [row for row in rows if _instant(row.get('created_at')).strftime('%Y-%m') == month] if month else rows
 
 
 def attributed_orders(db, ambassador_id: str, month: str | None = None,
@@ -259,15 +298,16 @@ def attributed_orders(db, ambassador_id: str, month: str | None = None,
         "ambassador_id", ambassador_id)
     if eligible_only:
         q = q.eq("eligibility", "eligible")
-    rows = q.order("attributed_at", ascending=False).execute() or []
+    rows = _request_read(db, ('orders', ambassador_id, eligible_only),
+                         lambda: q.order('attributed_at', ascending=False).execute() or [])
     if month:
         start, end = month_bounds(month)
         rows = [r for r in rows
-                if r.get("attributed_at") and start.isoformat() <= r["attributed_at"] <= end.isoformat()]
+                if _instant(r.get("attributed_at")) is not None and start <= _instant(r["attributed_at"]) <= end]
     return rows
 
 
-def assignment_metrics(db, ambassador_id: str, month: str) -> dict:
+def _assignment_metrics(db, ambassador_id: str, month: str) -> dict:
     rows = db.table("ambassador_promo_assignments").select(
         "id,status"
     ).eq("ambassador_id", ambassador_id).eq("month", month).execute() or []
@@ -288,6 +328,10 @@ def assignment_metrics(db, ambassador_id: str, month: str) -> dict:
         "monthly_share_target": target,
         "share_target_progress": round(min(100.0, (shared / target) * 100), 2) if target else 0.0,
     }
+
+
+def assignment_metrics(db, ambassador_id: str, month: str) -> dict:
+    return _request_read(db, ('activity', ambassador_id, month), lambda: _assignment_metrics(db, ambassador_id, month))
 
 
 def milestone_metrics(db, ambassador_id: str, month: str) -> dict:
@@ -392,15 +436,8 @@ def _auto_issue_milestone_grant(ambassador: dict, milestone: dict,
     except AmbassadorError:
         logger.exception("auto-issue failed for claim %s", claim.get("id"))
         return claim
-    updated = db.table("ambassador_milestone_claims").eq("id", claim["id"]).update({
-        "status": "issued",
-        "grant_id": grant["id"],
-        "decided_by": actor["id"],
-        "decided_at": _iso(datetime.now(timezone.utc)),
-        "decision_note": "Auto-issued by configured milestone rule",
-    }).execute()
-    rows = updated if isinstance(updated, list) else [updated]
-    return rows[0] if rows else claim
+    return {**claim, "status": "issued", "grant_id": grant["id"],
+            "decided_by": actor["id"], "decided_at": _iso(datetime.now(timezone.utc))}
 
 
 def evaluate_milestones(db, ambassador_id: str, month: str | None = None) -> list[dict]:
@@ -465,7 +502,7 @@ def build_review(db, ambassador_id: str, month: str) -> dict:
     signups = attributed_signups(db, ambassador_id, month)
     existing = db.table("ambassador_monthly_reviews").select("*").eq(
         "ambassador_id", ambassador_id).eq("month", month).single().execute()
-    review = existing or {}
+    review = {"recommendation": "none", "decision": "pending", **(existing or {})}
     review.update({
         "ambassador_id": ambassador_id,
         "month": month,
@@ -483,10 +520,11 @@ def persist_review_metrics(db, ambassador_id: str, month: str) -> dict:
     payload = {k: data[k] for k in (
         "assigned_count", "seen_count", "shared_count", "completion_rate",
         "signups_count", "orders_count")}
-    existing = db.table("ambassador_monthly_reviews").select("id").eq(
+    existing = db.table("ambassador_monthly_reviews").select("id,assigned_count,seen_count,shared_count,completion_rate,signups_count,orders_count").eq(
         "ambassador_id", ambassador_id).eq("month", month).single().execute()
     if existing:
-        db.table("ambassador_monthly_reviews").eq("id", existing["id"]).update(payload).execute()
+        if any(existing.get(key) != value for key, value in payload.items()):
+            db.table("ambassador_monthly_reviews").eq("id", existing["id"]).update(payload).execute()
     else:
         db.table("ambassador_monthly_reviews").insert({
             "ambassador_id": ambassador_id, "month": month, **payload,
@@ -498,6 +536,8 @@ def list_monthly_reviews(db, month: str, campus_id: str | None,
                          is_super: bool) -> list[dict]:
     month = parse_month(month)
     q = db.table(AMBASSADOR_TABLE).select("*").eq("status", "active")
+    if campus_id or not is_super:
+        q = q.eq("campus_id", campus_id)
     ambassadors = q.execute() or []
     if not is_super:
         ambassadors = [a for a in ambassadors if a.get("campus_id") == campus_id]
@@ -570,56 +610,47 @@ def personalize_caption(caption: str, link: str) -> str:
 
 def create_promo_message(db, actor: dict, *, image_url: str, caption: str,
                          target_all: bool, ambassador_ids: list[str],
-                         month: str) -> dict:
+                         month: str, request_id: str | None = None) -> dict:
     caption = (caption or "").strip()
     if not caption:
         raise AmbassadorError(MSG.AMBASSADOR_PROMO_CAPTION_REQUIRED)
     if not any(token in caption for token in LINK_PLACEHOLDERS):
         raise AmbassadorError(MSG.AMBASSADOR_PROMO_LINK_PLACEHOLDER_REQUIRED)
+    if not isinstance(target_all, bool) or not isinstance(ambassador_ids, list) or any(not validate_uuid(value) for value in ambassador_ids):
+        raise AmbassadorError(MSG.AUTH_FIELD_INVALID.format(field='target_all / ambassador_ids'))
+    if request_id is not None and not validate_uuid(request_id):
+        raise AmbassadorError(MSG.AUTH_FIELD_INVALID.format(field='request_id'))
     month = parse_month(month)
-    is_super = actor.get("role") == "super_admin"
-    q = db.table(AMBASSADOR_TABLE).select("*").eq("status", "active")
-    ambassadors = q.execute() or []
-    if not is_super:
-        ambassadors = [a for a in ambassadors
-                       if a.get("campus_id") == actor.get("campus_id")]
-    if target_all:
-        targets = ambassadors
-    else:
-        wanted = set(ambassador_ids or [])
-        targets = [a for a in ambassadors if a["profile_id"] in wanted]
-        if not targets:
-            raise AmbassadorError(MSG.AMBASSADOR_PROMO_NO_TARGETS)
-    message = db.table("ambassador_promo_messages").insert({
-        "created_by": actor["id"],
-        "campus_id": None if is_super else actor.get("campus_id"),
-        "image_url": image_url or None,
-        "caption": caption,
-        "target_all": bool(target_all),
-        "month": month,
-    }).execute()
-    message = message[0] if isinstance(message, list) else message
-    assignment_rows = [{
-        "message_id": message["id"],
-        "ambassador_id": a["profile_id"],
-        "month": month,
-        "status": "pending",
-    } for a in targets]
-    # Insert in batches to stay within PostgREST payload limits.
-    for i in range(0, len(assignment_rows), 500):
-        db.table("ambassador_promo_assignments").insert(assignment_rows[i:i + 500]).execute()
-    audit(actor["id"], "ambassador_promo_created", message["id"],
-          after={"recipients": len(targets), "month": month},
-          campus_id=message.get("campus_id"))
-    return {"message": message, "recipient_count": len(targets),
-            "ambassador_ids": [a["profile_id"] for a in targets]}
+    result = db.rpc('hg_create_ambassador_promo_atomic', {
+        'p_actor_id': actor['id'], 'p_message_id': request_id or str(uuid.uuid4()),
+        'p_campus_id': actor.get('campus_id'), 'p_caption': caption,
+        'p_image_url': image_url or None, 'p_month': month,
+        'p_target_all': target_all, 'p_ambassador_ids': sorted(set(ambassador_ids)),
+    })
+    error = result.get('error') if isinstance(result, dict) else None
+    if error == 'promo_no_targets':
+        raise AmbassadorError(MSG.AMBASSADOR_PROMO_NO_TARGETS)
+    if error == 'promo_forbidden':
+        raise AmbassadorError(MSG.RESOURCE_ACCESS_DENIED, status=403)
+    if error == 'promo_intent_conflict':
+        raise AmbassadorError(MSG.AMBASSADOR_PROMO_CONFLICT, status=409)
+    if error:
+        raise AmbassadorError(MSG.AUTH_FIELD_INVALID.format(field='promotional message'))
+    if not isinstance(result, dict) or not (result.get('message') or {}).get('id'):
+        raise AmbassadorError(MSG.SERVICE_UNAVAILABLE, status=503)
+    _invalidate_metric_reads()
+    if not result.get('idempotent'):
+        audit(actor['id'], 'ambassador_promo_created', result['message']['id'],
+              after={'recipients': result['recipient_count'], 'month': month},
+              campus_id=result['message'].get('campus_id'))
+    return result
 
 
 def list_promo_messages(db, month: str, campus_id: str | None, is_super: bool) -> list[dict]:
     month = parse_month(month)
     rows = db.table("ambassador_promo_messages").select("*").eq(
         "month", month).order("created_at", ascending=False).execute() or []
-    if not is_super:
+    if campus_id or not is_super:
         rows = [r for r in rows if r.get("campus_id") is None or r.get("campus_id") == campus_id]
     return rows
 
@@ -654,6 +685,7 @@ def set_assignment_status(db, actor_id: str, assignment_id: str,
         "id", assignment_id).update(patch).execute()
     if not updated:
         raise AmbassadorError(MSG.AMBASSADOR_ASSIGNMENT_NOT_FOUND, status=404)
+    _invalidate_metric_reads()
     audit(actor_id, "ambassador_promo_status", assignment_id,
           after={"status": status}, campus_id=ambassador.get("campus_id"))
     return (updated[0] if isinstance(updated, list) and updated else updated) or row
@@ -670,25 +702,40 @@ def sweep_expired_discounts(db) -> int:
         return 0
 
 
+def _effective_discount(row):
+    value = dict(row)
+    if value.get('status') == 'active':
+        try:
+            expiry = datetime.fromisoformat(str(value.get('expires_at')).replace('Z', '+00:00'))
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+            expired = expiry <= datetime.now(timezone.utc)
+        except (TypeError, ValueError):
+            expired = True
+        if expired:
+            value['status'] = 'expired'
+        elif int(value.get('uses_remaining') or 0) <= 0:
+            value['status'] = 'redeemed'
+    return value
+
+
 def list_my_discounts(db, user_id: str) -> list[dict]:
-    sweep_expired_discounts(db)
-    return db.table("ambassador_meal_discounts").select("*").eq(
+    rows = db.table("ambassador_meal_discounts").select("*").eq(
         "ambassador_id", user_id).order("expires_at", ascending=True).execute() or []
+    return [_effective_discount(row) for row in rows]
 
 
 def resolve_discount_for_checkout(db, user_id: str, discount_id: str) -> dict:
-    """Validate ownership, status, expiry and remaining uses. Raises ValueError
-    with a user-facing message on any failure so checkout can reject cleanly."""
-    sweep_expired_discounts(db)
     discount = db.table("ambassador_meal_discounts").select("*").eq(
         "id", discount_id).single().execute()
     if not discount or discount.get("ambassador_id") != user_id:
         raise AmbassadorError(MSG.MEAL_DISCOUNT_NOT_FOUND, status=404)
+    discount = _effective_discount(discount)
     if discount.get("status") == "voided":
         raise AmbassadorError(MSG.MEAL_DISCOUNT_VOIDED)
     if discount.get("status") == "expired":
         raise AmbassadorError(MSG.MEAL_DISCOUNT_EXPIRED)
-    if int(discount.get("uses_remaining") or 0) <= 0:
+    if discount.get("status") != "active" or int(discount.get("uses_remaining") or 0) <= 0:
         raise AmbassadorError(MSG.MEAL_DISCOUNT_NO_USES)
     return discount
 
@@ -739,6 +786,17 @@ def _grant_idempotency_key(actor_id, ambassador_id, month, category, amount, ove
     return str(uuid.uuid5(_GRANT_NS, raw))
 
 
+def _grant_integer(value, default, maximum):
+    value = default if value is None else value
+    try:
+        number = Decimal(str(value))
+        if isinstance(value, bool) or not number.is_finite() or number != number.to_integral_value() or not 1 <= number <= maximum:
+            raise ValueError()
+        return int(number)
+    except Exception:
+        raise AmbassadorError(MSG.AMBASSADOR_GRANT_TERMS_INVALID)
+
+
 def issue_grant(db, actor: dict, *, ambassador_id: str, category: str, amount: float,
                 reason: str, month: str, validity_days: int = None,
                 uses_count: int = 1, source: str = "manual",
@@ -749,11 +807,17 @@ def issue_grant(db, actor: dict, *, ambassador_id: str, category: str, amount: f
     reason = (reason or "").strip()
     if not reason:
         raise AmbassadorError(MSG.AMBASSADOR_GRANT_REASON_REQUIRED)
+    if isinstance(amount, bool):
+        raise AmbassadorError(MSG.AMBASSADOR_GRANT_AMOUNT_INVALID)
     amount = float(amount)
     if not Decimal(str(amount)).is_finite() or amount <= 0:
         raise AmbassadorError(MSG.AMBASSADOR_GRANT_AMOUNT_INVALID)
     ambassador = _active_ambassador(db, ambassador_id)
-    uses_count = max(1, int(uses_count or 1))
+    uses_count = _grant_integer(uses_count, 1, 100)
+    if not isinstance(override, bool):
+        raise AmbassadorError(MSG.AMBASSADOR_GRANT_TERMS_INVALID)
+    if milestone_claim_id is not None and not validate_uuid(milestone_claim_id):
+        raise AmbassadorError(MSG.AMBASSADOR_GRANT_TERMS_INVALID)
 
     # Accidental-duplicate guard. The partial unique index
     # uq_amb_grant_month_category is the hard backstop; this pre-check gives a
@@ -775,11 +839,12 @@ def issue_grant(db, actor: dict, *, ambassador_id: str, category: str, amount: f
         "issued_by": actor["id"],
     }
 
-    if not Decimal(str(amount)).is_finite() or amount > 1000000 or (category in ('hp','free_side') and amount != int(amount)) or (category == 'free_side' and amount > 20):
+    if not Decimal(str(amount)).is_finite() or amount > 1000000 or (category == 'meal_discount' and Decimal(str(amount)).quantize(Decimal('0.01')) != Decimal(str(amount))) or (category in ('hp','free_side') and amount != int(amount)) or (category == 'free_side' and amount > 20):
         raise AmbassadorError(MSG.AMBASSADOR_GRANT_AMOUNT_INVALID)
-    validity_days = int(validity_days or setting_or_config(
+    default_days = setting_or_config(
         db, 'free_side_credits_validity_days' if category == 'free_side' else 'ambassador_meal_discount_default_validity',
-        60 if category == 'free_side' else 14, minimum=1, maximum=365))
+        60 if category == 'free_side' else 14, minimum=1, maximum=365) if validity_days is None else None
+    validity_days = _grant_integer(validity_days, default_days, 365)
     # Include all terms, so an intentional later override is distinct while a
     # retry of the same operation resolves the committed receipt.
     idem = str(uuid.uuid5(_GRANT_NS, '|'.join(map(str, (idem, reason, validity_days, uses_count, source, milestone_claim_id)))))
@@ -794,12 +859,12 @@ def issue_grant(db, actor: dict, *, ambassador_id: str, category: str, amount: f
         raise DuplicateGrant(MSG.AMBASSADOR_GRANT_DUPLICATE)
     if not isinstance(grant, dict) or not grant.get('id'):
         raise AmbassadorError(MSG.SERVICE_UNAVAILABLE, status=503)
-    if grant.get('idempotent'):
-        return grant
-
-    audit(actor["id"], f"ambassador_grant_{category}", ambassador_id,
-          after={"grant_id": grant["id"], "amount": amount, "month": month},
-          campus_id=ambassador.get("campus_id"))
+    if grant.get('status') == 'voided':
+        raise AmbassadorError(MSG.AMBASSADOR_GRANT_VOIDED, status=409)
+    if not grant.get("idempotent"):
+        audit(actor["id"], f"ambassador_grant_{category}", ambassador_id,
+              after={"grant_id": grant["id"], "amount": amount, "month": month},
+              campus_id=ambassador.get("campus_id"))
     try:
         from app.services.notification_service import send_notification
         send_notification(
@@ -813,10 +878,14 @@ def issue_grant(db, actor: dict, *, ambassador_id: str, category: str, amount: f
     return grant
 
 
-def list_grants(db, ambassador_id: str | None = None) -> list[dict]:
+def list_grants(db, ambassador_id: str | None = None, ambassador_ids: list[str] | None = None) -> list[dict]:
     q = db.table("ambassador_grants").select("*").order("issued_at", ascending=False)
     if ambassador_id:
         q = q.eq("ambassador_id", ambassador_id)
+    elif ambassador_ids is not None:
+        if not ambassador_ids:
+            return []
+        q = q.in_("ambassador_id", ambassador_ids)
     return q.execute() or []
 
 
@@ -865,7 +934,10 @@ def ambassador_dashboard(db, user_id: str, frontend_url: str) -> dict | None:
 
 def staff_ambassador_list(db, campus_id: str | None, is_super: bool) -> list[dict]:
     """Ambassador roster with the totals the promo/distribution page shows."""
-    rows = db.table(AMBASSADOR_TABLE).select("*").eq("status", "active").execute() or []
+    query = db.table(AMBASSADOR_TABLE).select("*").eq("status", "active")
+    if campus_id or not is_super:
+        query = query.eq("campus_id", campus_id)
+    rows = query.execute() or []
     if not is_super:
         rows = [r for r in rows if r.get("campus_id") == campus_id]
     ids = [r["profile_id"] for r in rows]

@@ -61,7 +61,7 @@ _CRITICAL_NOTIF_TYPES = frozenset({
     "birthday_bonus", "graduation_hp", "hall_of_fame", "prize_fulfilment_update",
     "membership_anniversary", "order_lock_redeemed",
     "flash_sale_redeemed", "exclusive_spin_won",
-    "free_side_credits_granted", "exclusive_spin_granted",
+    "free_side_credits_granted", "exclusive_spin_granted", "ambassador_grant_issued",
     "catering_request", "marketplace_request", "admin_catering_request", "admin_vendor_request", "vendor_request_submitted",
     # Milestones / badges: several can be awarded in one go (e.g. referral 5 and 10), each must arrive
     "milestone_achieved",
@@ -509,6 +509,7 @@ def send_notification(
         if channel in ("email", "push"):
             record["metadata"] = {**merged_meta, "_dispatch_version": 1, "email_provider": email_provider}
         if ((notif_type in REQUEST_TYPES and reference_id)
+                or (notif_type == "ambassador_grant_issued" and reference_type == "ambassador_grant" and reference_id)
                 or (notif_type == "event_ticket_refunded" and reference_type == "event_ticket_refund" and reference_id)
                 or (notif_type == "milestone_achieved" and reference_type == "milestone_completion" and reference_id)
                 or (notif_type == "checkin_reclaimed" and reference_type == "streak_reclaim" and reference_id)
@@ -521,6 +522,13 @@ def send_notification(
         if notif_type.startswith("blast_"):
             prior = db.table("notifications").select("id").eq("user_id", user_id).eq("type", notif_type).eq("channel", channel).limit(1).execute() or []
             if prior:
+                continue
+        if notif_type == 'ambassador_grant_issued' and reference_id and reference_type == 'ambassador_grant':
+            # Adopt a pre-deployment/random-ID receipt instead of sending it again.
+            prior = db.table('notifications').select('*').eq('user_id', user_id).eq(
+                'type', notif_type).eq('reference_id', reference_id).eq('channel', channel).limit(1).execute() or []
+            if prior:
+                records.append(prior[0])
                 continue
         try:
             result = db.table("notifications").insert(record)

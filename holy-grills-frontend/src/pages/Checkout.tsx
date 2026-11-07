@@ -206,14 +206,25 @@ export default function Checkout() {
   // expiring, single/multi-use reward; delivery stays payable in full).
   const [mealDiscounts, setMealDiscounts] = useState<any[]>([]);
   const [selectedMealDiscountId, setSelectedMealDiscountId] = useState<string | null>(null);
+  const [mealDiscountLoading, setMealDiscountLoading] = useState(false);
+  const [mealDiscountError, setMealDiscountError] = useState(false);
+  const [mealDiscountRetry, setMealDiscountRetry] = useState(0);
   useEffect(() => {
-    if (!isAuthenticated) { setMealDiscounts([]); setSelectedMealDiscountId(null); return; }
+    if (!isAuthenticated) { setMealDiscounts([]); setSelectedMealDiscountId(null); setMealDiscountError(false); setMealDiscountLoading(false); return; }
     let live = true;
+    setMealDiscountLoading(true); setMealDiscountError(false);
     mockApi.ambassadors.myMealDiscounts()
-      .then((rows) => { if (live) setMealDiscounts((rows || []).filter((d: any) => d.status === 'active')); })
-      .catch(() => undefined);
+      .then((rows) => {
+        if (!live) return;
+        const available = (rows || []).filter((d: any) => d.status === 'active' && d.uses_remaining > 0);
+        setMealDiscounts(available);
+        setSelectedMealDiscountId(id => available.some(d => d.id === id) ? id : null);
+      })
+      .catch(() => { if (live) setMealDiscountError(true); })
+      .finally(() => { if (live) setMealDiscountLoading(false); });
     return () => { live = false; };
-  }, [isAuthenticated, user?.id]);
+  }, [isAuthenticated, user?.id, mealDiscountRetry]);
+
 
   useEffect(() => {
     let active = true;
@@ -463,7 +474,7 @@ export default function Checkout() {
         order_source: (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('hg_order_source')) || 'website',
         delivery_type: deliveryType,
         promo_code: promoResult?.code,
-        ...(selectedMealDiscountId ? { meal_discount_id: selectedMealDiscountId } : {}),
+        ...(!rewardOnly && selectedMealDiscountId ? { meal_discount_id: selectedMealDiscountId } : {}),
         ...(!rewardOnly && squadSelection?.squad_id ? {
           squad_id: squadSelection.squad_id,
           ...(squadSelection.excluded_member_ids?.length ? { excluded_member_ids: squadSelection.excluded_member_ids } : {}),
@@ -1132,9 +1143,13 @@ export default function Checkout() {
       </div>
 
       {/* Ambassador meal discount — food only, delivery stays payable */}
-      {mealDiscounts.length > 0 && (
-        <div className="hg-card">
+      {!rewardOnly && (mealDiscountLoading || mealDiscountError || mealDiscounts.length > 0) && (
+        <div id="ambassador-meal-discounts" className="hg-card">
           <h3 className="hg-section-title mb-2 flex items-center gap-2"><Gift className="w-4 h-4 text-primary" /> {msg('FE_CHECKOUT_MEAL_DISCOUNT', 'Ambassador meal discount')}</h3>
+          {mealDiscountLoading && <p role="status" className="text-xs text-muted-foreground">{msg('FE_CHECKOUT_MEAL_LOADING', 'Loading your meal discounts…')}</p>}
+          {mealDiscountError && <p role="alert" className="text-sm text-destructive">{msg('FE_CHECKOUT_MEAL_FAILED', 'Your meal discounts could not be loaded.')}{' '}
+            <button type="button" disabled={mealDiscountLoading} onClick={() => setMealDiscountRetry(value => value + 1)} className="underline">{msg('FE_LOOKUP_RETRY', 'Retry')}</button>
+          </p>}
           <div className="space-y-2">
             <label className={`flex items-center gap-3 rounded-xl border p-3 text-sm cursor-pointer transition ${!selectedMealDiscountId ? 'border-primary bg-primary/5' : 'border-border'}`}>
               <input type="radio" name="meal-discount" checked={!selectedMealDiscountId} onChange={() => setSelectedMealDiscountId(null)} />

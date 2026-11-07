@@ -17,6 +17,14 @@ Rules for editing this file:
 """
 
 class MSG:
+    AMBASSADOR_GRANT_VOIDED = "The original programme reward was voided. An additional reward needs a new authorised grant."
+    FE_DASHBOARD_STREAK_LOADING = "Loading streak…"
+    FE_DASHBOARD_BALANCE_LOADING = "Loading balance"
+    FE_MEAL_DISCOUNT_TOPUP_HELP = "Choose any eligible meal. Pay the amount above your discount plus delivery at checkout."
+    FE_MEAL_DISCOUNT_CHECKOUT = "Apply at checkout"
+    FE_MEAL_DISCOUNT_CHOOSE_MEAL = "Choose a meal"
+    FE_AMBASSADOR_WORKSPACE_READ_FAILED = "Programme data could not be loaded."
+    AMBASSADOR_PROMO_CONFLICT = "This promotional request changed. Start a new message before sending it again."
     FE_CHECKOUT_MEAL_LOADING = "Loading your meal discounts…"
     FE_CHECKOUT_MEAL_FAILED = "Your meal discounts could not be loaded."
     FE_ADMIN_AMBASSADOR_APPROVE_REVIEW = "Approve review"

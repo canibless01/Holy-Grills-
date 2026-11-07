@@ -49,7 +49,7 @@ export default function Dashboard() {
     return () => { current = false; };
   }, [user?.id, retry]);
 
-  const hpActive = hpBalance?.active || 0;
+  const hpActive = hpBalance?.active ?? null;
   const streakDays = streak?.streak_count ?? streak?.current_streak ?? streak?.days ?? streak?.count ?? 0;
   // Backend's authoritative weekly calendar (GET /auth/streak → week_progress).
   // The login-streak week is Mon–Sun (ISO); each day is checked / reclaimed /
@@ -93,7 +93,7 @@ export default function Dashboard() {
 
   const statTiles = [
     { label: 'HP Balance', value: hpActive, icon: Flame, bg: 'bg-accent/10', iconBg: 'bg-primary/10', iconColor: 'text-primary', to: '/hp-education' },
-    { label: 'Wallet', value: wallet?.balance || 0, format: (v) => formatNaira(v), icon: WalletIcon, bg: 'bg-success/10', iconBg: 'bg-success/15', iconColor: 'text-success', to: '/wallet' },
+    { label: 'Wallet', value: wallet?.balance ?? wallet?.wallet_balance ?? null, format: (v) => formatNaira(v), icon: WalletIcon, bg: 'bg-success/10', iconBg: 'bg-success/15', iconColor: 'text-success', to: '/wallet' },
   ];
 
   const quickActions = [
@@ -122,7 +122,7 @@ export default function Dashboard() {
               </div>
               <div className="text-[10px] font-bold uppercase tracking-wide text-white/80">Login Streak</div>
             </div>
-            <div className="text-[10px] text-white/60">{completedThisWeek}/7 this week{missedThisWeek > 0 ? ` · ${missedThisWeek} missed` : ''}</div>
+            <div className="text-[10px] text-white/60">{streak == null ? '—' : `${completedThisWeek}/7 this week${missedThisWeek > 0 ? ` · ${missedThisWeek} missed` : ''}`}</div>
           </div>
           <motion.div
             key={streakDays}
@@ -131,7 +131,7 @@ export default function Dashboard() {
             transition={{ type: 'spring', stiffness: 200 }}
             className="font-heading font-extrabold text-3xl text-white"
           >
-            <CountUp value={streakDays} /> <span className="text-sm font-normal text-white/80">day streak</span>
+            {streak == null ? '—' : <CountUp value={streakDays} />} <span className="text-sm font-normal text-white/80">day streak</span>
           </motion.div>
           {/* 7-day Mon–Sun strip — lit for days you actually checked in or reclaimed. */}
           <div className="flex justify-between gap-1 mt-3">
@@ -143,7 +143,7 @@ export default function Dashboard() {
             ))}
           </div>
           <div className="mt-3 text-center text-[10px] text-white/70 leading-relaxed">
-            {completedThisWeek >= 7
+            {streak == null ? msg('FE_DASHBOARD_STREAK_LOADING', 'Loading streak…') : completedThisWeek >= 7
               ? 'Week complete. HP on the way to your pending balance.'
               : remainingThisWeek > 0
                 ? `Log in ${remainingThisWeek} more day${remainingThisWeek === 1 ? '' : 's'} this week to complete it.`
@@ -192,7 +192,7 @@ export default function Dashboard() {
             <div className={`w-9 h-9 rounded-full ${tile.iconBg} flex items-center justify-center mb-2`}>
               <tile.icon className={`w-5 h-5 ${tile.iconColor}`} />
             </div>
-            <div className="font-heading font-extrabold text-lg text-foreground">{tile.format ? <CountUp value={tile.value} format={tile.format} /> : <CountUp value={tile.value} />}</div>
+            <div className="font-heading font-extrabold text-lg text-foreground">{tile.value == null ? <span role="status" aria-label={msg('FE_DASHBOARD_BALANCE_LOADING', 'Loading balance')}>—</span> : tile.format ? <CountUp value={tile.value} format={tile.format} /> : <CountUp value={tile.value} />}</div>
             <div className="text-xs text-muted-foreground font-medium">{tile.label}</div>
           </Link>
         ))}

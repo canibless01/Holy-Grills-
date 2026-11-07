@@ -24,14 +24,15 @@ export default function AdminAmbassadors() {
   const [tab, setTab] = useState('ambassadors');
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [tagOpen, setTagOpen] = useState(false);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    setLoading(true); setLoadError(false);
     try {
       setRows(await liveApi.ambassadors.listStaff());
     } catch (e) {
-      toast({ title: e.message, variant: 'destructive' });
+      setLoadError(true); toast({ title: e.message, variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -53,6 +54,9 @@ export default function AdminAmbassadors() {
 
   return (
     <div className="space-y-4">
+      {loadError && <p role="alert" className="text-sm text-destructive">{msg('FE_AMBASSADOR_WORKSPACE_READ_FAILED', 'Programme data could not be loaded.')}{' '}
+        <button onClick={() => { void load(); }} className="underline">{msg('FE_LOOKUP_RETRY', 'Retry')}</button>
+      </p>}
       <div className="flex flex-wrap gap-1 p-1 rounded-2xl bg-secondary w-full sm:w-fit">
         {[{ id: 'ambassadors', label: msg('FE_ADMIN_AMBASSADORS_TITLE', 'Campus Ambassadors'), icon: Users },
           { id: 'milestones', label: msg('FE_ADMIN_AMBASSADOR_MILESTONES', 'Performance milestones'), icon: Trophy }].map((t) => (
@@ -209,15 +213,20 @@ function MilestonesTab({ readOnly }: { readOnly: boolean }) {
   const [items, setItems] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const load = useCallback(async () => {
+    setLoading(true); setLoadError(false);
     try { setItems(await liveApi.ambassadors.listMilestones()); }
-    catch (e) { toast({ title: e.message, variant: 'destructive' }); }
+    catch (e) { setLoadError(true); toast({ title: e.message, variant: 'destructive' }); }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
   if (loading) return <StaffPanelSkeleton />;
   return (
     <Card className="p-4 space-y-3">
+      {loadError && <p role="alert" className="text-sm text-destructive">{msg('FE_AMBASSADOR_WORKSPACE_READ_FAILED', 'Programme data could not be loaded.')}{' '}
+        <button onClick={() => { void load(); }} className="underline">{msg('FE_LOOKUP_RETRY', 'Retry')}</button>
+      </p>}
       <div className="flex justify-between items-center">
         <p className="text-xs text-muted-foreground">{items.length} configured milestone{items.length === 1 ? '' : 's'}</p>
         {!readOnly && (

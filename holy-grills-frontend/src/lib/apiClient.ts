@@ -11,6 +11,8 @@ const BASE_URL = API_BASE_URL;
 const TOKEN_KEY = 'hg_access_token';
 const REFRESH_KEY = 'hg_refresh_token';
 let sessionVersion = 0;
+// Non-secret identity generation for account-scoped query caches. Token rotation keeps it.
+export const getSessionGeneration = () => sessionVersion;
 // Default reads share only simultaneous requests. Explicit catalogue reads may
 // retain short-lived results; financial reads and mutations are never cached. Scope
 // includes the actual token/campus/headers so accounts and campuses cannot join

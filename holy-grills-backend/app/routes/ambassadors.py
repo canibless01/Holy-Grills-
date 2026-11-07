@@ -217,15 +217,19 @@ def staff_list_promos():
 @require_role(COMMUNITY_MANAGER_ROLE, "admin")
 def staff_create_promo():
     data = _body() or {}
+    for field in ('caption', 'image_url', 'month'):
+        if data.get(field) is not None and not isinstance(data[field], str):
+            return jsonify({'error': MSG.AUTH_FIELD_INVALID.format(field=field)}), 400
     try:
         result = svc.create_promo_message(
             get_db(),
             {"id": g.user_id, "role": g.user_role, "campus_id": getattr(g, "campus_id", None)},
             image_url=str(data.get("image_url") or "").strip() or None,
             caption=str(data.get("caption") or ""),
-            target_all=bool(data.get("target_all")),
-            ambassador_ids=[str(x) for x in (data.get("ambassador_ids") or []) if validate_uuid(x)],
+            target_all=data.get("target_all", False),
+            ambassador_ids=data.get("ambassador_ids", []),
             month=str(data.get("month") or "").strip() or svc.current_month(),
+            request_id=data.get("request_id"),
         )
     except svc.AmbassadorError as exc:
         return jsonify({"error": str(exc)}), exc.status
@@ -381,13 +385,13 @@ def staff_list_grants():
         return jsonify({"error": MSG.RESOURCE_NOT_FOUND}), 404
     if ambassador_id:
         _guard_ambassador(ambassador_id)
-    rows = svc.list_grants(get_db(), ambassador_id or None)
-    if not _is_super() and not ambassador_id:
-        # Campus managers only ever see their own campus's ambassadors.
-        allowed = {a["profile_id"] for a in get_db().table("ambassadors").select(
-            "profile_id").eq("status", "active").eq(
-            "campus_id", getattr(g, "campus_id", None)).execute() or []}
-        rows = [r for r in rows if r.get("ambassador_id") in allowed]
+    db = get_db()
+    if not ambassador_id and (getattr(g, 'campus_id', None) or not _is_super()):
+        allowed = [a['profile_id'] for a in db.table('ambassadors').select('profile_id').eq(
+            'status', 'active').eq('campus_id', getattr(g, 'campus_id', None)).execute() or []]
+        rows = svc.list_grants(db, ambassador_ids=allowed)
+    else:
+        rows = svc.list_grants(db, ambassador_id or None)
     return jsonify({"grants": rows}), 200
 
 
@@ -408,14 +412,14 @@ def staff_create_grant():
             {"id": g.user_id, "role": g.user_role, "campus_id": getattr(g, "campus_id", None)},
             ambassador_id=ambassador_id,
             category=str(data.get("reward_type") or data.get("category") or "").strip(),
-            amount=float(data.get("amount") or 0),
+            amount=data.get("amount", 0),
             reason=str(data.get("reason") or ""),
             month=str(data.get("month") or "").strip() or svc.current_month(),
-            validity_days=int(data["validity_days"]) if data.get("validity_days") else None,
-            uses_count=int(data.get("uses_count") or 1),
+            validity_days=data.get("validity_days"),
+            uses_count=data.get("uses_count", 1),
             source=str(data.get("source") or "manual"),
             milestone_claim_id=data.get("milestone_claim_id"),
-            override=bool(data.get("override_duplicate")),
+            override=data.get("override_duplicate", False),
         )
     except svc.DuplicateGrant as exc:
         return jsonify({"error": str(exc), "code": "DUPLICATE_MONTHLY_GRANT"}), 409

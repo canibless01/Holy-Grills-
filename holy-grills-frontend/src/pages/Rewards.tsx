@@ -1,5 +1,6 @@
 import { nextChallengeSteps } from '@/lib/challengeProgression';
 import GraduationClaimButton from '@/components/GraduationClaimButton';
+import AmbassadorMealDiscounts from '@/components/AmbassadorMealDiscounts';
 import GiftCampaignCard from '@/components/GiftCampaignCard';
 import { formatNaira } from '@/lib/hgUtils';
 import { useState, useEffect } from 'react';
@@ -397,6 +398,7 @@ export default function Rewards() {
       {/* Redeem tab */}
       {tab === 'redeem' && (
         <div className="space-y-3">
+          <AmbassadorMealDiscounts />
           <GiftCampaignCard onClaimed={async () => { await refreshHp(); setFreeSideCredits(await liveApi.rewards.getFreeSideCredits()); }} />
           <h3 className="font-heading font-bold text-sm text-foreground">It counts everywhere.</h3>
           {rewards.length === 0 && !loadError && (

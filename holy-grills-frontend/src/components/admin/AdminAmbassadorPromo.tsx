@@ -24,14 +24,15 @@ function shareToWhatsApp(_imageUrl: string | null, caption: string, _downloadNam
 export default function AdminAmbassadorPromo() {
   const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const month = new Date().toISOString().slice(0, 7);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    setLoading(true); setLoadError(false);
     try { setMessages(await liveApi.ambassadors.listPromos(month)); }
-    catch (e) { toast({ title: e.message, variant: 'destructive' }); }
+    catch (e) { setLoadError(true); toast({ title: e.message, variant: 'destructive' }); }
     finally { setLoading(false); }
   }, [month]);
   useEffect(() => { load(); }, [load]);
@@ -40,6 +41,9 @@ export default function AdminAmbassadorPromo() {
 
   return (
     <div className="space-y-4">
+      {loadError && <p role="alert" className="text-sm text-destructive">{msg('FE_AMBASSADOR_WORKSPACE_READ_FAILED', 'Programme data could not be loaded.')}{' '}
+        <button onClick={() => { void load(); }} className="underline">{msg('FE_LOOKUP_RETRY', 'Retry')}</button>
+      </p>}
       <div className="flex justify-between items-center">
         <p className="text-xs text-muted-foreground">{messages.length} message{messages.length === 1 ? '' : 's'} · {month}</p>
         <button onClick={() => setCreateOpen(true)}
@@ -48,7 +52,7 @@ export default function AdminAmbassadorPromo() {
         </button>
       </div>
 
-      {messages.length === 0 && (
+      {!loadError && messages.length === 0 && (
         <Card className="p-8 text-center text-sm text-muted-foreground">
           {msg('FE_ADMIN_AMBASSADOR_PROMO_NEW', 'New promotional message')} — upload one graphic, write one caption with {'{{link}}'}, and every selected ambassador gets their own link.
         </Card>
@@ -186,6 +190,8 @@ function CreatePromoModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
   const [ambassadors, setAmbassadors] = useState<any[]>([]);
   const [form, setForm] = useState({ image_url: '', caption: '', target_all: true, ambassador_ids: [] as string[] });
   const [busy, setBusy] = useState(false);
+  const intent = useRef<{ signature: string; id: string } | null>(null);
+  const busyRef = useRef(false);
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
 
   useEffect(() => {
@@ -196,9 +202,15 @@ function CreatePromoModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
     form.ambassador_ids.includes(id) ? form.ambassador_ids.filter((x) => x !== id) : [...form.ambassador_ids, id]);
 
   const save = async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    const month = new Date().toISOString().slice(0, 7);
+    const signature = JSON.stringify({ month, ...form });
+    if (!intent.current || intent.current.signature !== signature) intent.current = { signature, id: crypto.randomUUID() };
     setBusy(true);
     try {
       await liveApi.ambassadors.createPromo({
+        request_id: intent.current.id, month,
         image_url: form.image_url || null,
         caption: form.caption,
         target_all: form.target_all,
@@ -208,7 +220,7 @@ function CreatePromoModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
       onSaved();
     } catch (e) {
       toast({ title: e.message, variant: 'destructive' });
-    } finally { setBusy(false); }
+    } finally { busyRef.current = false; setBusy(false); }
   };
 
   return (

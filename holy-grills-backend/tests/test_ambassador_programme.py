@@ -201,6 +201,19 @@ class AmbassadorTestBase(unittest.TestCase):
             self.db.seed('ambassador_grants',[row])
             return row
         self.db.rpcs['hg_issue_ambassador_grant_atomic'] = grant_contract
+        def promo_contract(params):
+            existing=next((m for m in self.db.rows('ambassador_promo_messages') if m['id']==params['p_message_id']),None)
+            if existing:
+                assigned=[a['ambassador_id'] for a in self.db.rows('ambassador_promo_assignments') if a['message_id']==existing['id']]
+                return {'message':existing,'recipient_count':len(assigned),'ambassador_ids':assigned,'idempotent':True}
+            targets=[a for a in self.db.rows('ambassadors') if a.get('status')=='active' and (params['p_campus_id'] is None or a['campus_id']==params['p_campus_id']) and (params['p_target_all'] or a['profile_id'] in params['p_ambassador_ids'])]
+            if not targets:return {'error':'promo_no_targets'}
+            message={'id':params['p_message_id'],'created_by':params['p_actor_id'],'campus_id':params['p_campus_id'],'caption':params['p_caption'],'image_url':params['p_image_url'],'month':params['p_month'],'target_all':params['p_target_all']}
+            self.db.table('ambassador_promo_messages').insert(message).execute()
+            self.db.table('ambassador_promo_assignments').insert([{'message_id':message['id'],'ambassador_id':a['profile_id'],'month':params['p_month'],'status':'pending'} for a in targets]).execute()
+            return {'message':message,'recipient_count':len(targets),'ambassador_ids':[a['profile_id'] for a in targets],'idempotent':False}
+        self.db.rpcs['hg_create_ambassador_promo_atomic']=promo_contract
+
         # Patches for every module that imported get_db by name.
         self.stack = ExitStack()
         self.stack.enter_context(patch.object(svc, 'get_db', return_value=self.db))
@@ -825,12 +838,13 @@ class GrantTests(AmbassadorTestBase):
         extra=svc.issue_grant(self.db,self._actor(),**{**kwargs,'reason':'second'},override=True)
         self.assertTrue(extra['duplicate_override'])
 
-    def test_issued_replay_does_not_send_another_notification(self):
+    def test_issued_replay_recovers_notice_with_same_grant_receipt(self):
         self.ctx();self.seed_ambassador()
         self.db.rpcs['hg_issue_ambassador_grant_atomic']=lambda _: {'id':'receipt','idempotent':True}
         with patch('app.services.notification_service.send_notification') as notify:
             svc.issue_grant(self.db,self._actor(),ambassador_id=AMB,category='hp',amount=50,reason='test',month=MONTH)
-            notify.assert_not_called()
+            self.assertEqual(notify.call_args.kwargs['reference_id'], 'receipt')
+            self.assertEqual(notify.call_args.kwargs['reference_type'], 'ambassador_grant')
 
     def test_unsafe_amounts_never_reach_award_rpc(self):
         self.ctx();self.seed_ambassador()
@@ -974,8 +988,8 @@ class MealDiscountCheckoutTests(AmbassadorTestBase):
         ])
         rows = svc.list_my_discounts(self.db, AMB)
         self.assertEqual([r['id'] for r in rows], ['d-1'])
-        # The expiry sweep runs on every read.
-        self.assertIn('hg_expire_ambassador_discounts', self.db.rpc_names())
+        self.assertEqual(rows[0]['status'], 'expired')
+        self.assertNotIn('hg_expire_ambassador_discounts', self.db.rpc_names())
 
 
 # ---------------------------------------------------------------------------
@@ -1162,7 +1176,7 @@ class ProgrammeRegressionTests(AmbassadorTestBase):
         self.db.seed('ambassador_milestones',[{'id':'rule','created_by':ADMIN_ID,'metric':'shares','threshold':1,
             'reward_type':'hp','reward_amount':25,'auto_issue':True,'is_active':True,'campus_id':CAMPUS_A}])
         self.db.seed('ambassador_promo_assignments',[{'ambassador_id':AMB,'month':MONTH,'status':'shared'}])
-        self.db.seed('ambassador_milestone_claims',[{'id':'claim','ambassador_id':AMB,'milestone_id':'rule','period_month':MONTH,'status':'pending_approval'}])
+        self.db.seed('ambassador_milestone_claims',[{'id':'66666666-6666-4666-8666-666666666666','ambassador_id':AMB,'milestone_id':'rule','period_month':MONTH,'status':'pending_approval'}])
         out=svc.evaluate_milestones(self.db,AMB,MONTH)
         self.assertEqual(out[0]['claim']['status'],'issued')
         self.assertEqual(self.db.rows('ambassador_grants')[0]['issued_by'],ADMIN_ID)
@@ -1188,3 +1202,114 @@ class SignupAttributionRegressionTests(AmbassadorTestBase):
             {'id':'two','ambassador_id':AMB2,'visitor_user_id':STUDENT_ID,'created_at':'2026-10-01T11:00:00Z'}])
         self.assertEqual(len(svc.attributed_signups(self.db,AMB,MONTH)),1)
         self.assertEqual(svc.attributed_signups(self.db,AMB2,MONTH),[])
+
+
+class PriorityAmbassadorRewardTests(AmbassadorTestBase):
+    def test_active_expired_discount_rejects_without_sweeping_all_accounts(self):
+        self.ctx();self.db.seed('ambassador_meal_discounts',[{'id':'expired','ambassador_id':AMB,'status':'active','uses_remaining':1,'expires_at':'2000-01-01T00:00:00Z'}])
+        with self.assertRaises(svc.AmbassadorError):svc.resolve_discount_for_checkout(self.db,AMB,'expired')
+        rows=svc.list_my_discounts(self.db,AMB)
+        self.assertEqual(rows[0]['status'],'expired')
+        self.assertEqual(self.db.rows('ambassador_meal_discounts')[0]['status'],'active')
+        self.assertNotIn('hg_expire_ambassador_discounts',self.db.rpc_names())
+
+    def test_metric_reads_share_only_one_request_and_authorization_scope(self):
+        self.ctx()
+        request_context=self.app.test_request_context();request_context.push();self.addCleanup(request_context.pop)
+        rows=[{'id':'visitor','created_at':'2026-10-02T00:00:00Z'}]
+        with patch.object(svc,'_attributed_signups',return_value=rows) as read:
+            lifetime=svc.attributed_signups(self.db,AMB)
+            lifetime[0]['id']='changed by caller'
+            monthly=svc.attributed_signups(self.db,AMB,MONTH)
+            self.assertEqual(monthly[0]['id'],'visitor');self.assertEqual(read.call_count,1)
+            g.campus_id=CAMPUS_B
+            svc.attributed_signups(self.db,AMB,MONTH)
+            self.assertEqual(read.call_count,2)
+            with self.app.test_request_context():
+                g.user_role='admin';g.campus_id=CAMPUS_A
+                svc.attributed_signups(self.db,AMB,MONTH)
+            self.assertEqual(read.call_count,3)
+
+    def test_manual_status_change_refreshes_request_metrics(self):
+        self.ctx();self.seed_ambassador()
+        request_context=self.app.test_request_context();request_context.push();self.addCleanup(request_context.pop)
+        self.db.seed('ambassador_promo_assignments',[{'id':'assignment','ambassador_id':AMB,'month':MONTH,'status':'pending'}])
+        self.assertEqual(svc.assignment_metrics(self.db,AMB,MONTH)['seen_count'],0)
+        svc.set_assignment_status(self.db,ADMIN_ID,'assignment','seen',None)
+        self.assertEqual(svc.assignment_metrics(self.db,AMB,MONTH)['seen_count'],1)
+
+    def test_invalid_grant_terms_do_not_reach_financial_rpc(self):
+        self.ctx();self.seed_ambassador()
+        base=dict(ambassador_id=AMB,category='meal_discount',amount=3000,month=MONTH,reason='Native audit')
+        for change in ({'uses_count':0},{'uses_count':1.5},{'uses_count':True},{'uses_count':101},
+                       {'validity_days':0},{'validity_days':1.5},{'validity_days':366},
+                       {'override':'false'},{'amount':True},{'amount':0.001}):
+            with self.subTest(change=change),self.assertRaises(svc.AmbassadorError):
+                svc.issue_grant(self.db,{'id':ADMIN_ID,'role':'admin'},**{**base,**change})
+        self.assertNotIn('hg_issue_ambassador_grant_atomic',self.db.rpc_names())
+
+    def test_noncanonical_programme_month_is_rejected(self):
+        for value in ('2026-1','2026-00','2026-13','0000-01',True):
+            with self.subTest(value=value),self.assertRaises(svc.AmbassadorError):svc.parse_month(value)
+        self.assertEqual(svc.parse_month('2026-01'),'2026-01')
+
+    def test_milestone_marker_does_not_need_second_post_commit_write(self):
+        self.ctx()
+        with patch.object(svc,'get_db',return_value=self.db),patch.object(svc,'_system_actor',return_value={'id':ADMIN_ID,'role':'admin'}),patch.object(svc,'issue_grant',return_value={'id':'grant'}):
+            result=svc._auto_issue_milestone_grant({'profile_id':AMB},{'reward_type':'hp','reward_amount':50,'metric':'shares','threshold':1},{'id':'claim'},MONTH)
+        self.assertEqual(result['status'],'issued');self.assertEqual(result['grant_id'],'grant')
+        self.assertNotIn('ambassador_milestone_claims',self.db.written_tables)
+
+class ProgrammeBoundariesAndReplayTests(AmbassadorTestBase):
+    def test_monthly_order_metrics_include_final_fractional_second_and_offsets(self):
+        self.ctx()
+        self.db.seed('ambassador_order_attributions',[
+            {'order_id':'last','ambassador_id':AMB,'eligibility':'eligible','attributed_at':'2026-10-31T23:59:59.999999Z'},
+            {'order_id':'first','ambassador_id':AMB,'eligibility':'eligible','attributed_at':'2026-11-01T00:00:00+01:00'},
+            {'order_id':'next','ambassador_id':AMB,'eligibility':'eligible','attributed_at':'2026-11-01T00:00:00Z'}])
+        self.assertEqual({r['order_id'] for r in svc.attributed_orders(self.db,AMB,MONTH)},{'last','first'})
+
+    def test_promo_retry_keeps_message_and_assignments_once(self):
+        self.ctx();self.seed_ambassador()
+        intent=str(uuid.uuid4());actor={'id':ADMIN_ID,'role':'admin','campus_id':CAMPUS_A}
+        one=svc.create_promo_message(self.db,actor,image_url=None,caption='Share {{link}}',month=MONTH,target_all=True,ambassador_ids=[],request_id=intent)
+        two=svc.create_promo_message(self.db,actor,image_url=None,caption='Share {{link}}',month=MONTH,target_all=True,ambassador_ids=[],request_id=intent)
+        self.assertEqual(one['message']['id'],two['message']['id']);self.assertTrue(two['idempotent'])
+        self.assertEqual(len(self.db.rows('ambassador_promo_assignments')),1)
+        self.assertEqual(len(self.db.rows('ambassador_promo_messages')),1)
+
+    def test_malformed_promo_targeting_does_not_reach_rpc(self):
+        self.ctx()
+        for change in ({'target_all':'false'},{'ambassador_ids':'not-a-list'},{'ambassador_ids':['bad']},{'request_id':'bad'}):
+            body={'image_url':None,'caption':'Share {{link}}','month':MONTH,'target_all':False,'ambassador_ids':[AMB]}
+            with self.subTest(change=change),self.assertRaises(svc.AmbassadorError):
+                svc.create_promo_message(self.db,{'id':ADMIN_ID,'campus_id':CAMPUS_A},**{**body,**change})
+        self.assertNotIn('hg_create_ambassador_promo_atomic',self.db.rpc_names())
+
+class ProgrammeReviewReadTests(AmbassadorTestBase):
+    def test_first_review_has_safe_defaults_before_any_saved_decision(self):
+        self.ctx();self.seed_ambassador()
+        result=svc.build_review(self.db,AMB,MONTH)
+        self.assertEqual(result['recommendation'],'none');self.assertEqual(result['decision'],'pending')
+        self.assertEqual(result['ambassador_id'],AMB)
+
+    def test_unchanged_review_metrics_are_not_written_again(self):
+        self.ctx();self.seed_ambassador()
+        self.db.seed('ambassador_monthly_reviews',[{'id':str(uuid.uuid4()),'ambassador_id':AMB,'month':MONTH,'assigned_count':0,'seen_count':0,'shared_count':0,'completion_rate':0,'signups_count':0,'orders_count':0}])
+        result=svc.persist_review_metrics(self.db,AMB,MONTH)
+        self.assertEqual(result['assigned_count'],0)
+        self.assertNotIn('ambassador_monthly_reviews',self.db.written_tables)
+
+class ProgrammeGrantHistoryTests(AmbassadorTestBase):
+    def test_empty_campus_recipient_list_never_becomes_global(self):
+        self.ctx();self.db.seed('ambassador_grants',[{'id':'foreign','ambassador_id':AMB2}])
+        self.assertEqual(svc.list_grants(self.db,ambassador_ids=[]),[])
+        self.assertEqual(svc.list_grants(self.db,ambassador_ids=[AMB]),[])
+        self.assertEqual(svc.list_grants(self.db,ambassador_ids=[AMB2])[0]['id'],'foreign')
+
+    def test_voided_grant_replay_does_not_announce_a_new_reward(self):
+        self.ctx();self.seed_ambassador()
+        self.db.rpcs['hg_issue_ambassador_grant_atomic']=lambda _: {'id':str(uuid.uuid4()),'idempotent':True,'status':'voided'}
+        with patch('app.services.notification_service.send_notification') as notify,self.assertRaises(svc.AmbassadorError) as error:
+            svc.issue_grant(self.db,{'id':ADMIN_ID,'role':'admin'},ambassador_id=AMB,category='hp',amount=50,reason='review',month=MONTH)
+        self.assertEqual(error.exception.status,409);notify.assert_not_called()

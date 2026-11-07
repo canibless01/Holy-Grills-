@@ -185,10 +185,20 @@ if __name__=='__main__':unittest.main()
 class CombinedMealDiscountTests(unittest.TestCase):
     setUp = CheckoutQuoteTests.setUp
     calculate = CheckoutQuoteTests.calculate
+    def test_meal_above_discount_cap_remains_orderable_with_delivery(self):
+        self.db.rows['order_locks']=[]
+        self.db.rows['menu_items'][0]['price']=4500
+        self.db.rows['hostels'][0]['delivery_fee']=500
+        discount='55555555-5555-4555-8555-555555555555'
+        self.db.rows['ambassador_meal_discounts']=[{'id':discount,'ambassador_id':'student','status':'active','max_meal_value':3000,'uses_remaining':1,'expires_at':'2099-01-01T00:00:00Z'}]
+        quote=self.calculate(payload={**self.payload,'meal_discount_id':discount})
+        self.assertEqual((quote['subtotal'],quote['meal_discount']['amount'],quote['delivery_fee'],quote['total_amount']),(4500,3000,500,2000))
+        self.assertEqual(self.db.rows['ambassador_meal_discounts'][0]['uses_remaining'],1)
+
     def test_promo_lock_meal_and_delivery_credit_keep_payment_conservation(self):
         from app.services import ambassador_service
         discount='55555555-5555-4555-8555-555555555555'
-        self.db.rows['ambassador_meal_discounts']=[{'id':discount,'ambassador_id':'student','status':'active','max_meal_value':1000,'uses_remaining':1}]
+        self.db.rows['ambassador_meal_discounts']=[{'id':discount,'ambassador_id':'student','status':'active','max_meal_value':1000,'uses_remaining':1,'expires_at':'2099-01-01T00:00:00Z'}]
         self.db.rows['profiles'][0]['next_order_free_delivery_cap']=100
         with patch.object(service,'_apply_promo',return_value={'discount':300,'promo_code_id':'promo'}),patch.object(ambassador_service,'sweep_expired_discounts',return_value=0):
             quote=self.calculate(payload={**self.payload,'promo_code':'PROMO','meal_discount_id':discount})
@@ -202,7 +212,7 @@ class CombinedMealDiscountTests(unittest.TestCase):
     def test_fully_discounted_food_does_not_spend_meal_benefit_or_discount_delivery(self):
         from app.services import ambassador_service
         discount='55555555-5555-4555-8555-555555555555'
-        self.db.rows['ambassador_meal_discounts']=[{'id':discount,'ambassador_id':'student','status':'active','max_meal_value':1000,'uses_remaining':1}]
+        self.db.rows['ambassador_meal_discounts']=[{'id':discount,'ambassador_id':'student','status':'active','max_meal_value':1000,'uses_remaining':1,'expires_at':'2099-01-01T00:00:00Z'}]
         with patch.object(service,'_apply_promo',return_value={'discount':3000,'promo_code_id':'promo'}),patch.object(ambassador_service,'sweep_expired_discounts',return_value=0):
             quote=self.calculate(payload={**self.payload,'promo_code':'PROMO','meal_discount_id':discount})
         self.assertEqual((quote['discount_amount'],quote['total_amount']),(2050,250))
