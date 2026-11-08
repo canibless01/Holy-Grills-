@@ -63,6 +63,10 @@ def _scan_schedule(variable, default_minutes):
 
 
 celery_app.conf.beat_schedule = {
+    "automatic-wallet-funding": {
+        "task": "app.tasks.scheduled.automatic_wallet_funding",
+        "schedule": crontab(minute="*/15"),
+    },
     "reset-monthly-leaderboard": {
         "task": "app.tasks.scheduled.reset_monthly_leaderboard",
         "schedule": crontab(hour=0, minute=1, day_of_month=1),

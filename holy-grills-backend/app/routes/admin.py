@@ -1590,6 +1590,7 @@ _CRON_INTERVAL_MINUTES = {
     "reset-monthly-hp-tracker":      (44640, "1st of month @ 00:05 WAT"),
     "membership-anniversary-awards": (1440, "daily @ 06:00 WAT"),
     "send-scheduled-blasts":         (15, "every 15 minutes"),
+    "automatic-wallet-funding":      (15, "every 15 minutes"),
     "process-scheduled-orders":      (15, "every 15 minutes"),
     "check-post-delivery-nudges":    (60, "every 60 minutes"),
     "grant-monthly-tier-perks":      (44640, "1st of month @ 00:05 WAT"),
@@ -1829,6 +1830,7 @@ def run_cron_job(job_name):
         membership_anniversary_awards,
         send_scheduled_notifications,
         send_scheduled_blasts,
+        automatic_wallet_funding,
         process_scheduled_orders,
     )
     from app.tasks.scheduled import check_post_delivery_nudges, grant_monthly_tier_perks
@@ -1848,6 +1850,7 @@ def run_cron_job(job_name):
         "membership-anniversary-awards": membership_anniversary_awards,
         "send-scheduled-notifications":  send_scheduled_notifications,
         "send-scheduled-blasts":         send_scheduled_blasts,
+        "automatic-wallet-funding":      automatic_wallet_funding,
         "process-scheduled-orders":      process_scheduled_orders,
         "check-post-delivery-nudges":    check_post_delivery_nudges,
         "grant-monthly-tier-perks":      grant_monthly_tier_perks,

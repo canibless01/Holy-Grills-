@@ -10,7 +10,7 @@ import { msg } from '@/lib/messages';
 
 const PRESETS = [1000, 3000, 5000, 10000];
 
-export default function WalletFundModal({ open, onClose, wallet, onSuccess }) {
+export default function WalletFundModal({ open, onClose, wallet, onSuccess, onAutoFunding }) {
   const [method, setMethod] = useState('card');
   const [amount, setAmount] = useState('');
   const [processing, setProcessing] = useState(false);
@@ -152,6 +152,7 @@ export default function WalletFundModal({ open, onClose, wallet, onSuccess }) {
                 >
                   {processing ? 'Processing…' : `Fund ${amt ? formatNaira(amt) : 'Wallet'}`}
                 </button>
+                {onAutoFunding && <button type="button" onClick={onAutoFunding} className="text-sm font-bold text-primary w-full">Set up automatic funding instead</button>}
                 <p className="text-[10px] text-muted-foreground text-center leading-relaxed">
                   {method === 'card' ? "You'll be redirected to Paystack to pay securely." : "We'll confirm your transfer automatically via webhook."}
                 </p>

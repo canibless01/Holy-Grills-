@@ -34,7 +34,6 @@ def credit_wallet(user_id: str, amount: float, payment_reference: str, reference
         if has_app_context():
             campus_id = getattr(g, 'campus_id', None)
     db = get_db()
-    config = current_app.config
 
     res = db.rpc("credit_wallet_atomic", {
         "p_user_id": user_id,
@@ -60,6 +59,14 @@ def credit_wallet(user_id: str, amount: float, payment_reference: str, reference
         except Exception:
             pass
 
+    apply_wallet_funding_rewards(user_id, amount, txn_id, reference_type, campus_id)
+    return txn or {"user_id": user_id, "amount": amount, "balance_after": res.get("new_balance") if isinstance(res, dict) else amount}
+
+
+def apply_wallet_funding_rewards(user_id, amount, txn_id, reference_type, campus_id, strict=False):
+    """Stable wallet receipts make bonus/reclamation recovery safe to replay."""
+    db = get_db()
+    config = current_app.config
     topup_min = setting_or_config(db, 'wallet_topup_min', config.get('WALLET_TOPUP_MIN', 3000), minimum=0)
     if amount >= topup_min and reference_type in ("topup", "bank_transfer"):
         try:
@@ -82,17 +89,21 @@ def credit_wallet(user_id: str, amount: float, payment_reference: str, reference
                 apply_multiplier=False,  # configured flat funding bonus
             )
         except Exception as exc:
+            if strict:
+                raise
             logger.error("credit_wallet: the top-up HP bonus could not be awarded for %s (₦%s top-up): %s",
                           user_id, amount, exc)
 
     if amount >= config.get("STREAK_RECLAIM_MIN_TOPUP", 1000) and reference_type in ("topup", "bank_transfer"):
         try:
             from app.services.streak_service import try_reclaim_checkin
-            try_reclaim_checkin(user_id, reclaim_type="wallet_topup", reference_id=txn_id)
+            recovery = try_reclaim_checkin(user_id, reclaim_type="wallet_topup", reference_id=txn_id)
+            if strict and isinstance(recovery, dict) and recovery.get("reason") == "recovery_pending":
+                raise RuntimeError("Wallet check-in recovery remains pending")
         except Exception as exc:
+            if strict:
+                raise
             logger.warning("credit_wallet: streak reclaim check failed for %s: %s", user_id, exc)
-
-    return txn or {"user_id": user_id, "amount": amount, "balance_after": res.get("new_balance") if isinstance(res, dict) else amount}
 
 
 def debit_wallet(user_id: str, amount: float, reference_id: str, reference_type: str, notes: str = "", campus_id: str = None) -> dict:

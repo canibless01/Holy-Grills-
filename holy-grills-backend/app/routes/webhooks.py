@@ -472,6 +472,11 @@ def _handle_charge_success(data: dict):
     - Wallet top-up if metadata.type == 'wallet_topup'
     - HP bundle purchase if metadata.purpose == 'hp_bundle' or type == 'hp_bundle' (isolated)
     """
+    # Reference-owned routing also works if Paystack omits metadata. Keep these
+    # payments isolated from ordinary top-ups and order-payment fallthrough.
+    if str(data.get("reference") or "").startswith("HG-AUTO-"):
+        from app.services.auto_funding import confirm_payment
+        return confirm_payment(data).get("campus_id")
     currency = data.get("currency")
     if currency and str(currency).upper() != "NGN":
         raise ValueError(f"Invalid currency: {currency}")

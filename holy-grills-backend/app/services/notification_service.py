@@ -49,7 +49,7 @@ _CRITICAL_NOTIF_TYPES = frozenset({
     # Tier
     "tier_upgrade", "tier_downgrade", "tier_grace_period",
     # Wallet
-    "wallet_funded", "wallet_funded_card", "wallet_funded_bank",
+    "wallet_funded", "wallet_funded_card", "wallet_funded_bank", "wallet_auto_funding_attention",
     # Marketplace
     "marketplace_purchase", "marketplace_purchase_status",
     "marketplace_code_replaced", "marketplace_report_update",
@@ -197,7 +197,7 @@ def get_notification_channels(notif_type: str, extra: list = None) -> list:
         # Guest (1)
         "guest_order_claimed",
         # Wallet (2) — withdrawal types removed entirely
-        "wallet_funded_card", "wallet_funded_bank",
+        "wallet_funded_card", "wallet_funded_bank", "wallet_auto_funding_attention",
         # HP (6)
         "hp_gift_received", "hp_transfer_recipient",
         "hp_decay_applied", "hp_decay_warning",
@@ -511,6 +511,7 @@ def send_notification(
         if ((notif_type in REQUEST_TYPES and reference_id)
                 or (notif_type == "ambassador_grant_issued" and reference_type == "ambassador_grant" and reference_id)
                 or (notif_type == "event_ticket_refunded" and reference_type == "event_ticket_refund" and reference_id)
+                or (notif_type in ("wallet_funded_card", "wallet_auto_funding_attention") and reference_type == "wallet_auto_funding" and reference_id)
                 or (notif_type == "milestone_achieved" and reference_type == "milestone_completion" and reference_id)
                 or (notif_type == "checkin_reclaimed" and reference_type == "streak_reclaim" and reference_id)
                 or (notif_type in ("checkin_streak_week", "streak_cycle_failed") and reference_type == "login_week" and reference_id)

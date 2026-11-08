@@ -67,6 +67,7 @@ def create_app(config_class=Config, *, background=False):
     from app.routes.orders import orders_bp
     from app.routes.hp import hp_bp
     from app.routes.wallet import wallet_bp
+    from app.routes.auto_funding import auto_funding_bp
     from app.routes.rewards import rewards_bp
     from app.routes.marketplace import marketplace_bp
     from app.routes.events import events_bp
@@ -199,6 +200,7 @@ def create_app(config_class=Config, *, background=False):
     app.register_blueprint(orders_bp, url_prefix="/api/orders")
     app.register_blueprint(hp_bp, url_prefix="/api/hp")
     app.register_blueprint(wallet_bp, url_prefix="/api/wallet")
+    app.register_blueprint(auto_funding_bp, url_prefix="/api/wallet/auto-funding")
     app.register_blueprint(rewards_bp, url_prefix="/api/rewards")
     app.register_blueprint(marketplace_bp, url_prefix="/api/marketplace")
     app.register_blueprint(events_bp, url_prefix="/api/events")

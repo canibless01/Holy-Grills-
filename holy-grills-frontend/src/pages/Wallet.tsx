@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
@@ -15,6 +15,8 @@ import { msg } from '@/lib/messages';
 import { useFeatureFlags, showHpTransferUI } from '@/lib/featureConfig';
 import { hpTransferMinOrders } from '@/lib/appConfig';
 
+const AutoFundingPanel = lazy(() => import('@/components/wallet/AutoFundingPanel'));
+
 export default function Wallet() {
   useFeatureFlags();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -22,7 +24,8 @@ export default function Wallet() {
   const [walletTxns, setWalletTxns] = useState([]);
   const [hpTxns, setHpTxns] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [verifying, setVerifying] = useState(() => !!searchParams.get('reference'));
+  const [verifying, setVerifying] = useState(() => !!searchParams.get('reference') && !searchParams.has('auto_funding'));
+  const [showAutoFunding, setShowAutoFunding] = useState(() => searchParams.has('auto_funding'));
   const [historyError, setHistoryError] = useState(false);
   const [historyRetry, setHistoryRetry] = useState(0);
   const [fundingStatus, setFundingStatus] = useState<'pending' | 'error' | 'review' | null>(null);
@@ -70,7 +73,7 @@ export default function Wallet() {
     const load = async () => {
       setLoading(true); setHistoryError(false);
       const reference = searchParams.get('reference');
-      if (reference && historyRetry === 0) {
+      if (reference && !searchParams.has('auto_funding') && historyRetry === 0) {
         await checkFunding(reference, false);
       }
       try {
@@ -134,6 +137,12 @@ export default function Wallet() {
 
       <WalletVirtualAccount account={virtualAccount} />
 
+      <section id="automatic-funding" className="rounded-2xl border border-border bg-card p-4 space-y-3">
+        <div className="flex flex-wrap gap-3 items-center justify-between"><div><h2 className="font-heading font-bold">Automatic funding</h2><p className="text-sm text-muted-foreground">Your amount. Your schedule. Always available to spend.</p></div>
+          <button type="button" className="text-sm font-bold text-primary" aria-expanded={showAutoFunding} aria-controls="automatic-funding-panel" onClick={() => setShowAutoFunding(value => !value)}>{showAutoFunding ? 'Hide details' : 'Set up or manage'}</button></div>
+        {showAutoFunding && <div id="automatic-funding-panel"><Suspense fallback={<p role="status" className="text-sm">Loading automatic funding…</p>}><AutoFundingPanel reference={searchParams.has('auto_funding') ? searchParams.get('reference') : null} planId={searchParams.get('auto_funding')} onPaid={async () => { await Promise.all([refreshWallet(), refreshHp()]); setHistoryRetry(value => value + 1); }} /></Suspense></div>}
+      </section>
+
       {historyError && <p role="alert" className="text-sm text-destructive">
         {msg('FE_WALLET_HISTORY_UNAVAILABLE', 'Some transaction history could not be loaded.')}{' '}
         <button onClick={() => setHistoryRetry(value => value + 1)} className="underline">{msg('FE_LOOKUP_RETRY', 'Retry')}</button>
@@ -151,6 +160,7 @@ export default function Wallet() {
         onClose={() => setShowFund(false)}
         wallet={wallet}
         onSuccess={handleFundSuccess}
+        onAutoFunding={() => { setShowFund(false); setShowAutoFunding(true); setTimeout(() => document.getElementById('automatic-funding')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); }}
       />
 
       <HpTransferModal open={showTransfer && transferReleased} onClose={() => setShowTransfer(false)} />

@@ -60,6 +60,15 @@ def with_cron_logging(job_name: str):
     return decorator
 
 
+@celery_app.task(name="app.tasks.scheduled.automatic_wallet_funding", ignore_result=True)
+@with_cron_logging("automatic-wallet-funding")
+def automatic_wallet_funding():
+    # Shared worker/beat, one indexed bounded scan. No per-user cron tasks.
+    # The DB hands out each charge exactly once, including overlapping workers.
+    from app.services.auto_funding import sweep
+    return sweep()
+
+
 def _completed_period(now, kind):
     """UTC query bounds and the completed period's WAT label."""
     from app.services.delivery_window_schedule import WAT

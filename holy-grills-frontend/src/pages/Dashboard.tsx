@@ -99,7 +99,8 @@ export default function Dashboard() {
   const quickActions = [
     { label: 'Events', subtitle: 'Earn HP', icon: Calendar, to: '/events', bg: 'bg-brand-brown' },
     { label: 'Marketplace', subtitle: 'Browse deals', icon: ShoppingBag, to: '/marketplace', bg: 'bg-accent' },
-    { label: 'Leaderboard', subtitle: user?.role !== 'student' ? 'Student rankings' : rank?.unranked ? 'Not ranked yet' : `${rank?.period_type === 'all_time' ? 'Overall' : 'Monthly'} rank ${rank?.rank ? '#' + myRank : '—'}`, icon: Trophy, to: '/leaderboard', bg: 'bg-primary', span: 'col-span-2 sm:col-span-1' },
+    { label: 'Leaderboard', subtitle: user?.role !== 'student' ? 'Student rankings' : rank?.unranked ? 'Not ranked yet' : `${rank?.period_type === 'all_time' ? 'Overall' : 'Monthly'} rank ${rank?.rank ? '#' + myRank : '—'}`, icon: Trophy, to: '/leaderboard', bg: 'bg-primary' },
+    { label: 'Automatic funding', subtitle: 'Your amount. Your schedule.', icon: WalletIcon, to: '/wallet?auto_funding=1', bg: 'bg-success' },
   ];
 
 
@@ -314,9 +315,9 @@ export default function Dashboard() {
       </Link>
 
       {/* Quick-action grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         {quickActions.map(a => (
-          <Link key={a.label} to={a.to} className={`relative rounded-2xl ${a.bg} ${a.span || ''} p-4 flex flex-col gap-2 hover:scale-[1.02] transition-transform`}>
+          <Link key={a.label} to={a.to} className={`relative rounded-2xl ${a.bg} p-4 flex flex-col gap-2 hover:scale-[1.02] transition-transform`}>
             <a.icon className="w-6 h-6 text-white" />
             <div className="font-heading font-bold text-base text-white">{a.label}</div>
             <div className="text-xs text-white/80">{a.subtitle}</div>

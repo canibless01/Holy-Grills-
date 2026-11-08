@@ -113,6 +113,9 @@ class Config:
     )
 
     PAYSTACK_SECRET_KEY = os.environ.get("PAYSTACK_SECRET_KEY", "")
+    # Emergency stop for NEW automatic wallet debits. Verification and credits
+    # for money already paid continue even when this is false.
+    WALLET_AUTO_FUNDING_ENABLED = os.environ.get("WALLET_AUTO_FUNDING_ENABLED", "true").strip().lower() == "true"
     PAYSTACK_PUBLIC_KEY = os.environ.get("PAYSTACK_PUBLIC_KEY", "")
     # Paystack signs webhooks with the account secret key; there is no separate webhook secret in their dashboard.
     # Falls back to PAYSTACK_SECRET_KEY so any code reading this setting agrees with webhooks.py's own fallback.

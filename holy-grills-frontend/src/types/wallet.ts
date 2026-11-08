@@ -5,6 +5,31 @@
 import type { IsoDateTime, MutationResult, Naira, Uuid } from './common';
 import type { VirtualAccount } from './auth';
 
+export interface AutoFundingPlan {
+  id: string;
+  amount_kobo: number;
+  interval_days: number;
+  stop_after: number | null;
+  end_at: string | null;
+  state: 'draft' | 'active' | 'attention' | 'stopped' | 'completed';
+  successful_payments: number;
+  total_credited_kobo: number;
+  next_due_at: string | null;
+  card_label?: string | null;
+  setup_reference: string;
+  checkout_url?: string | null;
+  in_flight?: boolean;
+}
+
+export interface AutoFundingLimits {
+  enabled?: boolean;
+  minimum_amount: number;
+  maximum_amount: number;
+  maximum_interval_days: number;
+  fee_payer: 'holy_grills';
+  consent_version: string;
+}
+
 /** GET /api/wallet. */
 export interface Wallet {
   balance: Naira;
