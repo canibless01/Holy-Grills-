@@ -25,12 +25,13 @@ def rpc(action, user=None, plan=None, data=None):
 
 try:
     sql(f"INSERT INTO auth.users(id,email) VALUES('{USER}','local-concurrency-{USER}@example.invalid'); INSERT INTO wallets(user_id,balance) VALUES('{USER}',0);")
-    terms = {'amount_kobo': 20000, 'interval_days': 2, 'stop_after': 3, 'consent_version': 'wallet-auto-funding-v1'}
+    terms = {'amount_kobo': 20000, 'interval_days': 2, 'stop_after': 3, 'consent_version': 'wallet-auto-funding-v2'}
     with ThreadPoolExecutor(max_workers=12) as pool:
         created = list(pool.map(lambda _: rpc('create', USER, PLAN, terms), range(24)))
     assert sum(row['created'] for row in created) == 1
     reference = created[0]['plan']['setup_reference']
-    payment = {'reference': reference, 'currency': 'NGN', 'amount_kobo': 20000,
+    payment = {'reference': reference, 'currency': 'NGN', 'amount_kobo': 20305,
+               'requested_amount_kobo': 20000, 'fees_kobo': 305,
                'authorization': {'authorization_code': 'test-only-private', 'reusable': True, 'channel': 'card', 'brand': 'visa', 'last4': '4081'}}
     with ThreadPoolExecutor(max_workers=12) as pool:
         list(pool.map(lambda _: rpc('confirm', USER, PLAN, payment), range(36)))
@@ -44,7 +45,8 @@ try:
     with ThreadPoolExecutor(max_workers=12) as pool:
         # Stop and success callbacks contend on the same plan lock.
         futures = [pool.submit(rpc, 'stop', USER, PLAN) for _ in range(12)]
-        futures += [pool.submit(rpc, 'confirm', data={'reference': reference2, 'currency': 'NGN', 'amount_kobo': 20000}) for _ in range(24)]
+        futures += [pool.submit(rpc, 'confirm', data={'reference': reference2, 'currency': 'NGN', 'amount_kobo': 20305,
+                    'requested_amount_kobo': 20000, 'fees_kobo': 305}) for _ in range(24)]
         for future in futures: future.result()
     assert float(sql(f"SELECT balance FROM wallets WHERE user_id='{USER}';")) == 400
     assert sql(f"SELECT count(*) FROM wallet_transactions WHERE user_id='{USER}';") == '2'

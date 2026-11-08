@@ -37,7 +37,7 @@ with sync_playwright() as p:
      reads_blocked_by_checkout[0] += 1
      route.fulfill(status=503, json={'error': 'Synthetic post-create refresh failure'})
      return
-    else: data = {'plans': stored or history, 'limits': {'minimum_amount': 100, 'maximum_amount': 1000000, 'maximum_interval_days': 365, 'consent_version': 'wallet-auto-funding-v1', 'fee_payer': 'holy_grills'}}
+    else: data = {'plans': stored or history, 'limits': {'minimum_amount': 100, 'maximum_amount': 1000000, 'maximum_interval_days': 365, 'consent_version': 'wallet-auto-funding-v2', 'fee_payer': 'customer'}}
    elif '/auto-funding/' in path and path.endswith('/verify'):
     paid[0] = True; stored[0].update(state='active', successful_payments=1, total_credited_kobo=20000, checkout_url=None); stored[0]['attempts'][0]['state'] = 'succeeded'
     data = {'payment_status': 'paid', 'plan': stored[0]}

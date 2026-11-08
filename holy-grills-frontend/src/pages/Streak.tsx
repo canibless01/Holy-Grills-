@@ -13,15 +13,15 @@ const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default function Streak() {
   useMessages();
-  const { streak, refreshStreak, hpBalance } = useHolyGrill();
+  const { streak, refreshStreak, refreshHp, hpBalance } = useHolyGrill();
   const [checkinHistory, setCheckinHistory] = useState([]);
   useEffect(() => {
-    void refreshStreak();
+    const refresh = () => { void refreshStreak(); void refreshHp(); };
+    refresh();
     liveApi.auth.getCheckinHistory().then(value => setCheckinHistory(value || [])).catch(() => {});
-    const refresh = () => { void refreshStreak(); };
     window.addEventListener('focus', refresh);
     return () => window.removeEventListener('focus', refresh);
-  }, [refreshStreak]);
+  }, [refreshStreak, refreshHp]);
   // GET /auth/streak returns counters — streak_count, last_login_date,
   // cycle_week_number, consecutive_weeks, week_progress — so the count lives on
   // streak_count; the older field names stay as fallbacks.

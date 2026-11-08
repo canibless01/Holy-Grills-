@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { liveApi, isAuthenticated, clearTokens } from './liveApi';
+import { recoverStreakAndHp } from './streakRecovery';
 import { apiClient } from './apiClient';
 import { localStore, sessionStore } from './storage';
 import { isHydratingPrerender } from './hydrationMode';
@@ -146,8 +147,18 @@ export const HolyGrillProvider = ({ children }) => {
   const recoverWelcome = (profile) => {
     if (!profile?.id || welcomeRecoveryUser.current === profile.id) return;
     welcomeRecoveryUser.current = profile.id;
-    // Token delivery and verified identity must not wait for loyalty work.
-    void apiClient.post('/auth/session-activity', {}).then(() => liveApi.auth.getStreak()).then(setStreak).catch(() => {});
+    // Attendance may award weekly pending HP. Do not let the balance read race
+    // that write, and never apply a response after switching accounts.
+    const version = restoreVersion.current;
+    void recoverStreakAndHp(
+      () => apiClient.post('/auth/session-activity', {}),
+      () => liveApi.auth.getStreak(),
+      () => liveApi.hp.getBalance(),
+    ).then(({ streak, balance }) => {
+      if (version !== restoreVersion.current) return;
+      if (streak.status === 'fulfilled') setStreak(streak.value);
+      if (balance.status === 'fulfilled') setHpBalance(normalizeHpBalance(balance.value));
+    }).catch(() => {});
     if (profile.role === 'student') {
       const version = restoreVersion.current;
       void apiClient.post('/auth/welcome-credit', {}).then(() => liveApi.hp.getBalance()).then(balance => {

@@ -16,7 +16,7 @@ from app.db import get_db
 from app.services.payment_service import PAYSTACK_BASE, _paystack_headers
 from app.utils.settings import setting_or_config
 
-CONSENT_VERSION = "wallet-auto-funding-v1"
+CONSENT_VERSION = "wallet-auto-funding-v2"
 PUBLIC_FIELDS = (
     "id", "amount_kobo", "interval_days", "stop_after", "end_at", "state",
     "successful_payments", "total_credited_kobo", "next_due_at", "created_at",
@@ -43,7 +43,7 @@ def limits():
     minimum = setting_or_config(get_db(), "wallet_min_card_topup",
                                 current_app.config.get("WALLET_MIN_CARD_TOPUP", 100), minimum=100)
     return {"minimum_amount": minimum, "maximum_amount": 1000000,
-            "maximum_interval_days": 365, "fee_payer": "holy_grills", "consent_version": CONSENT_VERSION,
+            "maximum_interval_days": 365, "fee_payer": "customer", "consent_version": CONSENT_VERSION,
             "enabled": current_app.config.get("WALLET_AUTO_FUNDING_ENABLED", True)}
 
 
@@ -139,11 +139,14 @@ def create_plan(user_id, body):
             checkout = _provider("POST", "/transaction/initialize", {
                 "email": plan["authorization_email"], "amount": plan["amount_kobo"],
                 "reference": plan["setup_reference"], "currency": "NGN",
-                # Match ordinary wallet initialization: Paystack uses the
-                # integration's working channels. Verification below still
-                # activates future debits only for a reusable card authorization.
+                "channels": ["card"],
                 "callback_url": f"{root}/wallet?auto_funding={plan_id}",
-                "metadata": {"type": "wallet_auto_funding", "plan_id": plan_id},
+                # As with ordinary wallet funding, Paystack adds its applicable
+                # customer fee to this requested contribution at checkout. The
+                # verified gross and fee are reconciled before crediting only
+                # the contribution; never mark up this amount a second time.
+                "metadata": {"type": "wallet_auto_funding", "plan_id": plan_id,
+                             "expected_amount_kobo": plan["amount_kobo"]},
             })
             if checkout.get("reference") != plan["setup_reference"]:
                 raise FundingError("The payment reference could not be confirmed.")
@@ -177,15 +180,21 @@ def confirm_payment(data, *, expected_user_id=None, plan_id=None):
     if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0 or data.get("currency") != "NGN":
         raise FundingError("Payment amount or currency does not match.")
     requested = data.get("requested_amount")
-    if requested is not None and requested != amount:
-        raise FundingError("Payment amount does not match.")
+    if requested is not None and (isinstance(requested, bool) or not isinstance(requested, int) or requested <= 0):
+        raise FundingError("Payment requested amount is invalid.")
+    fees = data.get("fees")
+    # The atomic RPC applies the same merchant/customer-fee and bounded
+    # unknown-fee reconciliation as ordinary wallet/order payments. Its locked
+    # plan supplies the expected contribution and controls the wallet credit.
+    if fees is not None and (isinstance(fees, bool) or not isinstance(fees, int) or fees < 0):
+        raise FundingError("Paystack's processing fee could not be confirmed.")
     auth = data.get("authorization") or {}
     if not isinstance(auth, dict):
         auth = {}
     safe_auth = {key: auth.get(key) for key in ("authorization_code", "reusable", "signature", "last4", "brand", "channel", "exp_month", "exp_year")}
     result = rpc("confirm", user_id=expected_user_id, plan_id=plan_id, data={
         "reference": reference, "amount_kobo": amount, "currency": "NGN",
-        "authorization": safe_auth, "fees_kobo": data.get("fees"),
+        "requested_amount_kobo": requested, "authorization": safe_auth, "fees_kobo": fees,
     })
     try:
         complete_effects(result)
@@ -255,8 +264,12 @@ def sweep(limit=20, budget_seconds=45):
                 counts["dispatched"] += 1
                 data = _provider("POST", "/transaction/charge_authorization", {
                     "authorization_code": dispatch["authorization_code"], "email": dispatch["authorization_email"],
+                    # Request the contribution, not a locally marked-up gross.
+                    # Paystack applies the same customer-fee treatment as card
+                    # wallet funding; verification reconciles the actual gross/fee.
                     "amount": dispatch["amount_kobo"], "currency": "NGN", "reference": dispatch["reference"],
-                    "metadata": {"type": "wallet_auto_funding", "plan_id": item["id"]},
+                    "metadata": {"type": "wallet_auto_funding", "plan_id": item["id"],
+                                 "expected_amount_kobo": dispatch["amount_kobo"]},
                 })
                 # POST output can indicate authentication/processing. Only a
                 # provider verification or signed webhook can commit cash.

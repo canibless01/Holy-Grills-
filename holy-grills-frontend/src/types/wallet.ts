@@ -39,7 +39,7 @@ export interface AutoFundingLimits {
   minimum_amount: number;
   maximum_amount: number;
   maximum_interval_days: number;
-  fee_payer: 'holy_grills';
+  fee_payer: 'customer';
   consent_version: string;
 }
 
