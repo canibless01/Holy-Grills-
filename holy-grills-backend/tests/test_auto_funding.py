@@ -40,14 +40,15 @@ class AutomaticFundingTests(unittest.TestCase):
         _, result = service.validate_terms({**self.terms, "stop_after": None, "end_date": "2027-01-01"}, 100)
         self.assertEqual(result["end_at"], "2027-01-02T00:00:00+01:00")
 
-    def test_setup_uses_working_wallet_channels_exact_amount_callback_and_original_email(self):
+    def test_setup_requests_card_contribution_with_wallet_style_customer_fee_metadata(self):
         with self.app.app_context(), patch.object(service, "limits", return_value={"minimum_amount": 100}), \
              patch.object(service, "rpc", side_effect=[{"created": True, "plan": self.plan}, {**self.plan, "checkout_url": "https://checkout.paystack.com/test"}]), \
              patch.object(service, "_provider", return_value={"reference": self.reference, "authorization_url": "https://checkout.paystack.com/test"}) as provider:
             result = service.create_plan(self.uid, {**self.terms, "callback_url": "https://evil.invalid"})
         payload = provider.call_args.args[2]
-        self.assertEqual(payload["amount"], 20000)  # Holy Grills absorbs fees.
-        self.assertNotIn("channels", payload)  # Same enabled-channel behaviour as ordinary wallet funding.
+        self.assertEqual(payload["amount"], 20000)  # Paystack adds the fee; do not mark up twice.
+        self.assertEqual(payload["channels"], ["card"])
+        self.assertEqual(payload["metadata"]["expected_amount_kobo"], 20000)
         self.assertEqual(payload["email"], "original@example.invalid")
         self.assertTrue(payload["callback_url"].startswith("https://holygrills.online/wallet?auto_funding="))
         self.assertNotIn("authorization_email", result)
@@ -133,19 +134,55 @@ class AutomaticFundingTests(unittest.TestCase):
     def test_provider_post_success_alone_does_not_credit_cash(self):
         dispatch = {"authorization_code": "private", "authorization_email": "original@example.invalid", "amount_kobo": 20000, "reference": self.reference}
         with self.app.app_context(), patch.object(service, "rpc", side_effect=[[{"action": "dispatch", "id": self.pid}], dispatch]), \
-             patch.object(service, "_provider", return_value={"status": "success", "reference": self.reference}), patch.object(service, "confirm_payment") as confirm:
+             patch.object(service, "_provider", return_value={"status": "success", "reference": self.reference}) as provider, patch.object(service, "confirm_payment") as confirm:
             service.sweep()
         confirm.assert_not_called()
+        payload = provider.call_args.args[2]
+        self.assertEqual(payload["amount"], 20000)
+        self.assertEqual(payload["metadata"]["expected_amount_kobo"], 20000)
 
-    def test_bad_amount_currency_or_reference_never_commits(self):
-        data = {"reference": self.reference, "status": "success", "currency": "NGN", "amount": 20000}
-        for variant in ({"reference": "HG-WALLET-else"}, {"amount": True}, {"amount": -1}, {"currency": "USD"}, {"requested_amount": 19999}):
+    def test_limits_disclose_customer_as_recurring_fee_payer(self):
+        db = MagicMock()
+        with self.app.app_context(), patch.object(service, "get_db", return_value=db), \
+             patch.object(service, "setting_or_config", return_value=100):
+            self.assertEqual(service.limits()["fee_payer"], "customer")
+
+    def test_bad_amount_currency_fee_or_reference_never_commits(self):
+        data = {"reference": self.reference, "status": "success", "currency": "NGN", "amount": 20305,
+                "requested_amount": 20000, "fees": 305}
+        variants = ({"reference": "HG-WALLET-else"}, {"amount": True}, {"amount": -1}, {"currency": "USD"},
+                    {"requested_amount": True}, {"requested_amount": "20000"},
+                    {"fees": True}, {"fees": "305"}, {"fees": -1})
+        for variant in variants:
             with self.subTest(variant=variant), patch.object(service, "rpc") as rpc, self.assertRaises(service.FundingError):
                 service.confirm_payment({**data, **variant})
             rpc.assert_not_called()
 
+    def test_fee_inclusive_payment_is_forwarded_for_atomic_net_reconciliation(self):
+        data = {"reference": self.reference, "status": "success", "currency": "NGN", "amount": 20305,
+                "requested_amount": 20000, "fees": 305}
+        receipt = {"plan": self.plan, "attempt_id": str(uuid4())}
+        with self.app.app_context(), patch.object(service, "rpc", return_value=receipt) as rpc, \
+             patch.object(service, "complete_effects"):
+            service.confirm_payment(data, expected_user_id=self.uid, plan_id=self.pid)
+        confirmation = rpc.call_args.kwargs["data"]
+        self.assertEqual(confirmation["amount_kobo"], 20305)
+        self.assertEqual(confirmation["requested_amount_kobo"], 20000)
+        self.assertEqual(confirmation["fees_kobo"], 305)
+
+    def test_missing_fee_reaches_atomic_bounded_reconciliation(self):
+        data = {"reference": self.reference, "status": "success", "currency": "NGN", "amount": 35000,
+                "requested_amount": 20000, "fees": None}
+        receipt = {"plan": self.plan, "attempt_id": str(uuid4())}
+        with self.app.app_context(), patch.object(service, "rpc", return_value=receipt) as rpc, \
+             patch.object(service, "complete_effects"):
+            service.confirm_payment(data)
+        self.assertIsNone(rpc.call_args.kwargs["data"]["fees_kobo"])
+        self.assertEqual(rpc.call_args.kwargs["data"]["amount_kobo"], 35000)
+
     def test_authorization_is_private_and_payment_survives_effects_failure(self):
-        data = {"reference": self.reference, "status": "success", "currency": "NGN", "amount": 20000,
+        data = {"reference": self.reference, "status": "success", "currency": "NGN", "amount": 20305,
+                "requested_amount": 20000, "fees": 305,
                 "authorization": {"authorization_code": "private", "reusable": True, "channel": "card", "pan": "DO-NOT-STORE"}}
         receipt = {"plan": {**self.plan, "authorization": data["authorization"]}, "attempt_id": str(uuid4())}
         with self.app.app_context(), patch.object(service, "rpc", return_value=receipt) as rpc, \
