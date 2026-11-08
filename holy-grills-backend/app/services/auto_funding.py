@@ -138,7 +138,10 @@ def create_plan(user_id, body):
             root = current_app.config["FRONTEND_URL"].split(",")[0].rstrip("/")
             checkout = _provider("POST", "/transaction/initialize", {
                 "email": plan["authorization_email"], "amount": plan["amount_kobo"],
-                "reference": plan["setup_reference"], "currency": "NGN", "channels": ["card"],
+                "reference": plan["setup_reference"], "currency": "NGN",
+                # Match ordinary wallet initialization: Paystack uses the
+                # integration's working channels. Verification below still
+                # activates future debits only for a reusable card authorization.
                 "callback_url": f"{root}/wallet?auto_funding={plan_id}",
                 "metadata": {"type": "wallet_auto_funding", "plan_id": plan_id},
             })

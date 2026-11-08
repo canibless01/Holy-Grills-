@@ -13,8 +13,11 @@ interest, investment promise, withdrawal or lock period.
 - Choose an amount, every N days (1–365, including every two days), then a total
   contribution count (including the first payment), an inclusive Nigerian end
   date, or continue until stopped. Changing terms clears the consent checkbox.
-- The first contribution is paid now through card-only Paystack checkout. This
-  credits the wallet and establishes a reusable authorization when supported.
+- The first contribution is paid now through the same enabled-channel Paystack
+  initialization as ordinary wallet funding. This credits the wallet and can
+  establish a reusable card authorization when supported. Restricting the
+  initialization to `channels=["card"]` was removed because Paystack rejected
+  that filter even though ordinary card funding worked.
 - Holy Grills absorbs fees: choosing ₦200 charges ₦200 and credits ₦200. Fees
   reduce merchant settlement, with no extra fee debit to the customer.
 - Non-reusable cards still fund the wallet, but do not enable future debits.
