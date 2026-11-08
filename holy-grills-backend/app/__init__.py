@@ -71,6 +71,7 @@ def create_app(config_class=Config, *, background=False):
     from app.routes.rewards import rewards_bp
     from app.routes.marketplace import marketplace_bp
     from app.routes.events import events_bp
+    from app.routes.event_organizers import bp as event_organizers_bp
     from app.routes.referrals import referrals_bp
     from app.routes.notifications import notifications_bp, push_bp
     from app.routes.admin import admin_bp
@@ -204,6 +205,7 @@ def create_app(config_class=Config, *, background=False):
     app.register_blueprint(rewards_bp, url_prefix="/api/rewards")
     app.register_blueprint(marketplace_bp, url_prefix="/api/marketplace")
     app.register_blueprint(events_bp, url_prefix="/api/events")
+    app.register_blueprint(event_organizers_bp, url_prefix="/api/event-organizer")
     app.register_blueprint(referrals_bp, url_prefix="/api/referrals")
     app.register_blueprint(notifications_bp, url_prefix="/api/notifications")
     app.register_blueprint(push_bp, url_prefix="/api/push")

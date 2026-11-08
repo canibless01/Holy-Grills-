@@ -5,7 +5,7 @@
 import type { IsoDate, MutationResult, Uuid } from './common';
 
 /** Role enum — profiles.role (API_FIELD_REFERENCE.md Enum Master List). */
-export type UserRole = 'student' | 'admin' | 'kitchen' | 'rider' | 'super_admin';
+export type UserRole = 'student' | 'admin' | 'kitchen' | 'rider' | 'super_admin' | 'community_manager' | 'event_organizer';
 
 /** HP tier subtitle embedded in /auth/me. */
 export interface TierSummary {

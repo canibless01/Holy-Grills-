@@ -65,3 +65,7 @@ Evidence and remaining verification are in [stock metadata editing](ADMIN_STOCK_
 ## Event operations and retained history — 7 November
 
 [Event controls evidence](EVENT_MANAGEMENT_CONTROLS_2026_11_07.md): native paging/publication, WAT/funding inputs, locally rendered venue QR, attendee search/staff admission, read Retry, CSV defense, tier deactivation and receipt-based sales metrics now pass at mobile/desktop sizes. Direct issued-event/tier deletion is blocked by the database; two historical report RPCs now reject inactive admins. Backend 1,277 passed, native refund regressions and typecheck/lint/build pass. Organizer workspace/settlement is newly requested and next; cancellation/reschedule notices and broader exceptional cases remain separate.
+
+## Organizer workspace completion — 8 November
+
+[Organizer workspace evidence and use](EVENT_ORGANIZER_WORKSPACE_2026_11_08.md): subordinate role, own drafts/submission, private admin feedback/finalization, fixed per-tier settlement contracts, immutable ticket earnings, own statistics/search/QR/admission/export and manual payout request/approval/recorded-transfer loop are implemented. Mobile/desktop native journeys, real handler/middleware and fresh Supabase rollback cases pass; frontend typecheck/lint/build pass. Event-wide cancellation/reschedule notices, exceptional receipt recovery and device/bank acceptance remain separate; this is not whole-event, whole-admin or whole-database sign-off.

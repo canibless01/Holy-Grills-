@@ -25,6 +25,7 @@ import Home from '@/pages/Home';
 const Kitchen = lazy(() => import('@/pages/Kitchen'));
 const Rider = lazy(() => import('@/pages/Rider'));
 const Admin = lazy(() => import('@/pages/Admin'));
+const EventManager = lazy(() => import('@/pages/EventManager'));
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
 
@@ -124,6 +125,7 @@ const AppRoutes = () => {
       </Route>
       <Route path="/admin" element={<Admin />} />
       <Route path="/community-manager" element={<Admin communityWorkspace />} />
+      <Route path="/event-manager" element={<EventManager />} />
       <Route path="/kitchen" element={<Kitchen />} />
       <Route path="/rider" element={<Rider />} />
       <Route path="*" element={<PageNotFound />} />

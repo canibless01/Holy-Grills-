@@ -2,7 +2,7 @@
 PREFERENCE_KEYS = ('push_enabled','email_enabled','order_updates','delivery_updates','hp_updates','promotions')
 DELIVERY_TYPES = frozenset({'order_assigned','order_ready','order_out_for_delivery','order_delivered','order_delivery_attempted','order_unclaimed'})
 ACCOUNT_TYPES = frozenset({'password_changed','password_reset','email_verification','account_deleted','account_deactivated','account_reactivated','welcome_email'})
-REQUEST_TYPES = frozenset({'catering_request','marketplace_request','admin_catering_request','admin_vendor_request','vendor_request_submitted'})
+REQUEST_TYPES = frozenset({'catering_request','marketplace_request','admin_catering_request','admin_vendor_request','vendor_request_submitted','event_review_submitted','event_review_updated','event_payout_requested','event_payout_updated'})
 
 
 def category_for_notification(kind):

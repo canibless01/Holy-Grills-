@@ -35,6 +35,7 @@ const ROLES = [
   { value: 'kitchen', label: 'Kitchen' },
   { value: 'rider', label: 'Rider' },
   { value: 'admin', label: 'Admin' },
+  { value: 'event_organizer', label: msg('FE_ROLE_EVENT_ORGANIZER', 'Event Organizer') },
   { value: 'community_manager', label: msg('FE_ROLE_COMMUNITY_MANAGER', 'Community Manager') },
   { value: 'super_admin', label: 'Super Admin' },
 ];

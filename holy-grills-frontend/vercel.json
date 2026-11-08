@@ -107,6 +107,14 @@
       "dest": "/app-shell.html"
     },
     {
+      "src": "/event-manager",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/event-manager/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
       "src": "/events",
       "dest": "/app-shell.html"
     },

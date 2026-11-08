@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect, useRef } from 'react';
 import { Plus, Pencil, Trash2, Eye, QrCode, Ticket, Download, Mail, BarChart3 } from 'lucide-react';
@@ -235,7 +236,8 @@ export default function AdminEvents() {
             </div>
             <div className="text-xs text-muted-foreground">{e.location} · {e.checkin_count}/{e.capacity ?? e.max_attendees ?? '∞'} checked in · {e.hp_reward ?? e.hp_per_attendee} HP</div>
           </div>
-          {canManage(e) && <Toggle checked={e.is_published} disabled={!!busy} onChange={() => togglePub(e)} />}
+          {canManage(e) && <Toggle checked={e.is_published} disabled={!!busy || Boolean(e.review_status && e.review_status !== 'approved')} label={e.review_status && e.review_status !== 'approved' ? msg('FE_ORG_REVIEW_REQUIRED', 'Approve organizer review before publication') : msg('FE_ORG_PUBLICATION', 'Event publication')} onChange={() => togglePub(e)} />}
+          {canManage(e) && <Link className="text-primary text-xs font-bold p-2" to={`/event-manager?event=${e.id}`}>{msg('FE_ORG_REVIEW_SETTLEMENT', 'Organizer / settlement')}</Link>}
           <button disabled={!canManage(e)} onClick={() => viewTiers(e.id)} title="Ticket Tiers" className="p-2 rounded-lg hover:bg-muted"><Ticket className="w-4 h-4 text-purple-500" /></button>
           <button onClick={() => viewSales(e.id)} title="Sales Dashboard" className="p-2 rounded-lg hover:bg-muted"><BarChart3 className="w-4 h-4 text-success" /></button>
           <button disabled={!canManage(e)} onClick={() => viewRegs(e.id)} title="Registrants" className="p-2 rounded-lg hover:bg-muted"><Eye className="w-4 h-4 text-muted-foreground" /></button>
@@ -305,7 +307,7 @@ export default function AdminEvents() {
             <p className="text-xs text-muted-foreground">{msg('FE_EVENT_PRICING_TIERS', 'Set ticket prices and HP discounts in Ticket Tiers after saving the event.')}</p>
             <Field label="Image"><ImageUploader value={modal.item.image_url} onChange={(url) => setModal({ item: { ...modal.item, image_url: url }, isNew: modal.isNew })} folder="events" /></Field>
             <div className="flex items-center gap-4 flex-wrap">
-              <div className="flex items-center gap-2"><Toggle checked={!!modal.item.is_published} onChange={(value) => setModal({...modal,item:{...modal.item,is_published:value}})} /><span className="text-sm font-semibold">{msg('FE_EVENT_PUBLISHED', 'Published')}</span></div>
+              <div className="flex items-center gap-2"><Toggle disabled={Boolean(modal.item.review_status && modal.item.review_status !== 'approved')} label={msg('FE_ORG_PUBLICATION', 'Event publication')} checked={!!modal.item.is_published} onChange={(value) => setModal({...modal,item:{...modal.item,is_published:value}})} /><span className="text-sm font-semibold">{msg('FE_EVENT_PUBLISHED', 'Published')}</span></div>
               <div className="flex items-center gap-2"><Toggle checked={!!modal.item.is_featured} onChange={(v) => setModal({ item: { ...modal.item, is_featured: v }, isNew: modal.isNew })} /><span className="text-sm text-foreground font-semibold">Featured</span></div>
               <div className="flex items-center gap-2"><Toggle checked={!!modal.item.is_paid} onChange={(v) => setModal({ item: { ...modal.item, is_paid: v }, isNew: modal.isNew })} /><span className="text-sm text-foreground font-semibold">Paid Event</span></div>
             </div>

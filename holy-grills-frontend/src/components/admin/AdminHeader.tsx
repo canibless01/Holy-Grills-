@@ -71,6 +71,7 @@ export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, 
             {searchOpen ? <X className="w-4 h-4" /> : <Search className="w-4 h-4" />}
           </button>
           <InlineNotificationBell />
+          {financialStaff && <Link to="/event-manager" className="hidden sm:flex text-xs font-bold p-2" aria-label={msg('FE_ORG_TITLE', 'Event workspace')}>{msg('FE_ORG_TITLE', 'Event workspace')}</Link>}
           {financialStaff && <>
           <Link to="/community-manager" aria-label={msg('FE_CM_WORKSPACE', 'Community manager workspace')} title={msg('FE_CM_WORKSPACE', 'Community manager workspace')} className="flex items-center gap-1 px-2 py-1.5 rounded-xl text-xs font-bold text-muted-foreground hover:text-primary hover:bg-primary/10">
             <Users className="w-4 h-4" /><span className="hidden xl:inline">{msg('FE_CM_SHORT', 'Community')}</span>

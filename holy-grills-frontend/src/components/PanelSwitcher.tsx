@@ -9,6 +9,7 @@ const HOME_PANEL: Record<string, string> = {
   kitchen: '/kitchen',
   rider: '/rider',
   community_manager: '/community-manager',
+  event_organizer: '/event-manager',
 };
 const ROLE_LABEL: Record<string, string> = {
   admin: 'Admin',
@@ -16,6 +17,7 @@ const ROLE_LABEL: Record<string, string> = {
   kitchen: 'Kitchen',
   rider: 'Rider',
   community_manager: 'Community Manager',
+  event_organizer: msg('FE_ROLE_EVENT_ORGANIZER', 'Event Organizer'),
 };
 
 /**

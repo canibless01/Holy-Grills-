@@ -1,3 +1,5 @@
+> Implementation status superseded by [organizer workspace completion](EVENT_ORGANIZER_WORKSPACE_2026_11_08.md). The text below preserves the environment-interruption checkpoint.
+
 # Organizer workspace continuation — 8 November 2026
 
 ## Owner-approved behavior

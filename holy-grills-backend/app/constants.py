@@ -17,4 +17,4 @@ APP_TAGLINE_DEFAULT = "Made with more than flame ❤️‍🔥"
 COMMUNITY_MANAGER_ROLE = "community_manager"
 AMBASSADOR_STAFF_ROLES = ADMIN_ROLES | {COMMUNITY_MANAGER_ROLE}
 
-VALID_ROLES = {"student", "admin", "kitchen", "rider", "super_admin", COMMUNITY_MANAGER_ROLE}
+VALID_ROLES = {"student", "admin", "kitchen", "rider", "super_admin", COMMUNITY_MANAGER_ROLE, "event_organizer"}

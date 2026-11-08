@@ -44,7 +44,7 @@ ORDER_STATUSES = (
 )
 _TOTAL_SPENT_CAP = 5000
 # Campus admins manage only these roles; admin and super_admin accounts belong to super_admin.
-_CAMPUS_ADMIN_MANAGED_ROLES = ("student", "kitchen", "rider")
+_CAMPUS_ADMIN_MANAGED_ROLES = ("student", "kitchen", "rider", "event_organizer")
 # Campus admins may activate/deactivate their own community managers as well.
 _CAMPUS_ADMIN_ACCOUNT_ROLES = (*_CAMPUS_ADMIN_MANAGED_ROLES, "community_manager")
 # The same "no longer open" set the orders code already uses.
