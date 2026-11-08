@@ -156,8 +156,8 @@ export const HolyGrillProvider = ({ children }) => {
       () => liveApi.hp.getBalance(),
     ).then(({ streak, balance }) => {
       if (version !== restoreVersion.current) return;
-      setStreak(streak);
-      setHpBalance(normalizeHpBalance(balance));
+      if (streak.status === 'fulfilled') setStreak(streak.value);
+      if (balance.status === 'fulfilled') setHpBalance(normalizeHpBalance(balance.value));
     }).catch(() => {});
     if (profile.role === 'student') {
       const version = restoreVersion.current;

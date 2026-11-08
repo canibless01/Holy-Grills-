@@ -20,8 +20,8 @@ await new Promise(resolve => setTimeout(resolve, 0));
 assert.deepEqual(calls, ['attendance:start'], 'HP and streak must wait for attendance');
 finishAttendance();
 assert.deepEqual(await recovery, {
-  streak: { consecutive_weeks: 1 },
-  balance: { pending: 25 },
+  streak: { status: 'fulfilled', value: { consecutive_weeks: 1 } },
+  balance: { status: 'fulfilled', value: { pending: 25 } },
 });
 assert.deepEqual(calls, [
   'attendance:start', 'attendance:committed', 'streak:read', 'hp:read',
@@ -35,4 +35,12 @@ await assert.rejects(recoverStreakAndHp(
 ), /attendance unavailable/);
 assert.equal(readAfterFailure, false, 'failed attendance must not trigger misleading recovery reads');
 
-console.log('PASS weekly-streak HP recovery reads pending balance only after attendance commits');
+const independent = await recoverStreakAndHp(
+  async () => {},
+  async () => ({ consecutive_weeks: 2 }),
+  async () => { throw new Error('HP temporarily unavailable'); },
+);
+assert.equal(independent.streak.status, 'fulfilled', 'an HP failure must not hide a valid streak');
+assert.equal(independent.balance.status, 'rejected');
+
+console.log('PASS post-attendance HP ordering and independent streak/balance failure handling');
