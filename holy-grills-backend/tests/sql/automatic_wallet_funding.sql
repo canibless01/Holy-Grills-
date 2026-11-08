@@ -3,7 +3,7 @@ BEGIN;
 SET LOCAL request.jwt.claims='{"role":"service_role"}';
 DO $audit$
 DECLARE uid uuid:=gen_random_uuid(); other_uid uuid:=gen_random_uuid(); pid uuid:=gen_random_uuid();
- new_id uuid; terms jsonb; result jsonb; dispatch jsonb; reference text; other_ref text; n integer;
+ new_id uuid; terms jsonb; result jsonb; dispatch jsonb; history jsonb; reference text; other_ref text; n integer;
  auth jsonb:='{"authorization_code":"test-only-private","reusable":true,"channel":"card","last4":"4081","brand":"visa"}';
 BEGIN
  INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES
@@ -78,6 +78,13 @@ BEGIN
  PERFORM public.hg_wallet_auto_funding('failed',NULL,NULL,jsonb_build_object('reference',reference));
  IF (SELECT state FROM hg_internal.wallet_funding_plans WHERE id=new_id)<>'attention' OR public.hg_wallet_auto_funding('dispatch',NULL,new_id)<>'{}'::jsonb THEN RAISE EXCEPTION 'failed debit kept charging'; END IF;
  PERFORM public.hg_wallet_auto_funding('stop',uid,new_id);
+ -- An initialization timeout must not strand a later verified first payment.
+ new_id:=gen_random_uuid();
+ result:=public.hg_wallet_auto_funding('create',uid,new_id,terms);reference:=result->'plan'->>'setup_reference';
+ PERFORM public.hg_wallet_auto_funding('setup_failed',uid,new_id);
+ result:=public.hg_wallet_auto_funding('confirm',uid,new_id,jsonb_build_object('reference',reference,'currency','NGN','amount_kobo',20000,'authorization',auth));
+ IF result->'plan'->>'state'<>'active' OR result->'plan'->'last_issue' IS DISTINCT FROM 'null'::jsonb THEN RAISE EXCEPTION 'verified setup recovery stayed paused'; END IF;
+ PERFORM public.hg_wallet_auto_funding('stop',uid,new_id);
  new_id:=gen_random_uuid();
  result:=public.hg_wallet_auto_funding('create',uid,new_id,terms||jsonb_build_object('stop_after',NULL,'end_at',now()+interval '3 days'));reference:=result->'plan'->>'setup_reference';
  PERFORM public.hg_wallet_auto_funding('confirm',uid,new_id,jsonb_build_object('reference',reference,'currency','NGN','amount_kobo',20000,'authorization',auth));
@@ -98,6 +105,8 @@ BEGIN
  UPDATE hg_internal.wallet_funding_plans SET attention_next_at=now()-interval '1 second' WHERE id=new_id;
  result:=public.hg_wallet_funding_attention('claim',NULL,20);
  IF EXISTS(SELECT 1 FROM jsonb_array_elements(result) x WHERE x->>'id'=new_id::text) THEN RAISE EXCEPTION 'paused notice replayed'; END IF;
+ history:=public.hg_wallet_auto_funding('list',uid);
+ IF jsonb_array_length(history)<8 OR EXISTS(SELECT 1 FROM jsonb_array_elements(history) h WHERE h->'attempts' IS NULL OR jsonb_typeof(h->'attempts')<>'array') THEN RAISE EXCEPTION 'complete plan/contribution history missing'; END IF;
  IF has_function_privilege('anon','public.hg_wallet_auto_funding(text,uuid,uuid,jsonb)','execute')
  OR has_function_privilege('authenticated','public.hg_wallet_auto_funding(text,uuid,uuid,jsonb)','execute')
  OR has_table_privilege('authenticated','hg_internal.wallet_funding_plans','SELECT') THEN RAISE EXCEPTION 'funding credentials reachable by client'; END IF;

@@ -58,6 +58,54 @@ class AutomaticFundingTests(unittest.TestCase):
             service.create_plan(self.uid, self.terms)
         provider.assert_not_called()
 
+    def test_create_route_returns_standard_authorization_url_and_reference(self):
+        checkout = {**self.plan, "checkout_url": "https://checkout.paystack.com/test"}
+        with self.app.test_request_context(method="POST", json=self.terms), \
+             patch.object(service, "create_plan", return_value=service.public_plan(checkout)):
+            g.user_id = self.uid
+            response = plans.__wrapped__()
+        self.assertEqual(response.json["authorization_url"], checkout["checkout_url"])
+        self.assertEqual(response.json["reference"], self.reference)
+        self.assertEqual(response.json["plan"]["checkout_url"], checkout["checkout_url"])
+        self.assertNotIn("authorization_email", response.json["plan"])
+
+    def test_provider_json_error_is_not_replaced_by_an_http_exception(self):
+        response = MagicMock(status_code=400)
+        response.json.return_value = {"status": False, "message": "  Clinic   not found\n" }
+        with self.app.app_context(), patch.object(service.requests, "request", return_value=response), \
+             self.assertRaises(service.FundingError) as caught:
+            service._provider("POST", "/transaction/initialize", {})
+        self.assertEqual(str(caught.exception), "Clinic not found")
+
+    def test_charge_error_never_echoes_reusable_authorization_to_response_or_logs(self):
+        response = MagicMock(status_code=400)
+        response.json.return_value = {"status": False, "message": "Rejected AUTH_TEST_PRIVATE"}
+        with self.app.app_context(), patch.object(service.requests, "request", return_value=response), \
+             self.assertLogs(self.app.logger, level="WARNING") as logs, \
+             self.assertRaises(service.FundingError) as caught:
+            service._provider("POST", "/transaction/charge_authorization", {"authorization_code": "AUTH_TEST_PRIVATE"})
+        self.assertNotIn("AUTH_TEST_PRIVATE", str(caught.exception))
+        self.assertNotIn("AUTH_TEST_PRIVATE", "\n".join(logs.output))
+
+    def test_initialization_preserves_provider_error_and_marks_only_setup_failed(self):
+        with self.app.app_context(), patch.object(service, "limits", return_value={"minimum_amount": 100}), \
+             patch.object(service, "rpc", side_effect=[{"created": True, "plan": self.plan}, {}]) as rpc, \
+             patch.object(service, "_provider", side_effect=service.FundingError("Paystack test initialization failed")):
+            with self.assertRaisesRegex(service.FundingError, "Paystack test initialization failed"):
+                service.create_plan(self.uid, self.terms)
+        self.assertEqual(rpc.call_args_list[-1].args[0], "setup_failed")
+
+    def test_failed_return_is_recorded_without_activating_or_crediting(self):
+        failed_plan = {**self.plan, "state": "attention", "last_issue": "payment_failed"}
+        with self.app.app_context(), patch.object(service, "rpc", side_effect=[self.plan, {}, failed_plan]) as rpc, \
+             patch.object(service, "_provider", return_value={"reference": self.reference, "status": "abandoned"}), \
+             patch.object(service, "confirm_payment") as confirm:
+            result = service.verify_setup(self.uid, self.pid, self.reference)
+        self.assertEqual(result["payment_status"], "failed")
+        self.assertEqual(result["plan"]["state"], "attention")
+        confirm.assert_not_called()
+        self.assertEqual([call.args[0] for call in rpc.call_args_list], ["get", "failed", "get"])
+
     def test_provider_money_post_is_single_attempt_on_timeout(self):
         with self.app.app_context(), patch.object(service.requests, "request", side_effect=TimeoutError) as request:
             with self.assertRaises(TimeoutError):

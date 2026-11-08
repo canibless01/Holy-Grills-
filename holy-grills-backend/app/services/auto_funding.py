@@ -82,14 +82,47 @@ def validate_terms(body, minimum):
 
 
 def _provider(method, path, payload=None):
-    # Deliberately no retry decorator/session retry adapter for charge/init POSTs.
+    """Call Paystack once, retaining its safe diagnostic without logging secrets.
+
+    In particular, do not call raise_for_status() before reading the JSON body:
+    Paystack returns the useful initialization error in that body. Money POSTs
+    deliberately have no retry decorator or session retry adapter.
+    """
     response = requests.request(method, f"{PAYSTACK_BASE}{path}", headers=_paystack_headers(),
                                 json=payload if method == "POST" else None, timeout=10)
-    response.raise_for_status()
-    result = response.json()
-    if result.get("status") is not True or not isinstance(result.get("data"), dict):
-        raise FundingError("The payment provider has not confirmed this request.")
+    try:
+        result = response.json()
+    except (ValueError, TypeError):
+        result = None
+    if not isinstance(result, dict):
+        current_app.logger.warning("Paystack returned a non-JSON response (HTTP %s).", response.status_code)
+        raise FundingError("Paystack could not confirm the request. Please try again.") from None
+    if response.status_code >= 400 or result.get("status") is not True:
+        message = result.get("message")
+        if not isinstance(message, str) or not message.strip():
+            message = "Paystack could not confirm the request. Please try again."
+        # Never echo a charge-authorization error: unlike setup/verify errors,
+        # its context includes a reusable credential. The reference is already
+        # durable, so reconciliation remains safe without provider detail here.
+        if path == "/transaction/charge_authorization":
+            current_app.logger.warning("Paystack recurring charge was rejected (HTTP %s); existing reference awaits verification.", response.status_code)
+            raise FundingError("The automatic payment needs verification; no new charge will be attempted.")
+        # Setup/verify provider messages contain no reusable card credential.
+        # Bound/control-clean them before returning them to the UI or logging.
+        message = " ".join(message.split())[:240]
+        current_app.logger.warning("Paystack request rejected (HTTP %s): %s", response.status_code, message)
+        raise FundingError(message)
+    if not isinstance(result.get("data"), dict):
+        raise FundingError("Paystack returned an incomplete response. Please try again.")
     return result["data"]
+
+
+def _mark_setup_failed(user_id, plan_id):
+    """Best-effort state update; never mask the original initialization error."""
+    try:
+        rpc("setup_failed", user_id=user_id, plan_id=plan_id)
+    except Exception:
+        current_app.logger.warning("Automatic funding setup failure could not be recorded for plan %s.", plan_id)
 
 
 def create_plan(user_id, body):
@@ -111,10 +144,21 @@ def create_plan(user_id, body):
             })
             if checkout.get("reference") != plan["setup_reference"]:
                 raise FundingError("The payment reference could not be confirmed.")
+            checkout_url = checkout.get("authorization_url")
+            if not isinstance(checkout_url, str) or not checkout_url.startswith("https://checkout.paystack.com/"):
+                raise FundingError("Paystack did not return a valid checkout link. Please try again.")
             plan = rpc("checkout", user_id=user_id, plan_id=plan_id,
-                       data={"checkout_url": checkout["authorization_url"]})
+                       data={"checkout_url": checkout_url})
+        except FundingError:
+            _mark_setup_failed(user_id, plan_id)
+            raise
+        except requests.RequestException:
+            _mark_setup_failed(user_id, plan_id)
+            current_app.logger.warning("Paystack initialization was unreachable for automatic funding plan %s.", plan_id)
+            raise FundingError("Paystack could not be reached. Check the plan status before trying again.") from None
         except Exception:
-            rpc("setup_failed", user_id=user_id, plan_id=plan_id)
+            _mark_setup_failed(user_id, plan_id)
+            current_app.logger.exception("Automatic funding initialization failed for plan %s.", plan_id)
             raise FundingError("Funding setup could not be completed. Check its status before trying a new plan.") from None
     return public_plan(plan)
 
@@ -172,6 +216,9 @@ def verify_setup(user_id, plan_id, reference):
     if reference != plan["setup_reference"]:
         raise FundingError("This payment does not belong to this funding plan.")
     data = _provider("GET", f"/transaction/verify/{quote(reference, safe='')}")
+    if data.get("status") in ("failed", "abandoned", "reversed"):
+        rpc("failed", user_id=user_id, plan_id=plan_id, data={"reference": reference})
+        return {"payment_status": "failed", "plan": public_plan(rpc("get", user_id=user_id, plan_id=plan_id))}
     return confirm_payment(data, expected_user_id=user_id, plan_id=plan_id)
 
 
