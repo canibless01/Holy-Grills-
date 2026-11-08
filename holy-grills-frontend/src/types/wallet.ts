@@ -5,6 +5,15 @@
 import type { IsoDateTime, MutationResult, Naira, Uuid } from './common';
 import type { VirtualAccount } from './auth';
 
+export interface AutoFundingAttempt {
+  id: string;
+  cycle: number;
+  reference: string;
+  state: 'setup' | 'handed_off' | 'succeeded' | 'failed';
+  scheduled_for: string;
+  updated_at: string;
+}
+
 export interface AutoFundingPlan {
   id: string;
   amount_kobo: number;
@@ -19,6 +28,10 @@ export interface AutoFundingPlan {
   setup_reference: string;
   checkout_url?: string | null;
   in_flight?: boolean;
+  last_issue?: 'setup_unavailable' | 'payment_uncertain' | 'payment_failed' | 'card_not_reusable' | 'account_or_card_changed' | null;
+  created_at?: string;
+  stopped_at?: string | null;
+  attempts?: AutoFundingAttempt[];
 }
 
 export interface AutoFundingLimits {

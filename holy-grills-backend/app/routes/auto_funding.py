@@ -19,11 +19,15 @@ def plans():
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
             return jsonify({"error": "Invalid funding request."}), 400
-        return jsonify({"plan": service.create_plan(g.user_id, body)})
+        plan = service.create_plan(g.user_id, body)
+        # Match the established Paystack initialization contract while keeping
+        # plan.checkout_url for existing clients and resumable first payments.
+        return jsonify({"plan": plan, "authorization_url": plan.get("checkout_url"),
+                        "reference": plan.get("setup_reference")})
     except service.FundingError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception:
-        current_app.logger.warning("Automatic funding request could not be completed.")
+        current_app.logger.exception("Automatic funding request could not be completed.")
         return jsonify({"error": "Funding request unavailable. Check your existing plan before trying again."}), 503
 
 
@@ -45,5 +49,5 @@ def manage(plan_id, action):
     except (service.FundingError, ValueError) as exc:
         return jsonify({"error": str(exc) if isinstance(exc, service.FundingError) else "Invalid funding plan."}), 400
     except Exception:
-        current_app.logger.warning("Automatic funding action unavailable: %s", action)
+        current_app.logger.exception("Automatic funding action unavailable: %s", action)
         return jsonify({"error": "This action could not be confirmed. Refresh the plan before trying again."}), 503
