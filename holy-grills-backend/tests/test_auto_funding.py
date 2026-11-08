@@ -40,14 +40,14 @@ class AutomaticFundingTests(unittest.TestCase):
         _, result = service.validate_terms({**self.terms, "stop_after": None, "end_date": "2027-01-01"}, 100)
         self.assertEqual(result["end_at"], "2027-01-02T00:00:00+01:00")
 
-    def test_setup_charges_exact_amount_card_only_trusted_callback_original_email(self):
+    def test_setup_uses_working_wallet_channels_exact_amount_callback_and_original_email(self):
         with self.app.app_context(), patch.object(service, "limits", return_value={"minimum_amount": 100}), \
              patch.object(service, "rpc", side_effect=[{"created": True, "plan": self.plan}, {**self.plan, "checkout_url": "https://checkout.paystack.com/test"}]), \
              patch.object(service, "_provider", return_value={"reference": self.reference, "authorization_url": "https://checkout.paystack.com/test"}) as provider:
             result = service.create_plan(self.uid, {**self.terms, "callback_url": "https://evil.invalid"})
         payload = provider.call_args.args[2]
         self.assertEqual(payload["amount"], 20000)  # Holy Grills absorbs fees.
-        self.assertEqual(payload["channels"], ["card"])
+        self.assertNotIn("channels", payload)  # Same enabled-channel behaviour as ordinary wallet funding.
         self.assertEqual(payload["email"], "original@example.invalid")
         self.assertTrue(payload["callback_url"].startswith("https://holygrills.online/wallet?auto_funding="))
         self.assertNotIn("authorization_email", result)
