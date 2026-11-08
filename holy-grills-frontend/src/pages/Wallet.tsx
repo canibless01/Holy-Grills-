@@ -14,6 +14,7 @@ import MascotStandee from '@/components/mascot/MascotStandee';
 import { msg } from '@/lib/messages';
 import { useFeatureFlags, showHpTransferUI } from '@/lib/featureConfig';
 import { hpTransferMinOrders } from '@/lib/appConfig';
+import { ChevronDown, Repeat2 } from 'lucide-react';
 
 const AutoFundingPanel = lazy(() => import('@/components/wallet/AutoFundingPanel'));
 
@@ -137,9 +138,9 @@ export default function Wallet() {
 
       <WalletVirtualAccount account={virtualAccount} />
 
-      <section id="automatic-funding" className="rounded-2xl border border-border bg-card p-4 space-y-3">
-        <div className="flex flex-wrap gap-3 items-center justify-between"><div><h2 className="font-heading font-bold">Automatic funding</h2><p className="text-sm text-muted-foreground">Your amount. Your schedule. Always available to spend.</p></div>
-          <button type="button" className="text-sm font-bold text-primary" aria-expanded={showAutoFunding} aria-controls="automatic-funding-panel" onClick={() => setShowAutoFunding(value => !value)}>{showAutoFunding ? 'Hide details' : 'Set up or manage'}</button></div>
+      <section id="automatic-funding" className="overflow-hidden rounded-3xl border border-border bg-card p-4 sm:p-5 space-y-5">
+        <div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Repeat2 className="h-5 w-5" aria-hidden="true" /></div><div className="min-w-0"><h2 className="font-heading font-bold">Automatic funding</h2><p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">Small top-ups. Ready whenever you are.</p></div></div>
+          <button type="button" aria-label={showAutoFunding ? 'Hide details' : 'Set up or manage'} className="flex h-10 shrink-0 items-center gap-2 rounded-xl bg-background px-3 text-xs font-bold text-primary" aria-expanded={showAutoFunding} aria-controls="automatic-funding-panel" onClick={() => setShowAutoFunding(value => !value)}><span className="hidden sm:inline">{showAutoFunding ? 'Hide' : 'Set up'}</span><ChevronDown className={`h-4 w-4 transition-transform ${showAutoFunding ? 'rotate-180' : ''}`} aria-hidden="true" /></button></div>
         {showAutoFunding && <div id="automatic-funding-panel"><Suspense fallback={<p role="status" className="text-sm">Loading automatic funding…</p>}><AutoFundingPanel reference={searchParams.has('auto_funding') ? searchParams.get('reference') : null} planId={searchParams.get('auto_funding')} onPaid={async () => { await Promise.all([refreshWallet(), refreshHp()]); setHistoryRetry(value => value + 1); }} /></Suspense></div>}
       </section>
 
