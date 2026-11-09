@@ -38,6 +38,14 @@ def dispatch_notification(notification_id):
             prefs=effective_preferences(db,snapshot['user_id'],profile)
             if channel not in permitted_channels(snapshot['type'],[channel],prefs):
                 return finish({'state':'skipped','error':'recipient_opted_out'})
+        if snapshot.get('type') == 'ambassador_grant_issued':
+            meta = snapshot.get('metadata') or {}
+            if meta.get('reference_type') != 'ambassador_grant' or not meta.get('reference_id'):
+                return finish({'state':'cancelled','error':'ambassador_grant_reference_missing'})
+            grant = db.table('ambassador_grants').select('ambassador_id,status').eq(
+                'id', meta.get('reference_id')).single().execute() or {}
+            if grant.get('ambassador_id') != snapshot['user_id'] or grant.get('status') != 'issued':
+                return finish({'state':'cancelled','error':'ambassador_grant_not_issued_or_owner_changed'})
         blast_id=snapshot.get('blast_id')
         if blast_id:
             blast=db.table('notification_blasts').select('status').eq('id',blast_id).single().execute() or {}

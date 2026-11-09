@@ -838,13 +838,12 @@ class GrantTests(AmbassadorTestBase):
         extra=svc.issue_grant(self.db,self._actor(),**{**kwargs,'reason':'second'},override=True)
         self.assertTrue(extra['duplicate_override'])
 
-    def test_issued_replay_recovers_notice_with_same_grant_receipt(self):
+    def test_issued_replay_wakes_saved_grant_receipt(self):
         self.ctx();self.seed_ambassador()
         self.db.rpcs['hg_issue_ambassador_grant_atomic']=lambda _: {'id':'receipt','idempotent':True}
-        with patch('app.services.notification_service.send_notification') as notify:
+        with patch.object(svc, '_wake_grant_notices') as wake:
             svc.issue_grant(self.db,self._actor(),ambassador_id=AMB,category='hp',amount=50,reason='test',month=MONTH)
-            self.assertEqual(notify.call_args.kwargs['reference_id'], 'receipt')
-            self.assertEqual(notify.call_args.kwargs['reference_type'], 'ambassador_grant')
+            wake.assert_called_once_with(self.db, AMB, 'receipt')
 
     def test_unsafe_amounts_never_reach_award_rpc(self):
         self.ctx();self.seed_ambassador()
@@ -1313,3 +1312,44 @@ class ProgrammeGrantHistoryTests(AmbassadorTestBase):
         with patch('app.services.notification_service.send_notification') as notify,self.assertRaises(svc.AmbassadorError) as error:
             svc.issue_grant(self.db,{'id':ADMIN_ID,'role':'admin'},ambassador_id=AMB,category='hp',amount=50,reason='review',month=MONTH)
         self.assertEqual(error.exception.status,409);notify.assert_not_called()
+
+
+class ProgrammeGrantRecoveryTests(AmbassadorTestBase):
+    def _actor(self):return {'id':ADMIN_ID,'role':'admin','campus_id':CAMPUS_A}
+
+    def test_failed_immediate_wake_keeps_committed_receipt(self):
+        self.ctx(); self.seed_ambassador()
+        self.db.rpcs['hg_issue_ambassador_grant_atomic']=lambda _: {'id':'receipt','idempotent':True}
+        with patch.object(svc, '_wake_grant_notices', side_effect=RuntimeError('process handoff failed')), patch('app.services.notification_service.send_notification') as notify:
+            grant=svc.issue_grant(self.db,self._actor(),ambassador_id=AMB,category='hp',amount=50,reason='test',month=MONTH)
+        self.assertEqual(grant['id'],'receipt');notify.assert_not_called()
+
+    def test_claim_conflicts_have_actionable_409_without_second_award(self):
+        from app.db import SupabaseError
+        self.ctx(); self.seed_ambassador()
+        for code in ('ambassador_claim_already_issued','ambassador_claim_invalid','ambassador_claim_rejected'):
+            def reject(_):raise SupabaseError('database rejected claim',409,{'message':code})
+            self.db.rpcs['hg_issue_ambassador_grant_atomic']=reject
+            with self.subTest(code=code), patch.object(svc,'_wake_grant_notices') as wake, self.assertRaises(svc.AmbassadorError) as error:
+                svc.issue_grant(self.db,self._actor(),ambassador_id=AMB,category='hp',amount=50,reason='test',month=MONTH)
+            self.assertEqual(error.exception.status,409);wake.assert_not_called()
+
+    def test_wake_uses_only_saved_owned_push_and_never_creates_notices(self):
+        self.ctx(); self.db.seed('notifications',[{'id':'saved-push','user_id':AMB,'reference_id':'receipt','type':'ambassador_grant_issued','channel':'push'},
+            {'id':'foreign','user_id':AMB2,'reference_id':'receipt','type':'ambassador_grant_issued','channel':'push'},
+            {'id':'inbox','user_id':AMB,'reference_id':'receipt','type':'ambassador_grant_issued','channel':'in_app'}])
+        with patch('app.services.notification_outbox.dispatch_notification') as dispatch, patch('threading.Thread') as thread:
+            svc._wake_grant_notices(self.db,AMB,'receipt')
+            thread.call_args.kwargs['target']()
+            dispatch.assert_called_once_with('saved-push')
+        self.assertNotIn('notifications',self.db.written_tables)
+        self.assertTrue(thread.call_args.kwargs['daemon'])
+
+    def test_reused_milestone_claim_route_returns_409(self):
+        from app.db import SupabaseError
+        def reject(_):raise SupabaseError('claim rejected',409,{'message':'ambassador_claim_already_issued'})
+        self.db.rpcs['hg_issue_ambassador_grant_atomic']=reject;self.seed_ambassador()
+        with self.app.test_request_context('/',json={'ambassador_id':AMB,'reward_type':'hp','amount':50,'reason':'test','month':MONTH}):
+            g.user_id,g.user_role,g.campus_id=ADMIN_ID,'admin',CAMPUS_A
+            body,code=inspect.unwrap(routes.staff_create_grant)()
+            self.assertEqual(code,409);self.assertIn('already been rewarded',body.json['error'])

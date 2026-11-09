@@ -848,13 +848,21 @@ def issue_grant(db, actor: dict, *, ambassador_id: str, category: str, amount: f
     # Include all terms, so an intentional later override is distinct while a
     # retry of the same operation resolves the committed receipt.
     idem = str(uuid.uuid5(_GRANT_NS, '|'.join(map(str, (idem, reason, validity_days, uses_count, source, milestone_claim_id)))))
-    grant = db.rpc('hg_issue_ambassador_grant_atomic', {
-        'p_actor_id': actor['id'], 'p_ambassador_id': ambassador_id,
-        'p_category': category, 'p_amount': amount, 'p_month': month,
-        'p_reason': reason[:500], 'p_validity_days': validity_days, 'p_uses': uses_count,
-        'p_source': grant_row['source'], 'p_claim_id': milestone_claim_id,
-        'p_override': bool(override), 'p_intent': idem,
-    })
+    try:
+        grant = db.rpc('hg_issue_ambassador_grant_atomic', {
+            'p_actor_id': actor['id'], 'p_ambassador_id': ambassador_id,
+            'p_category': category, 'p_amount': amount, 'p_month': month,
+            'p_reason': reason[:500], 'p_validity_days': validity_days, 'p_uses': uses_count,
+            'p_source': grant_row['source'], 'p_claim_id': milestone_claim_id,
+            'p_override': bool(override), 'p_intent': idem,
+        })
+    except SupabaseError as error:
+        message = (error.details or {}).get('message') or str(error)
+        if message == 'ambassador_claim_already_issued':
+            raise AmbassadorError(MSG.AMBASSADOR_CLAIM_ALREADY_ISSUED, status=409) from None
+        if message in ('ambassador_claim_invalid', 'ambassador_claim_rejected'):
+            raise AmbassadorError(MSG.AMBASSADOR_CLAIM_NOT_GRANTABLE, status=409) from None
+        raise
     if isinstance(grant, dict) and grant.get('error') == 'duplicate_monthly_grant':
         raise DuplicateGrant(MSG.AMBASSADOR_GRANT_DUPLICATE)
     if not isinstance(grant, dict) or not grant.get('id'):
@@ -866,16 +874,28 @@ def issue_grant(db, actor: dict, *, ambassador_id: str, category: str, amount: f
               after={"grant_id": grant["id"], "amount": amount, "month": month},
               campus_id=ambassador.get("campus_id"))
     try:
-        from app.services.notification_service import send_notification
-        send_notification(
-            ambassador_id, "ambassador_grant_issued",
-            title="Ambassador reward approved",
-            body=f"Your {category.replace('_', ' ')} reward for {month} has been issued.",
-            reference_id=grant["id"], reference_type="ambassador_grant",
-            campus_id=ambassador.get("campus_id"))
+        _wake_grant_notices(db, ambassador_id, grant['id'])
     except Exception:
-        logger.warning("ambassador grant notification failed", exc_info=True)
+        # Receipt and queued push already committed with the grant. The existing
+        # recovery job can deliver it even if this HTTP process never wakes it.
+        logger.warning("Ambassador reward notice wake deferred for %s", grant['id'])
     return grant
+
+
+def _wake_grant_notices(db, ambassador_id, grant_id):
+    """Only wake saved work; never create or re-award a benefit after commit."""
+    import threading
+    from app.services.notification_outbox import dispatch_notification
+    rows = db.table('notifications').select('id').eq('user_id', ambassador_id).eq(
+        'type', 'ambassador_grant_issued').eq('reference_id', grant_id).eq('channel', 'push').limit(1).execute() or []
+    if not rows:
+        return
+    app = current_app._get_current_object()
+    def wake():
+        with app.app_context():
+            for row in rows:
+                dispatch_notification(row['id'])
+    threading.Thread(target=wake, daemon=True).start()
 
 
 def list_grants(db, ambassador_id: str | None = None, ambassador_ids: list[str] | None = None) -> list[dict]:

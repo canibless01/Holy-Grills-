@@ -17,6 +17,8 @@ Rules for editing this file:
 """
 
 class MSG:
+    AMBASSADOR_CLAIM_ALREADY_ISSUED = "This milestone has already been rewarded. An additional manual reward must not reuse this claim."
+    AMBASSADOR_CLAIM_NOT_GRANTABLE = "This milestone claim is unavailable, rejected or belongs to a different ambassador or month."
     AMBASSADOR_GRANT_VOIDED = "The original programme reward was voided. An additional reward needs a new authorised grant."
     FE_DASHBOARD_STREAK_LOADING = "Loading streak…"
     FE_DASHBOARD_BALANCE_LOADING = "Loading balance"

@@ -217,3 +217,31 @@ def test_ticket_wake_uses_saved_dispatch_id_and_existing_thread_transport():
         assert outbox.start_ticket_email_dispatch(TOKEN) is True
     assert thread.call_args.kwargs=={'target':outbox.dispatch_notification,'args':(TOKEN,),'daemon':True}
     thread.return_value.start.assert_called_once()
+
+
+@pytest.mark.parametrize('grant',[{}, {'ambassador_id':ID,'status':'voided'}, {'ambassador_id':TOKEN,'status':'issued'}])
+def test_voided_missing_or_reassigned_ambassador_grant_is_not_dispatched(setup_dispatch,grant):
+    db,claim,calls,email,push=setup_dispatch
+    claim['channel']='push'
+    claim['payload']['notification'].update(type='ambassador_grant_issued',metadata={'reference_type':'ambassador_grant','reference_id':TOKEN})
+    db.table.return_value.execute.side_effect=[{'email':'student@example.com'},grant]
+    assert outbox.dispatch_notification(ID)['state']=='cancelled'
+    email.assert_not_called();push.assert_not_called()
+    assert all(name!='hg_begin_notification_dispatch' for name,_ in calls)
+
+
+def test_issued_ambassador_grant_dispatches_saved_receipt_once(setup_dispatch):
+    db,claim,calls,email,push=setup_dispatch
+    claim['channel']='push'
+    claim['payload']['notification'].update(type='ambassador_grant_issued',action_url='/rewards',metadata={'reference_type':'ambassador_grant','reference_id':TOKEN})
+    db.table.return_value.execute.side_effect=[{'email':'student@example.com'},{'ambassador_id':ID,'status':'issued'}]
+    assert outbox.dispatch_notification(ID)['state']=='accepted'
+    push.assert_called_once();email.assert_not_called()
+    assert push.call_args.args[3]=='/rewards'
+
+def test_malformed_ambassador_receipt_is_cancelled_without_private_lookup(setup_dispatch):
+    db,claim,calls,email,push=setup_dispatch
+    claim['channel']='push';claim['payload']['notification']['type']='ambassador_grant_issued'
+    assert outbox.dispatch_notification(ID)['state']=='cancelled'
+    assert not any(call.args==('ambassador_grants',) for call in db.table.call_args_list)
+    email.assert_not_called();push.assert_not_called()
