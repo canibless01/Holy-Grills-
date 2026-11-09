@@ -18,6 +18,14 @@ import socket
 logger = get_logger(__name__)
 
 
+@celery_app.task(name="app.tasks.scheduled.notify_wallet_transfer", ignore_result=True)
+def notify_wallet_transfer(transfer_id):
+    from app.services.wallet_transfers import rpc, dispatch_receipt
+    row = rpc('notice', transfer_id=transfer_id)
+    if row:
+        dispatch_receipt({**row, 'amount': row['amount_kobo'] / 100})
+
+
 def _log_cron_execution(job_name: str, status: str, result: dict = None, error: str = None):
     """Record scheduled cron execution in admin_audit_logs for cron_status observability."""
     try:
@@ -1359,6 +1367,8 @@ def send_scheduled_blasts(self, campus_id=None):
     recovery = recover_due_notifications()
     from app.services.event_refunds import recover_due_event_refunds
     refund_recovery = recover_due_event_refunds()
+    from app.services.wallet_transfers import recover as recover_wallet_transfers
+    wallet_transfer_recovery = recover_wallet_transfers()
     db = get_db()
     try:
         lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "send_scheduled_blasts"})
@@ -1366,7 +1376,7 @@ def send_scheduled_blasts(self, campus_id=None):
         logger.error("send_scheduled_blasts: lock RPC failed, skipping run to be safe: %s", e)
         lock_acquired = False
     if not lock_acquired:
-        return {"skipped": "Lock not acquired", "notification_recovery": recovery, "refund_recovery": refund_recovery}
+        return {"skipped": "Lock not acquired", "notification_recovery": recovery, "refund_recovery": refund_recovery, "wallet_transfer_recovery": wallet_transfer_recovery}
 
     try:
         now = datetime.now(timezone.utc).isoformat()
@@ -1395,7 +1405,7 @@ def send_scheduled_blasts(self, campus_id=None):
             except Exception as e:
                 logger.error("send_scheduled_blasts: blast %s failed: %s", blast_id, e)
 
-        return {"processed": processed, "checked_at": now, "campus_id": campus_id, "notification_recovery": recovery, "refund_recovery": refund_recovery}
+        return {"processed": processed, "checked_at": now, "campus_id": campus_id, "notification_recovery": recovery, "refund_recovery": refund_recovery, "wallet_transfer_recovery": wallet_transfer_recovery}
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "send_scheduled_blasts"})

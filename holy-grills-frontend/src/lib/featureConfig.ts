@@ -53,7 +53,7 @@ export function useFeatureFlags() {
   }, []);
   return version;
 }
-const CANONICAL_FLAGS = new Set(['events', 'hp_multiplier', 'flash_redemptions', 'leaderboard_prizes', 'free_side_credits', 'exclusive_spin', 'hall_of_fame', 'badge_system', 'spin_and_win', 'marketplace_general', 'hp_transfer', 'squad_orders', 'scheduled_orders', 'referral_milestones', 'hp_expiry_warnings', 'birthday_hp', 'subscription_codes', 'abandoned_cart_nudge']);
+const CANONICAL_FLAGS = new Set(['wallet_transfer', 'events', 'hp_multiplier', 'flash_redemptions', 'leaderboard_prizes', 'free_side_credits', 'exclusive_spin', 'hall_of_fame', 'badge_system', 'spin_and_win', 'marketplace_general', 'hp_transfer', 'squad_orders', 'scheduled_orders', 'referral_milestones', 'hp_expiry_warnings', 'birthday_hp', 'subscription_codes', 'abandoned_cart_nudge']);
 const FLAG_ALIASES: Record<string, string> = { show_leaderboard_prizes_ui: 'leaderboard_prizes', show_hall_of_fame_ui: 'hall_of_fame', show_badge_ui: 'badge_system', show_spin_ui: 'spin_and_win', show_marketplace_ui: 'marketplace_general', show_hp_transfer_ui: 'hp_transfer' };
 
 // ── Central Feature Flag Registry (Spec §1.5) ────────────────────────────
@@ -104,6 +104,7 @@ export const FEATURE_FLAGS = {
   exclusive_spin: true,
   marketplace_general: false,
   hp_transfer: false,
+  wallet_transfer: false,
   flash_redemptions: false,
   subscription_codes: false,
   abandoned_cart_nudge: false,

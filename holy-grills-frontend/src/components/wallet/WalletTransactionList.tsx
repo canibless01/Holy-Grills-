@@ -2,7 +2,7 @@ import { ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import { transactionIsCredit } from '@/lib/transactionDirection';
 import { msg } from '@/lib/messages';
 import MascotStandee from '@/components/mascot/MascotStandee';
-import { formatNaira, timeAgo, HP_SOURCE_LABELS } from '@/lib/hgUtils';
+import { formatWalletMoney as formatNaira, timeAgo, HP_SOURCE_LABELS } from '@/lib/hgUtils';
 
 const WALLET_TX_TYPES = {
   topup: { label: 'Wallet Top-up', isCredit: true },
@@ -17,6 +17,7 @@ const normalizeWalletTx = (tx) => {
   return {
     id: tx.id,
     kind: 'cash',
+    transferId: tx.reference_type === 'wallet_transfer' ? (tx.reference_id || tx.metadata?.transfer_id) : null,
     label: tx.reason || info.label,
     sublabel: info.label,
     amount: Math.abs(Number(tx.amount) || 0),
@@ -32,6 +33,7 @@ const normalizeHpTx = (tx) => {
   return {
     id: tx.id,
     kind: 'hp',
+    transferId: null,
     label: source.toLowerCase().includes('transfer') ? (transactionIsCredit(tx, 'hp') ? msg('FE_TX_HP_RECEIVED', 'HP received') : msg('FE_TX_HP_SENT', 'HP sent')) : HP_SOURCE_LABELS[source] || source || 'HP Transaction',
     sublabel: 'Holy Points',
     amount: Math.abs(rawAmount),
@@ -47,7 +49,7 @@ const TABS = [
   { key: 'hp', label: 'HP' },
 ];
 
-export default function WalletTransactionList({ walletTxns, hpTxns, activeTab, onTabChange, loading }) {
+export default function WalletTransactionList({ walletTxns, hpTxns, activeTab, onTabChange, loading, onReceipt = null }) {
   const normalized = [
     ...walletTxns.map(normalizeWalletTx),
     ...hpTxns.map(normalizeHpTx),
@@ -106,6 +108,7 @@ export default function WalletTransactionList({ walletTxns, hpTxns, activeTab, o
                 <div className="font-semibold text-sm text-foreground truncate">{tx.label}</div>
                 <div className="text-xs text-muted-foreground flex items-center gap-1.5">
                   <span>{timeAgo(tx.date)}</span>
+                  {tx.transferId && onReceipt && <button onClick={() => onReceipt(tx.transferId)} className="text-xs font-bold text-primary hover:underline">View receipt</button>}
                   {tx.kind === 'hp' && <span className="px-1.5 py-0.5 rounded-full tone-warn text-[9px] font-bold">HP</span>}
                 </div>
               </div>

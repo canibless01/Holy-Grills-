@@ -12,6 +12,7 @@ import { loadFeatureFlags } from '@/lib/featureConfig';
 // Flag metadata — admin guidance only. On/off values come from the backend's
 // feature_flags table (is_active column), never from this map.
 const flagMetadata = () => ({
+  wallet_transfer: { label: 'Wallet transfers', flipWhen: 'After transfer acceptance checks', impact: 'Allows active members to send wallet money within their campus; no transfer fee or top-up HP.' },
   events: { label: msg('FE_EVENT_FLAG_LABEL', 'Events'), flipWhen: msg('FE_EVENT_FLAG_WHEN', 'When event admission and rewards are ready'), impact: msg('FE_EVENT_FLAG_IMPACT', 'Shows Coming Soon and blocks new event registrations while disabled') },
   hp_multiplier: { label: msg('FE_ADMIN_FLAG_HP_MULTIPLIER_LABEL', 'HP multiplier events'), flipWhen: msg('FE_ADMIN_FLAG_HP_MULTIPLIER_FLIPWHEN', 'When the launch team is ready'), impact: msg('FE_ADMIN_FLAG_HP_MULTIPLIER_IMPACT', 'Enables timed event multipliers; per-item multipliers remain independent') },
   flash_redemptions: { label: msg('FE_ADMIN_FLAG_FLASH_REDEMPTIONS_LABEL', 'Flash reward events'), flipWhen: msg('FE_ADMIN_FLAG_FLASH_REDEMPTIONS_FLIPWHEN', 'When reward fulfilment is ready'), impact: msg('FE_ADMIN_FLAG_FLASH_REDEMPTIONS_IMPACT', 'Enables flash reward availability and flash redemption') },

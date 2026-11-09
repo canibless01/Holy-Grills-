@@ -388,6 +388,10 @@ const marketplace = {
 // POST /wallet/fund/bank, GET /wallet/transactions, GET /wallet/admin/transactions.
 // Card returns verify the provider reference before reporting wallet funding.
 const wallet = {
+  async getTransferLimits() { return apiClient.get('/wallet/transfers'); },
+  async findTransferRecipient(code) { return apiClient.get('/wallet/transfers/recipient', { code }); },
+  async sendTransfer(body) { return apiClient.post('/wallet/transfers', body); },
+  async getTransfer(id) { return apiClient.get(`/wallet/transfers/${id}`); },
   async getAutoFunding() { return apiClient.get('/wallet/auto-funding'); },
   async createAutoFunding(body) { return apiClient.post('/wallet/auto-funding', body); },
   async verifyAutoFunding(id, body) { return apiClient.post(`/wallet/auto-funding/${id}/verify`, body); },

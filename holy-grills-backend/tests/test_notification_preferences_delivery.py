@@ -100,3 +100,14 @@ class AmbassadorGrantNoticeTests(unittest.TestCase):
             rows=service.send_notification('user','ambassador_grant_issued',title='Reward approved',body='Ready',reference_id='old-grant',reference_type='ambassador_grant',channels=['push'])
         self.assertEqual(rows[0]['id'],'legacy-random-id');self.assertEqual(len(self.db.rows['notifications']),1)
         dispatch.assert_not_called()
+
+class WalletTransferNoticeTests(unittest.TestCase):
+    setUp = NotificationDeliveryTests.setUp
+    def test_transfer_receipt_recovery_adopts_each_channel_without_resending(self):
+        with self.app.app_context(),patch.object(service,'get_db',return_value=self.db),patch.object(service.threading,'Thread') as dispatch:
+            for _ in range(2):
+                rows=service.send_notification('user','wallet_transfer_sent',title='Sent',body='Receipt',reference_id='transfer-one',reference_type='wallet_transfer',action_url='/wallet?transfer=transfer-one',channels=['push','email','in_app'],strict=True)
+                self.assertEqual(len(rows),3)
+        self.assertEqual(len(self.db.rows['notifications']),3)
+        self.assertEqual(dispatch.call_count,2)
+        self.assertTrue(all(row['action_url']=='/wallet?transfer=transfer-one' for row in self.db.rows['notifications']))

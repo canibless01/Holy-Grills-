@@ -40,6 +40,8 @@ export const formatNaira = (amount) => {
   return `₦${(amount || 0).toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 };
 
+export const formatWalletMoney = (amount) => `₦${Number(amount || 0).toLocaleString('en-NG', { maximumFractionDigits: 2 })}`;
+
 export const formatHp = (amount) => {
   return `${amount || 0} HP`;
 };

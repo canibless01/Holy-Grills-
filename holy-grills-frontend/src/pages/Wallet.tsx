@@ -12,16 +12,17 @@ import WalletTransactionList from '@/components/wallet/WalletTransactionList';
 import WalletFundModal from '@/components/wallet/WalletFundModal';
 import MascotStandee from '@/components/mascot/MascotStandee';
 import { msg } from '@/lib/messages';
-import { useFeatureFlags, showHpTransferUI } from '@/lib/featureConfig';
+import { useFeatureFlags, showHpTransferUI, isFeatureEnabled } from '@/lib/featureConfig';
 import { hpTransferMinOrders } from '@/lib/appConfig';
 import { ChevronDown, Repeat2 } from 'lucide-react';
 
+const WalletTransferModal = lazy(() => import('@/components/wallet/WalletTransferModal'));
 const AutoFundingPanel = lazy(() => import('@/components/wallet/AutoFundingPanel'));
 
 export default function Wallet() {
   useFeatureFlags();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { wallet, refreshWallet, refreshHp, hpBalance } = useHolyGrill();
+  const { user, wallet, refreshWallet, refreshHp, hpBalance } = useHolyGrill();
   const [walletTxns, setWalletTxns] = useState([]);
   const [hpTxns, setHpTxns] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -31,6 +32,12 @@ export default function Wallet() {
   const [historyRetry, setHistoryRetry] = useState(0);
   const [fundingStatus, setFundingStatus] = useState<'pending' | 'error' | 'review' | null>(null);
   const [showFund, setShowFund] = useState(false);
+  const [showMoneyTransfer, setShowMoneyTransfer] = useState(() => searchParams.has('transfer'));
+  const [receiptId, setReceiptId] = useState<string | null>(() => searchParams.get('transfer'));
+  const incomingTransfer = searchParams.get('transfer');
+  useEffect(() => {
+    if (incomingTransfer) { setReceiptId(incomingTransfer); setShowMoneyTransfer(true); }
+  }, [incomingTransfer]);
   const [showTransfer, setShowTransfer] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
   // Eligibility and the release gate are independent requirements.
@@ -132,7 +139,7 @@ export default function Wallet() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <WalletBalanceCard balance={balance} onFund={() => setShowFund(true)} />
+        <WalletBalanceCard balance={balance} onFund={() => setShowFund(true)} onSend={isFeatureEnabled('wallet_transfer') ? () => { setReceiptId(null); setShowMoneyTransfer(true); } : null} />
         <WalletHpCard hpBalance={hpBalance} onSend={() => setShowTransfer(true)} transferEnabled={hpTransferEnabled} transferVisible={transferReleased} minimumOrders={transferMinimum} deliveredCount={deliveredCount} />
       </div>
 
@@ -162,6 +169,7 @@ export default function Wallet() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         loading={loading}
+        onReceipt={id => { setReceiptId(id); setShowMoneyTransfer(true); }}
       />
 
       <WalletFundModal
@@ -171,6 +179,11 @@ export default function Wallet() {
         onSuccess={handleFundSuccess}
         onAutoFunding={() => { setShowFund(false); setShowAutoFunding(true); setTimeout(() => document.getElementById('automatic-funding')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); }}
       />
+
+      {showMoneyTransfer && <Suspense fallback={<p role="status" className="text-sm">Loading transfer details…</p>}><WalletTransferModal key={`${user?.id}:${receiptId || 'send'}`} receiptId={receiptId} onClose={() => {
+        setShowMoneyTransfer(false); setReceiptId(null);
+        if (searchParams.has('transfer')) { const params = new URLSearchParams(searchParams); params.delete('transfer'); setSearchParams(params, { replace: true }); }
+      }} onSuccess={async () => { await refreshWallet(); setHistoryRetry(value => value + 1); }} /></Suspense>}
 
       <HpTransferModal open={showTransfer && transferReleased} onClose={() => setShowTransfer(false)} />
     </div>
