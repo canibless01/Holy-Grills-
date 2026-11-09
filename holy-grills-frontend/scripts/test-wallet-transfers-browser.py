@@ -10,6 +10,7 @@ with sync_playwright() as p:
  for case in ('normal_mobile','normal_desktop','uncertain_retry','uncertain_reload','denied','flag_off_receipt'):
   ctx=browser.new_context(viewport={'width':1280 if case=='normal_desktop' else 393,'height':900})
   ctx.add_init_script(f"localStorage.setItem('hg_access_token','controlled');localStorage.setItem('hg_user_role','student');localStorage.setItem('hg_campus_id','{C}');localStorage.setItem('hg_user_campus_id','{C}');")
+  ctx.add_init_script("localStorage.setItem('hg_cookie_consent',JSON.stringify({essential:true,analytics:false,date:new Date().toISOString()}));")
   calls=[];posts=[];done=[None];balance=[1000];ref=str(uuid.uuid4())
   def receipt_value(id):return {'id':id,'amount':250.25,'fee':0,'sender_id':U,'recipient_id':R,'sender_name':'Alice','recipient_name':'Bob','direction':'sent','balance_after':749.75,'note':'Dinner together','created_at':'2026-11-09T12:00:00Z','status':'completed'}
   def api(route):

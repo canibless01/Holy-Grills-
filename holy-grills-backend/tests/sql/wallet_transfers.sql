@@ -1,6 +1,8 @@
 -- Transactional acceptance: all fixture users, balances and receipts roll back.
 BEGIN;
 SET LOCAL request.jwt.claims='{"role":"service_role"}';
+CREATE TEMP TABLE transfer_test_actors(sender uuid, recipient uuid, transfer uuid, fresh_recipient uuid);
+GRANT SELECT ON transfer_test_actors TO service_role;
 CREATE FUNCTION pg_temp.check_transfer(ok boolean, label text) RETURNS void LANGUAGE plpgsql AS $$
 BEGIN IF ok IS DISTINCT FROM true THEN RAISE EXCEPTION 'Transfer check failed: %',label; END IF; END $$;
 CREATE FUNCTION pg_temp.transfer_error(statement text, expected text) RETURNS void LANGUAGE plpgsql AS $$
@@ -16,6 +18,7 @@ DECLARE c uuid:=gen_random_uuid(); other_c uuid:=gen_random_uuid();
  a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); outsider uuid:=gen_random_uuid(); empty_user uuid:=gen_random_uuid();
  transfer uuid:=gen_random_uuid(); fresh uuid; p jsonb; result jsonb; before_hp numeric; before_count bigint; before_balance numeric; u uuid;
 BEGIN
+ INSERT INTO transfer_test_actors VALUES(a,b,transfer,empty_user);
  INSERT INTO public.campuses(id,name,slug) VALUES(c,'[AUDIT rollback] Wallet transfers','audit-wallet-'||c),(other_c,'[AUDIT rollback] Other wallet','audit-wallet-'||other_c);
  FOREACH u IN ARRAY ARRAY[a,b,outsider,empty_user] LOOP
   INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES(u,'audit-wallet-'||u||'@example.invalid','{"full_name":"[AUDIT rollback] Wallet member"}');
@@ -83,4 +86,25 @@ BEGIN
  PERFORM pg_temp.check_transfer(NOT has_function_privilege('anon','public.hg_wallet_transfer(text,uuid,uuid,jsonb)','EXECUTE') AND NOT has_function_privilege('authenticated','public.hg_wallet_transfer_receipt(uuid,uuid)','EXECUTE'),'RPC service only');
  PERFORM pg_temp.check_transfer(NOT has_table_privilege('authenticated','hg_internal.wallet_transfers','SELECT'),'private receipts');
 END $test$;
+-- Verify the actual backend role, not just the schema owner's permissions.
+SET LOCAL ROLE service_role;
+DO $role$ DECLARE actor record; value jsonb; BEGIN
+ SELECT * INTO actor FROM transfer_test_actors;
+ value:=public.hg_wallet_transfer('get',actor.sender,actor.transfer);
+ PERFORM pg_temp.check_transfer(value->>'id'=actor.transfer::text,'service-role receipt access');
+ value:=public.hg_wallet_transfer('limits',actor.sender);
+ PERFORM pg_temp.check_transfer(value->>'enabled'='false','service-role configured limits');
+ value:=public.hg_wallet_transfer('due',NULL,NULL,'{"limit":0}');
+ PERFORM pg_temp.check_transfer(value='[]'::jsonb,'service-role private outbox access');
+END $role$;
+RESET ROLE;
+UPDATE public.feature_flags SET is_active=true WHERE feature_name='wallet_transfer' AND campus_id IN
+ (SELECT p.campus_id FROM public.profiles p JOIN transfer_test_actors a ON a.sender=p.id);
+SET LOCAL ROLE service_role;
+DO $write$ DECLARE actor record; value jsonb; BEGIN
+ SELECT * INTO actor FROM transfer_test_actors;
+ value:=public.hg_wallet_transfer('send',actor.sender,gen_random_uuid(),jsonb_build_object('recipient_id',actor.fresh_recipient,'recipient_code',replace(actor.fresh_recipient::text,'-',''),'amount_kobo',100));
+ PERFORM pg_temp.check_transfer(value->>'status'='completed','service-role atomic wallet write');
+END $write$;
+RESET ROLE;
 ROLLBACK;

@@ -73,3 +73,7 @@ Evidence and remaining verification are in [stock metadata editing](ADMIN_STOCK_
 ## Event reliability and storefront ordering — 9 November
 
 [Independent-session evidence and fixes](EVENT_RELIABILITY_2026_11_09.md): simultaneous member/guest scans, process-exit rollback, committed-response replay, admission/refund races, payout reservation/replay and notification worker leases are verified on isolated PostgreSQL. Organizer notices now commit with the action using existing durable dispatch. Fresh Supabase rollback tests verify notification capture, equal-rank CMS/banner ordering and service-only permissions. Global super-admin uploads now pass the explicit-scope browser CORS preflight. Native ordering and event-image wiring checks pass; event exceptions are the next batch. Group/third-party ticket purchasing and HP sharing remain explicitly deferred.
+
+## Student performance and wallet transfers — 9 November
+
+[Performance/settings evidence](STUDENT_ADMIN_PERFORMANCE_2026_11_09.md) records immediate menu filtering, smaller responsive menu images, progressive admin/CMS feeds and settings/session isolation. [Wallet-transfer evidence and controls](WALLET_TRANSFERS_2026_11_09.md) adds the owner-requested same-campus cash transfer loop, atomic paired ledgers, owned receipts and recovery without new recurring jobs. These checks close the recorded cases; they do not imply that all historical audit items above or every first-page load have been certified.

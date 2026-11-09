@@ -26,3 +26,5 @@ Receipt delivery happens after commit through the existing Celery worker. A priv
 - Native browser tests cover mobile/desktop confirmation, decimal validity, success/history receipts, unknown POST result and same-reference retry, committed-response loss followed by reload recovery, authoritative rejection, and a disabled send gate with a private receipt lookup.
 
 The checks do not make a real customer transfer or charge a card. Production deployment status and authenticated device usage are separate from the transactional fixture checks.
+
+Release verification after integrating `f8dc24b`: **1,404 backend tests passed**; TypeScript and the full client/SSR/prerender build passed; all **six transfer browser scenarios** and all **six page-performance browser scenarios** passed. Supabase service-role read/write checks passed with all fixtures rolled back; security-advisor category counts were unchanged. Wallet displays preserve up to two decimal places so the confirmed amount, receipt, ledger and visible balance agree.
