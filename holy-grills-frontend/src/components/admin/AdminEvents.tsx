@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Pencil, Trash2, Eye, QrCode, Ticket, Download, Mail, BarChart3 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Eye, QrCode, Ticket, Download, Mail, BarChart3, CalendarDays, MapPin, Flame, ArrowUpRight, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { useCampus } from '@/lib/campusContext';
 import { apiClient } from '@/lib/apiClient';
@@ -21,6 +21,14 @@ const watInput = (value) => {
   if (!value) return '';
   const instant = new Date(value);
   return Number.isNaN(instant.getTime()) ? '' : new Date(instant.getTime() + 3600000).toISOString().slice(0, 16);
+};
+
+const eventActionClass = 'min-h-12 flex items-center justify-center gap-2 rounded-xl border border-border bg-background/70 px-2 py-3 text-xs font-bold text-foreground transition-colors hover:border-primary/30 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-40';
+const eventDate = (value) => {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime())
+    ? new Intl.DateTimeFormat('en-NG', {day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Africa/Lagos'}).format(date)
+    : msg('FE_EVENTS_DATE_PENDING', 'Date to be confirmed');
 };
 
 export default function AdminEvents() {
@@ -216,37 +224,76 @@ export default function AdminEvents() {
   const tierOptions: string[] = regs ? ([...new Set(regs.data.map((r) => r.tier_name || r.tier).filter(Boolean))] as string[]) : [];
 
   return (
-    <div className="space-y-3">
-      <div className="flex justify-end">
-        <button onClick={() => setModal({ item: { ...BLANK }, isNew: true })} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold"><Plus className="w-4 h-4" /> Add Event</button>
-      </div>
-      <div className="flex justify-between text-xs font-bold">
-        <button disabled={offset === 0 || !!busy} onClick={() => setOffset(value => Math.max(0, value - pageSize))}>{msg('FE_EVENT_PREVIOUS', 'Previous events')}</button>
-        <button onClick={load} disabled={!!busy}>{msg('FE_PLATFORM_RETRY', 'Retry')}</button>
-        <button disabled={events.length < pageSize || !!busy} onClick={() => setOffset(value => value + pageSize)}>{msg('FE_EVENT_NEXT', 'Next events')}</button>
-      </div>
-      {events.map((e) => (
-        <div key={e.id} className="rounded-2xl bg-card border border-border p-3 flex items-center gap-2 flex-wrap">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-bold text-sm text-foreground">{e.title}</span>
-              {e.is_published ? <Pill tone="green">Published</Pill> : <Pill tone="amber">Draft</Pill>}
-              {e.is_featured && <Pill tone="flame">Featured</Pill>}
-              {e.is_paid && <Pill tone="blue">Paid</Pill>}
-            </div>
-            <div className="text-xs text-muted-foreground">{e.location} · {e.checkin_count}/{e.capacity ?? e.max_attendees ?? '∞'} checked in · {e.hp_reward ?? e.hp_per_attendee} HP</div>
+    <div className="space-y-5">
+      <section className="relative overflow-hidden rounded-3xl bg-gradient-dark p-5 sm:p-6 text-white">
+        <Ticket aria-hidden="true" className="pointer-events-none absolute -right-3 -top-5 hidden h-40 w-40 -rotate-12 text-white/[0.06] sm:block" />
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="mb-2 flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.18em] text-white/60"><CalendarDays className="h-3.5 w-3.5" />{msg('FE_EVENTS_DESK', 'Event management')}</p>
+            <h2 className="font-heading text-2xl font-extrabold leading-tight">{msg('FE_EVENTS_HEADING', 'Bring people together.')}</h2>
+            <p className="mt-2 max-w-lg text-xs leading-relaxed text-white/75">{msg('FE_EVENTS_INTRO', 'Manage your events, tickets and check-in from one place.')}</p>
           </div>
-          {canManage(e) && <Toggle checked={e.is_published} disabled={!!busy || Boolean(e.review_status && e.review_status !== 'approved')} label={e.review_status && e.review_status !== 'approved' ? msg('FE_ORG_REVIEW_REQUIRED', 'Approve organizer review before publication') : msg('FE_ORG_PUBLICATION', 'Event publication')} onChange={() => togglePub(e)} />}
-          {canManage(e) && <Link className="text-primary text-xs font-bold p-2" to={`/event-manager?event=${e.id}`}>{msg('FE_ORG_REVIEW_SETTLEMENT', 'Organizer / settlement')}</Link>}
-          <button disabled={!canManage(e)} onClick={() => viewTiers(e.id)} title="Ticket Tiers" className="p-2 rounded-lg hover:bg-muted"><Ticket className="w-4 h-4 text-purple-500" /></button>
-          <button onClick={() => viewSales(e.id)} title="Sales Dashboard" className="p-2 rounded-lg hover:bg-muted"><BarChart3 className="w-4 h-4 text-success" /></button>
-          <button disabled={!canManage(e)} onClick={() => viewRegs(e.id)} title="Registrants" className="p-2 rounded-lg hover:bg-muted"><Eye className="w-4 h-4 text-muted-foreground" /></button>
-          <button disabled={!canManage(e)} onClick={() => void openRefundHistory(e.id)} title="Refund history" className="text-primary text-xs font-bold p-2">Refunds</button>
-          <button disabled={!canManage(e)} onClick={() => genQR(e.id)} title="QR" className="p-2 rounded-lg hover:bg-muted"><QrCode className="w-4 h-4 text-muted-foreground" /></button>
-          <button disabled={!canManage(e)} onClick={() => setModal({ item: { ...e, hp_reward: e.hp_per_attendee ?? e.hp_reward ?? 0, max_attendees: e.capacity ?? e.max_attendees ?? '', starts_at: watInput(e.starts_at), ends_at: watInput(e.ends_at) }, isNew: false })} title={msg('FE_EVENT_EDIT', 'Edit event')} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
-          <button disabled={!canManage(e)} onClick={() => remove(e.id)} className="p-2 rounded-lg hover:tone-error"><Trash2 className="w-4 h-4 text-destructive" /></button>
+          <button onClick={() => setModal({ item: { ...BLANK }, isNew: true })} className="flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-gradient-cta px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:brightness-105"><Plus className="h-4 w-4" />{msg('FE_EVENTS_ADD', 'Add Event')}</button>
         </div>
-      ))}
+      </section>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div><h3 className="text-sm font-extrabold text-foreground">{msg('FE_EVENTS_LIST', 'Your events')}</h3><p className="mt-0.5 text-[11px] text-muted-foreground">{msg('FE_EVENTS_PAGE_COUNT', '{count} on this page', {count:events.length})}</p></div>
+        <div className="flex items-center gap-1 rounded-full border border-border bg-card p-1">
+          <button aria-label={msg('FE_EVENT_PREVIOUS', 'Previous events')} disabled={offset === 0 || !!busy} onClick={() => setOffset(value => Math.max(0, value - pageSize))} className="flex h-9 w-9 items-center justify-center rounded-full text-foreground transition hover:bg-secondary disabled:opacity-30"><ChevronLeft className="h-4 w-4" /></button>
+          <span className="min-w-7 text-center text-xs font-bold">{offset / pageSize + 1}</span>
+          <button aria-label={msg('FE_EVENT_NEXT', 'Next events')} disabled={events.length < pageSize || !!busy} onClick={() => setOffset(value => value + pageSize)} className="flex h-9 w-9 items-center justify-center rounded-full text-foreground transition hover:bg-secondary disabled:opacity-30"><ChevronRight className="h-4 w-4" /></button>
+          <span className="mx-1 h-4 w-px bg-border" />
+          <button aria-label={msg('FE_EVENTS_REFRESH', 'Refresh events')} onClick={load} disabled={!!busy} className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-secondary disabled:opacity-30"><RefreshCw className="h-3.5 w-3.5" /></button>
+        </div>
+      </div>
+
+      {events.length === 0 && <div className="rounded-3xl border border-dashed border-border bg-card p-8 text-center"><CalendarDays className="mx-auto mb-3 h-8 w-8 text-primary/50" /><p className="font-bold">{msg('FE_EVENTS_EMPTY', 'No events on this page')}</p><p className="mt-2 text-xs text-muted-foreground">{offset ? msg('FE_EVENTS_EMPTY_PREVIOUS', 'Go back to see earlier events.') : msg('FE_EVENTS_EMPTY_CREATE', 'Add your first event to get started.')}</p></div>}
+
+      <div className="space-y-4">
+      {events.map((e) => {
+        const capacity = e.capacity ?? e.max_attendees;
+        const checked = Math.max(0, Number(e.checkin_count) || 0);
+        const progress = Number(capacity) > 0 ? Math.min(100, checked / Number(capacity) * 100) : 0;
+        return <article key={e.id} aria-label={e.title} className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
+          <div className="space-y-4 p-4 sm:p-5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {e.is_published ? <Pill tone="green">{msg('FE_EVENTS_PUBLISHED', 'Published')}</Pill> : <Pill tone="amber">{msg('FE_EVENTS_DRAFT', 'Draft')}</Pill>}
+              {e.is_featured && <Pill tone="flame">{msg('FE_EVENTS_FEATURED', 'Featured')}</Pill>}
+              {e.is_paid && <Pill tone="blue">{msg('FE_EVENTS_PAID', 'Paid event')}</Pill>}
+              {e.review_status === 'submitted' && <Pill tone="amber">{msg('FE_ORG_SUBMITTED', 'Awaiting review')}</Pill>}
+            </div>
+            <h3 className="min-w-0 break-words font-heading text-lg font-extrabold leading-snug text-foreground sm:text-xl">{e.title}</h3>
+            <div className="grid gap-2.5 text-xs leading-relaxed text-muted-foreground sm:grid-cols-2 sm:gap-4">
+              <p className="flex min-w-0 items-start gap-2"><MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" /><span className="min-w-0 break-words">{e.location || msg('FE_EVENTS_VENUE_PENDING', 'Venue to be confirmed')}</span></p>
+              <p className="flex min-w-0 items-start gap-2"><CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" /><span>{eventDate(e.starts_at)} <span className="text-[10px]">WAT</span></span></p>
+            </div>
+
+            <div className="rounded-2xl bg-secondary/55 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{msg('FE_EVENTS_CHECK_INS', 'Check-ins')}</p><p className="mt-0.5 text-sm font-extrabold text-foreground">{checked}{Number(capacity)>0 && <span className="font-medium text-muted-foreground"> / {capacity}</span>}</p></div>
+                <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-card px-3 py-2 text-xs font-bold text-foreground"><Flame className="h-3.5 w-3.5 text-primary" />{e.hp_per_attendee ?? e.hp_reward ?? 0} HP</span>
+              </div>
+              {Number(capacity)>0 && <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-border/65"><div className="h-full rounded-full bg-gradient-cta" style={{width:`${progress}%`}} /></div>}
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+              <button type="button" disabled={!canManage(e) || !!busy} onClick={() => viewTiers(e.id)} aria-label="Ticket Tiers" title="Ticket Tiers" className={eventActionClass}><Ticket className="h-4 w-4 shrink-0 text-primary" /><span>{msg('FE_EVENTS_TIERS', 'Tiers')}</span></button>
+              <button type="button" disabled={!canManage(e) || !!busy} onClick={() => viewSales(e.id)} aria-label="Sales Dashboard" title="Sales Dashboard" className={eventActionClass}><BarChart3 className="h-4 w-4 shrink-0 text-primary" /><span>{msg('FE_EVENTS_SALES', 'Sales')}</span></button>
+              <button type="button" disabled={!canManage(e) || !!busy} onClick={() => viewRegs(e.id)} aria-label="Registrants" title="Registrants" className={eventActionClass}><Eye className="h-4 w-4 shrink-0 text-primary" /><span>{msg('FE_EVENTS_ATTENDEES', 'Attendees')}</span></button>
+              <button type="button" disabled={!canManage(e) || !!busy} onClick={() => void openRefundHistory(e.id)} aria-label="Refund history" title="Refund history" className={eventActionClass}><RefreshCw className="h-4 w-4 shrink-0 text-primary" /><span>{msg('FE_EVENTS_REFUNDS', 'Refunds')}</span></button>
+              <button type="button" disabled={!canManage(e) || !!busy} onClick={() => genQR(e.id)} aria-label="QR" title="QR" className={eventActionClass}><QrCode className="h-4 w-4 shrink-0 text-primary" /><span>{msg('FE_EVENTS_QR', 'Venue QR')}</span></button>
+              <button type="button" disabled={!canManage(e) || !!busy} onClick={() => setModal({ item: { ...e, hp_reward: e.hp_per_attendee ?? e.hp_reward ?? 0, max_attendees: e.capacity ?? e.max_attendees ?? '', starts_at: watInput(e.starts_at), ends_at: watInput(e.ends_at) }, isNew: false })} aria-label={msg('FE_EVENT_EDIT', 'Edit event')} title={msg('FE_EVENT_EDIT', 'Edit event')} className={eventActionClass}><Pencil className="h-4 w-4 shrink-0 text-primary" /><span>{msg('FE_EVENTS_EDIT', 'Edit')}</span></button>
+            </div>
+            {canManage(e) && <Link className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl bg-gradient-dark px-4 py-3 text-sm font-bold text-white transition hover:brightness-110" to={`/event-manager?event=${e.id}`}><span>{msg('FE_EVENTS_OPEN_WORKSPACE', 'Open event workspace')}</span><ArrowUpRight className="h-4 w-4 shrink-0 text-accent" /></Link>}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-background/45 px-4 py-3 sm:px-5">
+            {canManage(e) ? <div className="flex items-center gap-2.5"><Toggle checked={e.is_published} disabled={!!busy || Boolean(e.review_status && e.review_status !== 'approved')} label={e.review_status && e.review_status !== 'approved' ? msg('FE_ORG_REVIEW_REQUIRED', 'Approve organizer review before publication') : msg('FE_ORG_PUBLICATION', 'Event publication')} onChange={() => togglePub(e)} /><span className="text-xs font-semibold text-muted-foreground">{msg('FE_EVENTS_VISIBLE', 'Visible to guests')}</span></div> : <span className="text-xs text-muted-foreground">{msg('FE_EVENTS_GLOBAL_READONLY', 'Global event · managed by super admin')}</span>}
+            <button type="button" disabled={!canManage(e) || !!busy} onClick={() => remove(e.id)} aria-label={msg('FE_EVENTS_DELETE', 'Delete event')} className="flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-xs font-bold text-destructive transition hover:bg-destructive/10 disabled:opacity-30"><Trash2 className="h-3.5 w-3.5" />{msg('FE_EVENTS_DELETE', 'Delete event')}</button>
+          </div>
+        </article>;
+      })}
+      </div>
 
       <Modal open={!!refund} onClose={() => {if (!refundBusy) setRefund(null);}} title="Refund entire ticket">
         {refund && <form onSubmit={requestRefund} className="space-y-4">

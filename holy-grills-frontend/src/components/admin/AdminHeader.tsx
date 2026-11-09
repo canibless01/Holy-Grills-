@@ -27,9 +27,9 @@ export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, 
 
   return (
     <header className="sticky top-0 z-30 bg-card/90 backdrop-blur-md border-b border-border">
-      <div className="px-4 lg:px-8 h-14 flex items-center justify-between gap-3">
+      <div className="px-4 py-3 lg:px-8 flex flex-wrap xl:flex-nowrap items-center justify-between gap-3">
         {/* Left — mobile menu + title */}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex w-full xl:w-auto xl:flex-1 items-center gap-3 min-w-0">
           <button
             onClick={onOpenMobile}
             className="lg:hidden p-2 -ml-1 rounded-xl hover:bg-secondary active:scale-95 transition shrink-0"
@@ -55,7 +55,7 @@ export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, 
         </div>
 
         {/* Right — campus + actions */}
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex w-full xl:w-auto items-center justify-between xl:justify-end gap-1 shrink-0">
           {/* One-icon panel switcher: on /admin → student page (an admin
               visiting Kitchen/Rider gets "back to /admin" there instead). */}
           <PanelSwitcher className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors" />
@@ -71,7 +71,7 @@ export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, 
             {searchOpen ? <X className="w-4 h-4" /> : <Search className="w-4 h-4" />}
           </button>
           <InlineNotificationBell />
-          {financialStaff && <Link to="/event-manager" className="hidden sm:flex text-xs font-bold p-2" aria-label={msg('FE_ORG_TITLE', 'Event workspace')}>{msg('FE_ORG_TITLE', 'Event workspace')}</Link>}
+          {financialStaff && <Link to="/event-manager" className="hidden xl:flex text-xs font-bold p-2" aria-label={msg('FE_ORG_TITLE', 'Event workspace')}>{msg('FE_ORG_TITLE', 'Event workspace')}</Link>}
           {financialStaff && <>
           <Link to="/community-manager" aria-label={msg('FE_CM_WORKSPACE', 'Community manager workspace')} title={msg('FE_CM_WORKSPACE', 'Community manager workspace')} className="flex items-center gap-1 px-2 py-1.5 rounded-xl text-xs font-bold text-muted-foreground hover:text-primary hover:bg-primary/10">
             <Users className="w-4 h-4" /><span className="hidden xl:inline">{msg('FE_CM_SHORT', 'Community')}</span>
