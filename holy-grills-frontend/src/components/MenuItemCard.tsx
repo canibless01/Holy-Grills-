@@ -1,3 +1,4 @@
+import { menuImage, menuImageSet } from '@/lib/menuImages';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -50,7 +51,9 @@ export default function MenuItemCard({ item, onAdd, variant = 'compact' }) {
         <Link to={`/menu/${item.id}`} className="flex w-full">
           <div className="relative w-28 sm:w-32 shrink-0 bg-muted self-stretch overflow-hidden">
             <img
-              src={item.image_url}
+              src={menuImage(item.image_url)}
+            srcSet={menuImageSet(item.image_url)}
+            sizes="128px"
               alt={item.name}
               loading="lazy"
               decoding="async"
@@ -119,7 +122,9 @@ export default function MenuItemCard({ item, onAdd, variant = 'compact' }) {
         {/* Square photo — the food is the card; text stays a compact caption. */}
         <div className="relative aspect-square overflow-hidden bg-muted">
           <img
-            src={item.image_url}
+            src={menuImage(item.image_url)}
+            srcSet={menuImageSet(item.image_url)}
+            sizes="(min-width: 1024px) 320px, 50vw"
             alt={item.name}
             loading="lazy"
             decoding="async"

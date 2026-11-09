@@ -111,14 +111,9 @@ export default function Rewards() {
       } catch { if (active) setLoadError(true); }
       if (active) setLoading(false);
     };
-    Promise.all([
-      liveApi.challenges.my().catch(() => ({ badges: [], challenges_available: [], challenges_completed: [] })),
-      liveApi.rewards.getFreeSideCredits().catch(() => ({ count: 0, expires_at: null })),
-      liveApi.hp.getExclusiveSpinStatus().catch(() => null),
-    ]).then(([myChallenges, fsc, exStatus]) => {
-      if (!active) return;
-      setChallenges(myChallenges); setFreeSideCredits(fsc); setExclusiveStatus(exStatus);
-    });
+    liveApi.challenges.my().then(value => { if (active) setChallenges(value); }).catch(() => { if (active) setLoadError(true); });
+    liveApi.rewards.getFreeSideCredits().then(value => { if (active) setFreeSideCredits(value); }).catch(() => { if (active) setLoadError(true); });
+    liveApi.hp.getExclusiveSpinStatus().then(value => { if (active) setExclusiveStatus(value); }).catch(() => { if (active) setLoadError(true); });
     load();
     return () => { active = false; };
   }, [user?.id, campusId, reload]);

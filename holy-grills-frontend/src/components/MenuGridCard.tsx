@@ -1,3 +1,4 @@
+import { menuImage, menuImageSet } from '@/lib/menuImages';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -15,7 +16,7 @@ import { msg } from '@/lib/messages';
  * per row on small screens, so at least two menu items show without
  * scrolling. Add + Save overlay via stopPropagation, like MenuListCard.
  */
-export default function MenuGridCard({ item, onAdd }) {
+export default function MenuGridCard({ item, onAdd, priority = false }) {
   const { play } = useSound();
   const { isSavedItem, toggleSavedItem, isAuthenticated: isAuthed } = useHolyGrill();
   const [hpPulse, setHpPulse] = useState(false);
@@ -58,9 +59,11 @@ export default function MenuGridCard({ item, onAdd }) {
         {/* Image */}
         <div className="relative aspect-[4/3] bg-muted overflow-hidden">
           <img
-            src={item.image_url}
+            src={menuImage(item.image_url)}
+            srcSet={menuImageSet(item.image_url)}
+            sizes="(min-width: 1024px) 320px, 50vw"
             alt={item.name}
-            loading="lazy"
+            loading={priority ? 'eager' : 'lazy'}
             decoding="async"
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />

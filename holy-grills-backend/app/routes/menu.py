@@ -125,6 +125,25 @@ def _today_fulfilment_filter():
             f'and(is_scheduled.eq.false,created_at.gte.{start},created_at.lt.{end})')
 
 
+def _today_paid_orders(campus_id):
+    """One request-scoped availability snapshot; never cache order writes."""
+    from flask import has_request_context
+    cacheable = has_request_context() and request.method in ("GET", "HEAD")
+    key = (campus_id, _today_start_iso())
+    cached = getattr(g, '_menu_order_snapshot', None) if cacheable else None
+    if cached and cached[0] == key:
+        return cached[1]
+    query = (get_db().table("orders").select("id,is_squad_order,squad_item_count")
+        .or_(_today_fulfilment_filter()).in_('payment_status', ['paid', 'partially_refunded'])
+        .not_.in_("status", ["cancelled", "refunded"]))
+    if campus_id:
+        query = query.eq("campus_id", campus_id)
+    rows = query.limit(1000).execute() or []
+    if cacheable:
+        g._menu_order_snapshot = (key, rows)
+    return rows
+
+
 def _kitchen_stats(db, campus_id=None):
     """
     Return (capacity, orders_today_count, is_at_capacity).
@@ -141,15 +160,7 @@ def _kitchen_stats(db, campus_id=None):
     raw = row.get("value") if row else ""
     capacity = int(raw) if raw and str(raw).isdigit() else None
 
-    orders_q = (
-        db.table("orders").select("id,is_squad_order,squad_item_count")
-        .or_(_today_fulfilment_filter())
-        .in_('payment_status', ['paid', 'partially_refunded'])
-        .not_.in_("status", ["cancelled", "refunded"])
-    )
-    if campus_id:
-        orders_q = orders_q.eq("campus_id", campus_id)
-    today_orders = orders_q.limit(1000).execute() or []
+    today_orders = _today_paid_orders(campus_id)
     count = sum(_order_capacity_weight(o) for o in (today_orders if isinstance(today_orders, list) else []))
     at_capacity = capacity is not None and count >= capacity
     return capacity, count, at_capacity
@@ -163,15 +174,7 @@ def _daily_item_counts(db):
     from app.routes.events import _get_campus_id
     campus_id = _get_campus_id()
     db = get_db()  # see _kitchen_stats: the user client only sees the caller's own orders
-    orders_q = (
-        db.table("orders").select("id")
-        .or_(_today_fulfilment_filter())
-        .in_('payment_status', ['paid', 'partially_refunded'])
-        .not_.in_("status", ["cancelled", "refunded"])
-    )
-    if campus_id:
-        orders_q = orders_q.eq("campus_id", campus_id)
-    today_orders = orders_q.limit(1000).execute() or []
+    today_orders = _today_paid_orders(campus_id)
     order_ids = {o["id"] for o in today_orders}
     counts = {}
     if order_ids:

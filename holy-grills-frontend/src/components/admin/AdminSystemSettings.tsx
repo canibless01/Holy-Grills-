@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Save, Plus, SlidersHorizontal, AlertCircle, MessageCircle } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
@@ -9,6 +9,8 @@ import SocialLinksSettings from './SocialLinksSettings';
 import { useCampus } from '@/lib/campusContext';
 import { useIsSuperAdmin, SuperAdminBadge } from './SuperAdminGate';
 import { msg } from '@/lib/messages';
+import { loadSystemSettings } from '@/lib/featureConfig';
+import { useAdminWriteScope } from './AdminScopeBadge';
 
 // Documented settings from the backend reference (system_settings table) —
 // used only to enrich rows with default + purpose when the backend row has no
@@ -80,7 +82,7 @@ const rowId = (s) => `${s.key}:${s.campus_id ?? 'global'}`;
 // super-admin-only; a campus row can also be written by that campus's own
 // admin. PATCH must carry the row's campus_id or a campus admin is refused
 // with 403 — and without it the backend updates the GLOBAL row instead.
-const canEditRow = (s, isSuperAdmin) => Boolean(s.campus_id) || isSuperAdmin;
+const canEditRow = (s, isSuperAdmin, campusId) => isSuperAdmin || (Boolean(s.campus_id) && s.campus_id === campusId);
 
 // What a signed-out visitor actually receives, computed with the same rules as
 // GET /api/storefront/config/public: only is_public rows, and with no campus
@@ -109,6 +111,8 @@ const resolvePublicValue = (rows, key, campusId) => {
 // (e.g. "hp_multiplier must be 0.5, 1.0, or 2.0") surface as toasts.
 export default function AdminSystemSettings() {
   const [settings, setSettings] = useState(null);
+  const [loadError, setLoadError] = useState(false);
+  const writePending = useRef(false);
   const [editKey, setEditKey] = useState(null);
   const [editValue, setEditValue] = useState('');
   const [busy, setBusy] = useState(null);
@@ -120,13 +124,15 @@ export default function AdminSystemSettings() {
   // unanswerable from here.
   const { campuses, adminCampusId } = useCampus();
   const isSuperAdmin = useIsSuperAdmin();
+  const writeScope = useAdminWriteScope();
 
   const load = async () => {
     try {
       setSettings(await liveApi.admin.getSystemSettings());
+      setLoadError(false);
     } catch (e) {
       toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_COULDN_T_LOAD_SETTINGS', "Couldn't load settings"), description: e.message, variant: 'destructive' });
-      setSettings([]);
+      setLoadError(true);
     }
   };
 
@@ -136,6 +142,8 @@ export default function AdminSystemSettings() {
     const key = s.key;
     const value = parseValue(key, rawValue != null ? String(rawValue) : editValue);
     const id = rowId(s);
+    if (writePending.current) return;
+    writePending.current = true;
     setBusy(id);
     try {
       // The row's campus_id is what tells the backend which row to write and
@@ -143,15 +151,18 @@ export default function AdminSystemSettings() {
       await liveApi.admin.updateSystemSetting(key, { value, ...(s.campus_id ? { campus_id: s.campus_id } : {}) });
       toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_SETTING_UPDATED', 'Setting updated'), description: msg('FE_ADMIN_SYSTEM_SETTINGS_KEY_SAVED', '{key} saved.', { key: key }) });
       setEditKey(null);
-      await load();
+      await Promise.all([load(), loadSystemSettings()]);
     } catch (e) {
       toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' });
     }
+    writePending.current = false;
     setBusy(null);
   };
 
   const toggleBool = async (s, current) => {
     const key = s.key;
+    if (writePending.current) return;
+    writePending.current = true;
     setBusy(rowId(s));
     try {
       await liveApi.admin.updateSystemSetting(key, { value: !current, ...(s.campus_id ? { campus_id: s.campus_id } : {}) });
@@ -160,10 +171,11 @@ export default function AdminSystemSettings() {
           ? msg('FE_ADMIN_SYSTEM_SETTINGS_SETTING_DISABLED', '{key} disabled', { key })
           : msg('FE_ADMIN_SYSTEM_SETTINGS_SETTING_ENABLED', '{key} enabled', { key }),
       });
-      await load();
+      await Promise.all([load(), loadSystemSettings()]);
     } catch (e) {
       toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_FAILED_TO_UPDATE', 'Failed to update'), description: e.message, variant: 'destructive' });
     }
+    writePending.current = false;
     setBusy(null);
   };
 
@@ -174,6 +186,8 @@ export default function AdminSystemSettings() {
       toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_INVALID_KEY', 'Invalid key'), description: msg('FE_ADMIN_SYSTEM_SETTINGS_USE_LOWERCASE_LETTERS_NUMBERS_AND', 'Use lowercase letters, numbers and underscores.'), variant: 'destructive' });
       return;
     }
+    if (writePending.current) return;
+    writePending.current = true;
     setCreating(true);
     try {
       await liveApi.admin.createSystemSetting({
@@ -185,16 +199,20 @@ export default function AdminSystemSettings() {
         // created private would show here and never reach the app it is meant
         // to configure. Default to public; the badge on each row flips it.
         is_public: true,
+        ...(!isSuperAdmin ? { campus_id: writeScope.targetCampusId } : {}),
       });
       toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_SETTING_CREATED', 'Setting created'), description: key });
       setCreateOpen(false);
       setDraft({ key: '', value: '', description: '' });
-      await load();
+      await Promise.all([load(), loadSystemSettings()]);
     } catch (e) {
       toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_FAILED_TO_CREATE_SETTING', 'Failed to create setting'), description: e.message, variant: 'destructive' });
     }
+    writePending.current = false;
     setCreating(false);
   };
+
+  if (loadError) return <Card><p role="alert" className="text-sm text-destructive">{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="mt-3 font-bold text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></Card>;
 
   return (
     <div className="space-y-4">
@@ -265,7 +283,7 @@ export default function AdminSystemSettings() {
             const known = KNOWN_SETTINGS[s.key];
             const desc = s.description || known?.purpose;
             const id = rowId(s);
-            const editable = canEditRow(s, isSuperAdmin);
+            const editable = canEditRow(s, isSuperAdmin, writeScope.targetCampusId);
             return (
               <motion.div key={id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.03, 0.2) }}>
                 <Card className="p-4">
@@ -353,6 +371,7 @@ export default function AdminSystemSettings() {
 
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New Setting">
         <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">New setting scope: {isSuperAdmin ? 'Global' : writeScope.label}</p>
           <Field label="Key (lowercase, numbers, underscores)">
             <TextInput value={draft.key} onChange={(e) => setDraft({ ...draft, key: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') })} placeholder="new_setting_key" />
           </Field>

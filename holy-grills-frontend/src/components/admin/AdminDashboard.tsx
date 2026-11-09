@@ -31,46 +31,50 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [loadError, setLoadError] = useState(false);
-  // A single flaky request must not blank the dashboard: partial failures
-  // render the fetched data with a warning strip and ONE silent retry.
-  const autoRetried = useRef(false);
+  const [initialPending, setInitialPending] = useState(() => new Set(['dashboard', 'sales', 'users', 'hp', 'items', 'capacity']));
+  const pending = useRef(false);
+  const mounted = useRef(false);
+  const failedFeeds = useRef(new Set<string>());
 
   const load = useCallback(async () => {
+    if (pending.current) return;
+    pending.current = true;
     const range = { from_date: daysAgoStr(30), to_date: todayStr() };
-    const [d, s, u, h, it, cap] = await Promise.allSettled([
-      liveApi.analytics.dashboard(),
-      liveApi.analytics.sales(range),
-      liveApi.analytics.users(range),
-      liveApi.admin.getAnalyticsHp(),
-      liveApi.analytics.items(range),
-      liveApi.menu.getKitchenCapacity(),
-    ]);
-    const failed = [d, s, u, h, it, cap].some(result => result.status === 'rejected');
-    setLoadError(failed);
-    if (failed && !autoRetried.current) {
-      // Transient network/timeout — try the whole load once more before the
-      // user ever sees a warning; never loops (one retry per failure streak).
-      autoRetried.current = true;
-      setTimeout(() => { load(); }, 6000);
-    }
-    if (!failed) autoRetried.current = false;
-    setData(d.status === 'fulfilled' ? body(d.value) : null);
-    setSales(s.status === 'fulfilled' ? body(s.value) : null);
-    setUsers(u.status === 'fulfilled' ? body(u.value) : null);
-    setHp(h.status === 'fulfilled' ? h.value : null);
-    if (it.status === 'fulfilled') {
-      const v = body(it.value);
-      setItems(Array.isArray(v) ? v : (v?.items || []));
-    } else setItems([]);
-    setCapacity(cap.status === 'fulfilled' ? body(cap.value) : null);
-    setLoading(false);
-    setLastUpdated(new Date());
+    const feeds = [
+      ['dashboard', () => liveApi.analytics.dashboard(), value => setData(body(value))],
+      ['sales', () => liveApi.analytics.sales(range), value => setSales(body(value))],
+      ['users', () => liveApi.analytics.users(range), value => setUsers(body(value))],
+      ['hp', () => liveApi.admin.getAnalyticsHp(), value => setHp(value)],
+      ['items', () => liveApi.analytics.items(range), value => { const v = body(value); setItems(Array.isArray(v) ? v : (v?.items || [])); }],
+      ['capacity', () => liveApi.menu.getKitchenCapacity(), value => setCapacity(body(value))],
+    ] as const;
+    await Promise.allSettled(feeds.map(async ([key, read, commit]) => {
+      try {
+        const value = await read();
+        if (!mounted.current) return;
+        commit(value);
+        failedFeeds.current.delete(key);
+        setLastUpdated(new Date());
+      } catch {
+        if (mounted.current) failedFeeds.current.add(key);
+      } finally {
+        if (mounted.current) {
+          setInitialPending(previous => { const next = new Set(previous); next.delete(key); return next; });
+          setLoadError(failedFeeds.current.size > 0);
+          if (key === 'dashboard') setLoading(false);
+        }
+      }
+    }));
+    pending.current = false;
   }, []);
 
   useEffect(() => {
-    load();
-    const interval = setInterval(load, 30000);
-    return () => clearInterval(interval);
+    mounted.current = true;
+    void load();
+    const refresh = () => { if (!document.hidden) void load(); };
+    const interval = setInterval(refresh, 30000);
+    window.addEventListener('focus', refresh);
+    return () => { mounted.current = false; clearInterval(interval); window.removeEventListener('focus', refresh); };
   }, [load]);
 
   if (loading && !data) {
@@ -109,9 +113,9 @@ export default function AdminDashboard() {
   // Partial-failure strip — data is on screen, but some refreshes failed.
   const partialWarning = loadError && !nothingLoaded;
   const stats = [
-    { label: 'Orders Today', value: d.total_orders ?? d.today?.total_orders ?? 0, icon: Package, iconClass: 'text-primary', iconBg: 'bg-primary/10' },
-    { label: 'Revenue Delivered (Today)', value: formatNaira(d.revenue_delivered ?? d.today?.revenue_delivered ?? 0), icon: DollarSign, iconClass: 'text-success', iconBg: 'bg-success/15' },
-    { label: 'Active Orders', value: d.active_orders ?? d.today?.active_orders ?? 0, icon: Activity, iconClass: 'text-accent-foreground', iconBg: 'bg-accent/25' },
+    { label: 'Orders Today', value: data ? (d.total_orders ?? d.today?.total_orders ?? 0) : '—', icon: Package, iconClass: 'text-primary', iconBg: 'bg-primary/10' },
+    { label: 'Revenue Delivered (Today)', value: data ? formatNaira(d.revenue_delivered ?? d.today?.revenue_delivered ?? 0) : '—', icon: DollarSign, iconClass: 'text-success', iconBg: 'bg-success/15' },
+    { label: 'Active Orders', value: data ? (d.active_orders ?? d.today?.active_orders ?? 0) : '—', icon: Activity, iconClass: 'text-accent-foreground', iconBg: 'bg-accent/25' },
     { label: 'Delivered Today', value: d.delivered_orders ?? d.today?.delivered_orders ?? 0, icon: CheckCircle2, iconClass: 'text-success', iconBg: 'bg-success/15' },
   ];
 
@@ -176,8 +180,8 @@ export default function AdminDashboard() {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <SectionTitle icon={TrendingUp} title="Sales — last 30 days (delivered)" sub="GET /analytics/sales summary" />
           <div className="text-right">
-            <div className="font-heading font-extrabold text-xl text-foreground">{formatNaira(sales?.total_revenue ?? 0)}</div>
-            <div className="text-xs text-muted-foreground font-semibold">{sales?.order_count ?? 0} orders · AOV {formatNaira(sales?.average_order_value ?? sales?.avg_order_value ?? 0)}</div>
+            <div className="font-heading font-extrabold text-xl text-foreground">{sales ? formatNaira(sales.total_revenue ?? 0) : '—'}</div>
+            <div className="text-xs text-muted-foreground font-semibold">{sales ? `${sales.order_count ?? 0} orders · AOV ${formatNaira(sales.average_order_value ?? sales.avg_order_value ?? 0)}` : initialPending.has('sales') ? 'Loading sales…' : 'Sales summary unavailable'}</div>
           </div>
         </div>
       </Card>
@@ -186,7 +190,7 @@ export default function AdminDashboard() {
       <div className="grid lg:grid-cols-2 gap-4">
         <Card className="p-5">
           <SectionTitle icon={Package} title="Orders by Status" sub="Today" />
-          {statusData.length === 0 ? (
+          {!data ? <Skeleton className="mt-3 h-52" /> : statusData.length === 0 ? (
             <EmptyState icon={Package} title="No orders today" body="The pipeline will light up as orders arrive." />
           ) : (
             <>
@@ -215,7 +219,7 @@ export default function AdminDashboard() {
 
         <Card className="p-5">
           <SectionTitle icon={DollarSign} title="Payment Methods" sub="Today" />
-          {paymentData.length === 0 ? (
+          {!data ? <Skeleton className="mt-3 h-52" /> : paymentData.length === 0 ? (
             <EmptyState icon={DollarSign} title="No payments today" />
           ) : (
             <div className="h-60">
@@ -238,7 +242,7 @@ export default function AdminDashboard() {
       <div className="grid lg:grid-cols-2 gap-4">
         <Card className="p-5">
           <SectionTitle icon={UtensilsCrossed} title="Top Items" sub="30d delivered · GET /analytics/items" />
-          {itemsData.length === 0 ? (
+          {initialPending.has('items') ? <Skeleton className="mt-3 h-56" /> : itemsData.length === 0 ? (
             <EmptyState icon={UtensilsCrossed} title="No item sales yet" body="Item performance appears once orders are delivered." />
           ) : (
             <div className="h-56">
@@ -258,7 +262,7 @@ export default function AdminDashboard() {
         <div className="space-y-4">
           <Card className="p-5">
             <SectionTitle icon={Flame} title="Users by Tier" sub="GET /analytics/users" />
-            {tierData.length === 0 ? (
+            {!users && !hp && (initialPending.has('users') || initialPending.has('hp')) ? <Skeleton className="mt-3 h-36" /> : tierData.length === 0 ? (
               <EmptyState icon={Users} title="No tier data yet" />
             ) : (
               <div className="flex items-center gap-4">

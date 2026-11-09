@@ -137,6 +137,7 @@ const PUBLIC_STOREFRONT_READS = new Set([
   '/storefront/sections', '/storefront/banners', '/storefront/early-supporters',
   '/storefront/config/public', '/storefront/feature-flags',
   '/auth/registration-options', '/campuses',
+  '/menu/categories',
 ]);
 
 /**
@@ -188,7 +189,9 @@ async function request(path: string, options: RequestOptions = {}) {
   const { timeoutMs = 12000, ...fetchOptions } = options;
   const storedToken = getToken();
   const parsedPath = new URL(path, 'https://app.invalid');
-  const publicRead = (!options.method || options.method === 'GET') && PUBLIC_STOREFRONT_READS.has(parsedPath.pathname)
+  const publicMenu = parsedPath.pathname === '/menu/items' && parsedPath.searchParams.get('available_only') === 'true'
+    && parsedPath.searchParams.get('include_secret') !== '1';
+  const publicRead = (!options.method || options.method === 'GET') && (PUBLIC_STOREFRONT_READS.has(parsedPath.pathname) || publicMenu)
     && !['1', 'true', 'yes'].includes((parsedPath.searchParams.get('include_inactive') || '').toLowerCase());
   // Published content has the same public access regardless of saved session.
   // Do not make every banner wait for Auth verification/token recovery. The
@@ -339,7 +342,10 @@ export const apiClient = {
     ).toString() : '';
     const { cacheMs = 0, ...requestOptions } = options || {};
     const scope = campusScopeHeaders(getToken(), 'GET');
-    const key = JSON.stringify([path + qs, sessionVersion, getToken(), scope, headers || {}, options?.timeoutMs || 12000, cacheMs ? catalogVersion : null]);
+    // A refresh after any write must not join a pre-write request (including
+    // balances, orders, CMS and settings). This adds no retention to private
+    // reads; only requests from the same mutation epoch can join in flight.
+    const key = JSON.stringify([path + qs, sessionVersion, getToken(), scope, headers || {}, options?.timeoutMs || 12000, catalogVersion]);
     const cached = cacheMs ? catalogReads.get(key) : null;
     if (cached && cached.expires > Date.now()) return Promise.resolve(structuredClone(cached.value));
     const version = catalogVersion;

@@ -11,7 +11,7 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { liveApi } from './liveApi';
 import { localStore } from './storage';
 import { mergeAdminSettings } from './settingsMerge';
-import { getToken } from './apiClient';
+import { getToken, getPublicCampusScope, getSessionGeneration } from './apiClient';
 
 export { mergeAdminSettings };
 
@@ -138,35 +138,46 @@ export async function loadFeatureFlags() {
 
 export function isFlagLoaded() { return flagsLoaded; }
 
+let settingsRequest = 0;
+let settingsSession = -1;
+let settingsScope = '';
+const currentSettingsScope = () => JSON.stringify([getSessionGeneration(), getPublicCampusScope(),
+  getToken() ? localStore.getItem('hg_user_role') : null,
+  localStore.getItem('hg_admin_scope_all'), localStore.getItem('hg_admin_campus_id')]);
+
 export async function loadSystemSettings() {
-  // Students cannot read /admin/settings, so prefer the public config first
-  // (WhatsApp number, streak rewards, free-side options, etc.). The real route
-  // is GET /api/storefront/config/public, which returns a flat key→value map;
-  // the old GET /settings call 404'd, so students only ever saw the built-in
-  // defaults (docs/WIRING_AUDIT.md §3.2). Admins fall through to
-  // /admin/settings for the full privileged set. Either failing is non-fatal —
-  // getSetting() returns its built-in default.
-  settingsMap = {};
-  try {
-    const publicConfig = await liveApi.storefront.getPublicConfig();
-    Object.entries(publicConfig || {}).forEach(([key, value]) => {
-      if (value !== null && value !== undefined) settingsMap[key] = value;
-    });
-  } catch (e) { /* public endpoint unavailable — try admin below */ }
+  const scope = currentSettingsScope();
+  settingsSession = getSessionGeneration();
+  const request = ++settingsRequest;
+  if (settingsScope !== scope) { settingsMap = {}; settingsScope = scope; }
   const role = getToken() ? localStore.getItem('hg_user_role') : null;
-  if (role !== 'admin' && role !== 'super_admin') return settingsMap;
-  try {
-    const adminSettings = await liveApi.admin.getSystemSettings();
-    const scope = role === 'super_admin'
+  // Independent reads start together; public configuration never waits for
+  // a permission failure or a slower privileged settings query.
+  const publicRead = liveApi.storefront.getPublicConfig();
+  const adminRead = role === 'admin' || role === 'super_admin'
+    ? liveApi.admin.getSystemSettings() : Promise.resolve(null);
+  const [published, privileged] = await Promise.allSettled([publicRead, adminRead]);
+  if (scope !== currentSettingsScope()) return {};
+  if (request !== settingsRequest) return settingsMap;
+  if (published.status === 'rejected' && (privileged.status === 'rejected' || privileged.value === null)) return settingsMap;
+  const next = {};
+  if (published.status === 'fulfilled') Object.entries(published.value || {}).forEach(([key, value]) => {
+    if (value !== null && value !== undefined) next[key] = value;
+  });
+  if (privileged.status === 'fulfilled' && privileged.value) {
+    const campus = role === 'super_admin'
       ? (localStore.getItem('hg_admin_scope_all') === '1' ? null : localStore.getItem('hg_admin_campus_id'))
       : localStore.getItem('hg_user_campus_id');
-    mergeAdminSettings(settingsMap, adminSettings, scope);
-  } catch (e) { /* admin endpoint not accessible — keep public/defaults */ }
+    mergeAdminSettings(next, privileged.value, campus);
+  }
+  // Commit atomically. Do not show temporary built-in defaults during a normal
+  // refresh, or let a late admin response restore settings after logout.
+  settingsMap = next;
   return settingsMap;
 }
 
 export function getSetting(key, defaultValue = null) {
-  const val = settingsMap[key];
+  const val = settingsSession === getSessionGeneration() ? settingsMap[key] : undefined;
   if (val === undefined || val === null) return defaultValue;
   // Coerce numeric strings back to numbers.
   if (typeof val === 'string' && val !== '' && !isNaN(Number(val))) return Number(val);
@@ -182,7 +193,7 @@ export function getSetting(key, defaultValue = null) {
  * off from the database. Every toggle-shaped setting must come through here.
  */
 export function getBoolSetting(key, defaultValue = false) {
-  const val = settingsMap[key];
+  const val = settingsSession === getSessionGeneration() ? settingsMap[key] : undefined;
   if (val === undefined || val === null) return defaultValue;
   if (typeof val === 'boolean') return val;
   if (typeof val === 'number') return val !== 0;
@@ -206,7 +217,7 @@ export function getBoolSetting(key, defaultValue = false) {
  * come through here.
  */
 export function getStringSetting(key, defaultValue = '') {
-  const val = settingsMap[key];
+  const val = settingsSession === getSessionGeneration() ? settingsMap[key] : undefined;
   if (val === undefined || val === null) return defaultValue;
   if (typeof val === 'string') return val;
   if (typeof val === 'number' || typeof val === 'boolean') return String(val);

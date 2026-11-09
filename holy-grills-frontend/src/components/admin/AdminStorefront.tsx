@@ -203,20 +203,25 @@ export default function AdminStorefront() {
   const [newSection, setNewSection] = useState(blankSection('hero'));
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [newsletterLoaded, setNewsletterLoaded] = useState(false);
+  const [newsletterError, setNewsletterError] = useState(false);
 
   const load = async () => {
     const current = ++loadGeneration.current;
+    setNewsletterLoaded(false); setNewsletterError(false);
+    // Newsletter reports are independent of the public-content editor. An
+    // unavailable report must not hide the CMS or create an editable empty list.
+    void Promise.all([mockApi.admin.getNewsletterSubscribers(), mockApi.storefront.getNewsletterCampaigns()])
+      .then(([n, c]) => {
+        if (current !== loadGeneration.current) return;
+        setSubscribers(Array.isArray(n) ? n : []); setCampaigns(Array.isArray(c) ? c : []);
+      }).catch(() => { if (current === loadGeneration.current) setNewsletterError(true); })
+      .finally(() => { if (current === loadGeneration.current) setNewsletterLoaded(true); });
     try {
-      const [b, s, n, c] = await Promise.all([
-        mockApi.admin.getStorefrontSections(),
-        mockApi.admin.getEarlySupporters(),
-        mockApi.admin.getNewsletterSubscribers(),
-        mockApi.storefront.getNewsletterCampaigns(),
-      ]);
+      const [b, s] = await Promise.all([mockApi.admin.getStorefrontSections(), mockApi.admin.getEarlySupporters()]);
       if (current !== loadGeneration.current) return;
       setSections(Array.isArray(b) ? [...b].sort((a, c) => (a.sort_order ?? 0) - (c.sort_order ?? 0)) : []);
-      setSupporters(Array.isArray(s) ? s : []); setSubscribers(Array.isArray(n) ? n : []);
-      setCampaigns(Array.isArray(c) ? c : []);
+      setSupporters(Array.isArray(s) ? s : []);
       setLoadError(false);
     } catch { if (current !== loadGeneration.current) return; setLoadError(true); }
     setLoaded(true);
@@ -403,7 +408,7 @@ export default function AdminStorefront() {
             <p className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground px-1">{group.label}</p>
             <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
               {group.tabs.map((t) => {
-                const count = t.id === 'early_supporter' ? supporters.length : t.id === 'newsletter' ? subscribers.length : t.kind === 'banners_api' ? '↗' : sections.filter((s) => s.section_type === t.id).length;
+                const count = t.id === 'early_supporter' ? supporters.length : t.id === 'newsletter' ? (newsletterLoaded && !newsletterError ? subscribers.length : '…') : t.kind === 'banners_api' ? '↗' : sections.filter((s) => s.section_type === t.id).length;
                 const Icon = t.icon;
                 return (
                   <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold whitespace-nowrap ${tab === t.id ? 'bg-primary text-primary-foreground' : 'bg-card border border-border text-foreground'}`}>
@@ -527,7 +532,9 @@ export default function AdminStorefront() {
 
       {tab === 'hours' && <AdminOperatingHours />}
 
-      {tab === 'newsletter' && (
+      {tab === 'newsletter' && !newsletterLoaded && <StaffPanelSkeleton />}
+      {tab === 'newsletter' && newsletterLoaded && newsletterError && <Card><p role="alert" className="text-sm text-destructive">Newsletter reports could not be loaded. Retry before making changes.</p><button onClick={load} className="mt-3 font-bold text-primary">Retry</button></Card>}
+      {tab === 'newsletter' && newsletterLoaded && !newsletterError && (
         <div className="space-y-2">
           {/* Campaigns — plain-text sends (storefront.py newsletter_campaigns_*). */}
           <Card className="!p-4">

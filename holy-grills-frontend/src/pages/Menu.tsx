@@ -42,7 +42,12 @@ export default function Menu() {
   const { play } = useSound();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [items, setItems] = useState([]);
+  const [catalogue, setCatalogue] = useState([]);
+  const [catalogueCampus, setCatalogueCampus] = useState<string | null>(null);
+  const [remoteSearch, setRemoteSearch] = useState<{ campus: string; query: string; items: any[] } | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState(false);
+  const [refreshError, setRefreshError] = useState(false);
   const [categories, setCategories] = useState([]);
   const [activeCategory, setActiveCategory] = useState(null);
   const [searchInput, setSearchInput] = useState('');
@@ -59,7 +64,7 @@ export default function Menu() {
   // Load static metadata on mount
   useResumeEffect(() => {
     if (!campusId) return;
-    mockApi.menu.getCategories().then(setCategories).catch(() => {});
+    mockApi.menu.getCategories({ campus_id: campusId }).then(setCategories).catch(() => {});
     if (isAuthed) {
       mockApi.rewards.getFreeSideCredits().then((res) => {
         const count = res?.count ?? res?.credits ?? (Array.isArray(res) ? res.length : 0);
@@ -73,12 +78,10 @@ export default function Menu() {
     if (!campusId) return;
     let alive = true;
     const load = async () => {
-      if (!background) setLoading(true);
+      if (!background && catalogueCampus !== campusId) setLoading(true);
       if (!background) setError(null);
       try {
         const params: Record<string, string> = { campus_id: campusId };
-        if (activeCategory) params.category = activeCategory;
-        if (search) params.q = search;
         params.available_only = 'true';
         const result = await mockApi.menu.getItems(params);
         const sortedItems = (result.items || []).slice().sort((a, b) => {
@@ -86,15 +89,39 @@ export default function Menu() {
           if (priceDiff !== 0) return priceDiff;
           return (a.name || '').localeCompare(b.name || '');
         });
-        if (alive) { setItems(sortedItems); setError(null); }
+        if (alive) { setCatalogue(sortedItems); setCatalogueCampus(campusId); setError(null); setRefreshError(false); }
       } catch (e) {
-        if (alive && !background) setError(msg('FE_MENU_FAILED_TO_FETCH_MENU_ITEMS', 'Failed to fetch menu items.'));
+        if (alive && catalogueCampus === campusId) setRefreshError(true);
+        else if (alive && !background) setError(msg('FE_MENU_FAILED_TO_FETCH_MENU_ITEMS', 'Failed to fetch menu items.'));
       }
       if (alive) setLoading(false);
     };
     load();
     return () => { alive = false; };
-  }, [activeCategory, search, retryNonce, campusId]);
+  }, [retryNonce, campusId, activeCategory]);
+
+  // Known matches render immediately; remote search still discovers secret
+  // items and revalidates availability without blanking the catalogue.
+  useEffect(() => {
+    if (!campusId || !search) { setSearching(false); setRemoteSearch(null); setSearchError(false); return; }
+    let current = true;
+    setSearching(true); setSearchError(false);
+    mockApi.menu.getItems({ campus_id: campusId, available_only: 'true', q: search })
+      .then(result => { if (current) setRemoteSearch({ campus: campusId, query: search, items: result.items || [] }); })
+      .catch(() => { if (current) setSearchError(true); })
+      .finally(() => { if (current) setSearching(false); });
+    return () => { current = false; };
+  }, [campusId, search, retryNonce]);
+
+  const query = searchInput.trim().toLocaleLowerCase();
+  const currentCatalogue = catalogueCampus === campusId ? catalogue : [];
+  const sourceItems = remoteSearch?.campus === campusId && remoteSearch.query.toLocaleLowerCase() === query
+    ? remoteSearch.items : currentCatalogue;
+  const items = sourceItems.filter(item =>
+    (!activeCategory || item.menu_categories?.slug === activeCategory || categories.find(category => category.slug === activeCategory)?.id === item.category_id)
+    && (!query || (item.name || '').toLocaleLowerCase().includes(query)))
+    .slice().sort((a, b) => (Number(a.price) || 0) - (Number(b.price) || 0) || (a.name || '').localeCompare(b.name || ''));
+  const catalogueLoading = loading || (!!campusId && catalogueCampus !== campusId && !error);
 
   // Quick add — if the item needs required modifiers, send to detail page
   const handleAdd = async (item) => {
@@ -165,6 +192,8 @@ export default function Menu() {
         )}
       </div>
 
+      {(refreshError || searchError) && <p role="status" className="text-xs text-muted-foreground">Some menu updates are unavailable. Showing matching loaded items. <button className="font-bold text-primary" onClick={() => setRetryNonce(n => n + 1)}>Retry updates</button></p>}
+
       {/* Squad shortcut */}
       {isAuthed && (
         <Link to="/squads" className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-card border border-border hover:border-primary/40 transition-colors">
@@ -195,7 +224,7 @@ export default function Menu() {
       </div>
 
       {/* Item count + clear filter */}
-      {!loading && !error && items.length > 0 && (
+      {!catalogueLoading && !error && items.length > 0 && (
         <div className="flex items-center justify-between">
           <p className="text-xs text-muted-foreground font-medium">{items.length} item{items.length !== 1 ? 's' : ''}{activeCategory && ' · filtered'}</p>
           {(activeCategory || search) && (
@@ -210,7 +239,7 @@ export default function Menu() {
       )}
 
       {/* Items grid */}
-      {loading ? (
+      {catalogueLoading ? (
         <MenuSkeleton />
       ) : error ? (
         <div className="text-center py-12 space-y-3">
@@ -222,7 +251,7 @@ export default function Menu() {
         <div className="text-center py-12 space-y-3">
           <MascotStandee mascot="worried" className="w-28 h-28 mx-auto" alt="No menu items found" />
           <p className="text-sm text-muted-foreground">
-            {search ? `No items match "${search}"` : 'No items available right now'}
+            {searchError ? 'Search could not be completed. Please retry.' : searching || searchInput.trim() !== search ? 'Searching the grill…' : search ? `No items match "${search}"` : 'No items available right now'}
           </p>
           {(search || activeCategory) && (
             <button
@@ -240,8 +269,8 @@ export default function Menu() {
           animate="show"
           className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 max-w-5xl mx-auto"
         >
-          {items.map((item) => (
-            <MenuGridCard key={item.id} item={item} onAdd={handleAdd} />
+          {items.map((item, index) => (
+            <MenuGridCard key={item.id} item={item} onAdd={handleAdd} priority={index < 2} />
           ))}
         </motion.div>
       )}
