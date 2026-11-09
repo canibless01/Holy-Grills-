@@ -12,9 +12,10 @@ try:
  time.sleep(2)
  with sync_playwright() as pw:
   browser=pw.chromium.launch(executable_path='/usr/bin/chromium',args=['--no-sandbox'])
-  for width in (393,1280):
+  for width in (360,393,768,1280,1440,1536,1920):
    state={'checked':False,'lost':True,'regs_fail':True,'tier_fail':True,'sales_fail':True,'tier_active':True};reads=[];writes=[];errors=[]
    event_rows=[{'id':str(uuid.UUID(int=i+100)),'title':f'Campus event {i}','campus_id':a,'is_published':True,'location':'FUTA','starts_at':'2026-11-12T09:00:00+00:00','ends_at':'2026-11-12T12:00:00+00:00','capacity':100,'max_attendees':100,'hp_per_attendee':25,'hp_reward':25,'funding_source':'host_prepaid'} for i in range(26)]
+   event_rows[0].update(title='Flame Night: Live Grill & Music',location='FUTA Main Campus, Amphitheatre',is_featured=True,is_paid=True,capacity=300,max_attendees=300,hp_per_attendee=100)
    def api(route):
     request=route.request;url=urlparse(request.url);path=url.path;q=parse_qs(url.query);data={}
     if path.endswith('/auth/me'):data={'id':'controlled','role':'super_admin','campus_id':a,'profile':{'id':'controlled','role':'super_admin','campus_id':a},'is_active':True}
@@ -42,10 +43,32 @@ try:
     route.fulfill(status=200,json=data)
    context=browser.new_context(viewport={'width':width,'height':1000},accept_downloads=True);context.route('**/api/**',api)
    context.add_init_script("sessionStorage.setItem('hg_access_token','controlled');localStorage.setItem('hg_user_role','super_admin');localStorage.setItem('hg_user_campus_id','"+a+"');localStorage.setItem('hg_admin_campus_id','"+a+"');")
-   page=context.new_page();page.on('pageerror',lambda e:errors.append(str(e)));page.goto('http://127.0.0.1:5268/admin?section=events');expect(page.get_by_text('Campus event 0',exact=True)).to_be_visible()
+   page=context.new_page();page.on('pageerror',lambda e:errors.append(str(e)));page.goto('http://127.0.0.1:5268/admin?section=events');expect(page.get_by_text('Flame Night: Live Grill & Music',exact=True)).to_be_visible()
+   page.evaluate("localStorage.setItem('hg_cookie_consent',JSON.stringify({essential:true,analytics:false,date:new Date().toISOString()}))")
+   consent=page.get_by_role('button',name='Essential only',exact=True)
+   if consent.is_visible():consent.click()
+   card=page.get_by_role('article',name='Flame Night: Live Grill & Music',exact=True)
+   title=card.get_by_role('heading',name='Flame Night: Live Grill & Music',exact=True)
+   title_box=title.bounding_box();card_box=card.bounding_box()
+   assert title_box['width']>220,(width,title_box)
+   assert title_box['height']<100,(width,title_box)
+   assert card_box['x']>=0 and card_box['x']+card_box['width']<=width+1,(width,card_box)
+   assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'),f'Horizontal overflow at {width}'
+   heading=page.get_by_role('heading',name='Events',exact=True)
+   expect(heading).to_be_visible()
+   assert heading.evaluate('(el)=>el.scrollWidth<=el.clientWidth'),f'Header truncation at {width}'
+   for name in ('Ticket Tiers','Sales Dashboard','Registrants','Refund history','QR','Edit event'):
+    box=card.get_by_role('button',name=name,exact=True).bounding_box()
+    assert box['height']>=44 and box['width']>=70,(width,name,box)
+    assert box['y']>=title_box['y']+title_box['height'],(width,name,box)
+   page.screenshot(path=str(out/f'events-layout-{width}.png'),full_page=False)
+   print(f'PASS width={width}: long title/venue, readable header, no horizontal overflow, labelled touch controls; screenshot={out}/events-layout-{width}.png',flush=True)
+   if width not in (393,1280):
+    assert not errors,errors
+    context.close();continue
    page.get_by_role('button',name='Next events',exact=True).click();expect(page.get_by_text('Campus event 25',exact=True)).to_be_visible();assert reads[-1]['offset']==['25']
    page.get_by_role('switch').first.click();expect(page.get_by_text('Draft',exact=True)).to_be_visible();assert writes[-1][1]=={'is_published':False}
-   page.get_by_role('button',name='Previous events',exact=True).click();expect(page.get_by_text('Campus event 0',exact=True)).to_be_visible()
+   page.get_by_role('button',name='Previous events',exact=True).click();expect(page.get_by_text('Flame Night: Live Grill & Music',exact=True)).to_be_visible()
    page.get_by_role('button',name='Edit event',exact=True).first.click();dialog=page.get_by_role('dialog',name='Edit Event',exact=True)
    expect(dialog.get_by_label('Starts (WAT)',exact=True)).to_have_value('2026-11-12T10:00');expect(dialog.get_by_label('Ends (WAT)',exact=True)).to_have_value('2026-11-12T13:00');expect(dialog.get_by_label('Funding Source',exact=True)).to_have_value('host_prepaid')
    dialog.get_by_role('button',name='Close dialog',exact=True).click()

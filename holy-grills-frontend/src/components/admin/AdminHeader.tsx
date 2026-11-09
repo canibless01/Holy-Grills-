@@ -12,8 +12,8 @@ import BrandLogo from '@/components/BrandLogo';
 /**
  * Admin top bar — compact, glassy, responsive.
  *
- * Desktop:  [title + subtitle] [global search] [campus] [bell] [Kitchen] [Rider] [View Site] [Sign out]
- * Mobile:   [hamburger] [title] [campus] [search toggle] [bell] [sign out]
+ * Wide desktop: [title + subtitle] [global search] [campus + actions]
+ * Smaller screens: [hamburger + title] then [campus + actions]
  *           + a full-width search row that expands under the header.
  *
  * The global search jumps to any admin section (type "multiplier" → HP &
@@ -27,9 +27,9 @@ export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, 
 
   return (
     <header className="sticky top-0 z-30 bg-card/90 backdrop-blur-md border-b border-border">
-      <div className="px-4 py-3 lg:px-8 flex flex-wrap xl:flex-nowrap items-center justify-between gap-3">
+      <div className="px-4 py-3 lg:px-8 flex flex-wrap 2xl:flex-nowrap items-center justify-between gap-3">
         {/* Left — mobile menu + title */}
-        <div className="flex w-full xl:w-auto xl:flex-1 items-center gap-3 min-w-0">
+        <div className="flex w-full 2xl:w-auto 2xl:flex-1 items-center gap-3 min-w-0">
           <button
             onClick={onOpenMobile}
             className="lg:hidden p-2 -ml-1 rounded-xl hover:bg-secondary active:scale-95 transition shrink-0"
@@ -55,7 +55,7 @@ export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, 
         </div>
 
         {/* Right — campus + actions */}
-        <div className="flex w-full xl:w-auto items-center justify-between xl:justify-end gap-1 shrink-0">
+        <div className="flex w-full 2xl:w-auto items-center justify-between 2xl:justify-end gap-1 shrink-0">
           {/* One-icon panel switcher: on /admin → student page (an admin
               visiting Kitchen/Rider gets "back to /admin" there instead). */}
           <PanelSwitcher className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors" />

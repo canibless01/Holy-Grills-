@@ -44,3 +44,11 @@ Each was applied once, with intended grants and no duplicate helper overload/sna
 ## Still separate
 
 Event-wide cancellation/rescheduling with durable attendee notices and an explicit refund policy; exceptional ticket receipt/resend/recovery cases; configurable check-in opening times; independent simultaneous-session/process-kill proofs; actual handset camera and real bank-transfer/provider acceptance. Group purchases, transferable tickets and delegated door staff are additional product scope, not silently included in this release. The wider admin/database audit remains open in GENERAL_SITE_AUDIT_PROGRESS_2026_11_04.md.
+
+## Admin event layout — 9 November 2026
+
+Admin → Events now separates event details, venue/date, attendance/HP, ticketing controls, workspace navigation and publication/deletion. Mobile cards use a three-column tool grid; wider screens use six columns. The shared admin header puts its controls on a separate row below the wide-desktop breakpoint, preserving the page title. New display copy is registered in `messages.py`; event API handlers and settlement rules are unchanged.
+
+Verification: native Chromium at 360, 393, 768, 1280, 1440, 1536 and 1920px with a long title/venue, no horizontal overflow, readable header and touch-sized event tools. Controlled API interaction runs at 393/1280px also covered paging, publication, WAT editing, funding selection, venue QR display/download, panel retries, attendee search, check-in response-loss replay, CSV formula protection, ticket-tier switching and sales cash reporting. These checks use synthetic API responses and make no production writes.
+
+TypeScript, targeted ESLint, central-message resolution, and the complete frontend production build/client+SSR/prerender passed. Existing unrelated fallback-copy drift remains reported by the message checker.
