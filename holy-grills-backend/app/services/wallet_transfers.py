@@ -5,6 +5,7 @@ from uuid import UUID
 import re
 from app.db import get_db, SupabaseError
 from app.utils.logger import get_logger
+from app.utils.validators import normalize_email
 
 logger = get_logger(__name__)
 ERRORS = {
@@ -12,7 +13,9 @@ ERRORS = {
     'campus_required': ('Your profile needs a campus before you can transfer money.', 400),
     'transfers_paused': ('Wallet transfers are currently paused.', 403),
     'invalid_recipient_code': ('Enter a valid referral code from your friend’s Referrals page.', 400),
-    'recipient_unavailable': ('No active same-campus recipient matches those details. Check the code again.', 400),
+    'invalid_recipient_identifier': ('Enter one complete email address, phone number or referral code.', 400),
+    'recipient_ambiguous': ('These details match more than one active account on your campus. Use their email address or referral code instead.', 400),
+    'recipient_unavailable': ('No active same-campus account matches those details. Check them or try another lookup option.', 400),
     'self_transfer': ('You cannot transfer wallet money to yourself.', 400),
     'invalid_transfer': ('Enter a valid transfer amount and recipient.', 400),
     'transfer_amount_out_of_range': ('The amount is outside the current transfer limits. Refresh and review it.', 400),
@@ -47,6 +50,33 @@ def code(value):
     if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9_-]{3,80}', value.strip()):
         raise TransferError('invalid_recipient_code')
     return value.strip().upper()
+
+
+def recipient_lookup(args):
+    kinds = [kind for kind in ('code', 'email', 'phone') if kind in args]
+    if len(kinds) != 1 or (hasattr(args, 'getlist') and len(args.getlist(kinds[0])) != 1):
+        raise TransferError('invalid_recipient_identifier')
+    kind = kinds[0]
+    value = args[kind]
+    if kind == 'code':
+        value = code(value)
+    elif kind == 'email':
+        value = normalize_email(value)
+        if not value:
+            raise TransferError('invalid_recipient_identifier')
+    else:
+        if not isinstance(value, str) or not re.fullmatch(r'\+?[0-9() .-]{7,40}', value.strip()):
+            raise TransferError('invalid_recipient_identifier')
+        value = re.sub(r'[+() .-]', '', value.strip())
+        if len(value) == 14 and value.startswith('2340'):
+            value = '234' + value[-10:]
+        elif len(value) == 11 and value.startswith('0'):
+            value = '234' + value[1:]
+        elif len(value) == 10:
+            value = '234' + value
+        if not re.fullmatch(r'[1-9][0-9]{7,14}', value):
+            raise TransferError('invalid_recipient_identifier')
+    return {'lookup_type': kind, 'value': value}
 
 
 def intent(body):

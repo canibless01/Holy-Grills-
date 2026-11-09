@@ -1,6 +1,6 @@
 # Same-campus wallet transfers
 
-Wallet → **Send money** lets a student look up an active same-campus friend by referral code, review their name and amount, and confirm. The recipient can spend the funds immediately. Both parties get an owned receipt through transaction history and notification links. The lookup does not expose email, telephone, or another person's balance.
+Wallet → **Send money** lets a student look up an active same-campus friend by exact email address, phone number or referral code, review their name and amount, and confirm. The recipient can spend the funds immediately. Both parties get an owned receipt through transaction history and notification links. The lookup does not expose email, telephone, or another person's balance.
 
 Transfers move existing wallet funds internally. There is no Paystack charge, transfer fee, top-up HP, or change to automatic funding. Delivery fees and checkout remain separate.
 
@@ -28,3 +28,12 @@ Receipt delivery happens after commit through the existing Celery worker. A priv
 The checks do not make a real customer transfer or charge a card. Production deployment status and authenticated device usage are separate from the transactional fixture checks.
 
 Release verification after integrating `f8dc24b`: **1,404 backend tests passed**; TypeScript and the full client/SSR/prerender build passed; all **six transfer browser scenarios** and all **six page-performance browser scenarios** passed. Supabase service-role read/write checks passed with all fixtures rolled back; security-advisor category counts were unchanged. Wallet displays preserve up to two decimal places so the confirmed amount, receipt, ledger and visible balance agree.
+
+
+## Recipient lookup follow-up
+
+Email and phone lookup are available alongside referral code. Email matching ignores case/outer spaces. Nigerian local, `+234`, common formatting and bare national-number input normalize to the same key; explicit international country codes are accepted. Normalized phone duplicates reject the lookup and ask for email/referral code instead. There is no name, prefix or contact-list search. The endpoint remains authenticated and limited to 20 lookups/minute, matches active users only on the sender's campus, and returns only the matched account ID, display name and canonical referral code—not email, phone or balance.
+
+A recipient is still explicitly confirmed before sending. The transfer admission and frozen retry reference remain unchanged; a lookup cannot itself move money. Exact/case/format matching, inactive/cross-campus/self/ambiguous/unknown refusals, paused gates and a lookup-selected paired transfer pass in `tests/sql/wallet_recipient_lookup.sql` using Supabase BEGIN/ROLLBACK. The original transfer financial/role matrix also passes. Migration `20261109211331_wallet_recipient_email_phone_lookup` adds indexed lookup expressions and changes only the existing RPC's lookup branch. No new environment variable, fee or scheduler is needed.
+
+Lookup release checks: **1,436 backend tests passed**, TypeScript/full client+SSR+prerender build passed, and all **nine** native transfer scenarios passed (including email, phone and ambiguous-phone→email recovery). The original local concurrent-transfer matrix still passes. Supabase fixture-user/campus and transfer counts after rollback remain zero; security-advisor category counts are unchanged.

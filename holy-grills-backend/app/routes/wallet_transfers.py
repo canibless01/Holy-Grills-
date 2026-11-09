@@ -28,7 +28,7 @@ def transfers():
 @rate_limit(max_requests=20, window_seconds=60)
 def recipient():
     try:
-        return jsonify({'recipient': service.rpc('lookup', g.user_id, data={'code': service.code(request.args.get('code'))})})
+        return jsonify({'recipient': service.rpc('lookup', g.user_id, data=service.recipient_lookup(request.args))})
     except service.TransferError as exc:
         return jsonify({'error': str(exc), 'code': exc.code}), exc.status
     except Exception:

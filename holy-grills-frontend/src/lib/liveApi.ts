@@ -389,7 +389,7 @@ const marketplace = {
 // Card returns verify the provider reference before reporting wallet funding.
 const wallet = {
   async getTransferLimits() { return apiClient.get('/wallet/transfers'); },
-  async findTransferRecipient(code) { return apiClient.get('/wallet/transfers/recipient', { code }); },
+  async findTransferRecipient(identifier: string, kind: 'email' | 'phone' | 'code' = 'code') { return apiClient.get('/wallet/transfers/recipient', { [kind]: identifier }); },
   async sendTransfer(body) { return apiClient.post('/wallet/transfers', body); },
   async getTransfer(id) { return apiClient.get(`/wallet/transfers/${id}`); },
   async getAutoFunding() { return apiClient.get('/wallet/auto-funding'); },

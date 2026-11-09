@@ -1,13 +1,13 @@
 """Mock HTTP only. Native confirmation, recovery and receipt ownership UX."""
 import os,json,uuid
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 from playwright.sync_api import sync_playwright,expect
 BASE=os.environ.get('HG_BROWSER_BASE','http://127.0.0.1:4191')
 U='11111111-1111-4111-8111-111111111111';R='22222222-2222-4222-8222-222222222222';C='70000001-cafe-cafe-cafe-000000000001'
 expect.set_options(timeout=15000)
 with sync_playwright() as p:
  browser=p.chromium.launch(executable_path='/usr/bin/chromium',args=['--no-sandbox'])
- for case in ('normal_mobile','normal_desktop','uncertain_retry','uncertain_reload','denied','flag_off_receipt'):
+ for case in ('normal_mobile','normal_desktop','uncertain_retry','uncertain_reload','denied','flag_off_receipt','email_lookup','phone_lookup','ambiguous_phone'):
   ctx=browser.new_context(viewport={'width':1280 if case=='normal_desktop' else 393,'height':900})
   ctx.add_init_script(f"localStorage.setItem('hg_access_token','controlled');localStorage.setItem('hg_user_role','student');localStorage.setItem('hg_campus_id','{C}');localStorage.setItem('hg_user_campus_id','{C}');")
   ctx.add_init_script("localStorage.setItem('hg_cookie_consent',JSON.stringify({essential:true,analytics:false,date:new Date().toISOString()}));")
@@ -17,7 +17,14 @@ with sync_playwright() as p:
    path=urlparse(route.request.url).path;method=route.request.method;calls.append((method,path));data={}
    if path.endswith('/auth/me'):data={'id':U,'role':'student','campus_id':C,'full_name':'Alice'}
    elif path.endswith('/campuses'):data={'campuses':[{'id':C,'name':'FUTA','is_active':True}]}
-   elif path.endswith('/wallet/transfers/recipient'):data={'recipient':{'id':R,'name':'Bob','code':'BOB123'}}
+   elif path.endswith('/wallet/transfers/recipient'):
+    query=parse_qs(urlparse(route.request.url).query)
+    assert len(query)==1 and next(iter(query)) in ('code','email','phone'),query
+    if case=='email_lookup':assert query=={'email':['friend@example.com']},query
+    if case=='phone_lookup':assert query=={'phone':['08011223344']},query
+    if case=='ambiguous_phone' and 'phone' in query:
+     route.fulfill(status=400,json={'code':'recipient_ambiguous','error':'These details match more than one active account on your campus. Use email or referral code instead.'});return
+    data={'recipient':{'id':R,'name':'Bob','code':'BOB123'}}
    elif path.endswith('/wallet/transfers'):
     if method=='GET':data={'enabled':True,'minimum_amount':1,'maximum_amount':1000000,'daily_remaining':1000000,'available_balance':balance[0],'fee':0,'same_campus_only':True,'my_code':'ALICE123'}
     else:
@@ -53,7 +60,17 @@ with sync_playwright() as p:
   if page.get_by_role('button',name='Essential only').count():page.get_by_role('button',name='Essential only').click()
   assert not any('/wallet/transfers' in path for method,path in calls),'Transfer data must be lazy'
   page.get_by_role('button',name='Send money',exact=True).click();dialog=page.get_by_role('dialog')
-  dialog.get_by_label('Friend’s referral code').fill('bob123');dialog.get_by_role('button',name='Find recipient',exact=True).click()
+  if case=='email_lookup':dialog.get_by_label('Recipient’s email address').fill('friend@example.com')
+  elif case in ('phone_lookup','ambiguous_phone'):
+   dialog.get_by_role('button',name='Phone',exact=True).click();dialog.get_by_label('Recipient’s phone number').fill('08011223344')
+  else:
+   dialog.get_by_role('button',name='Referral code',exact=True).click();dialog.get_by_label('Friend’s referral code').fill('bob123')
+  dialog.get_by_role('button',name='Find recipient',exact=True).click()
+  if case=='ambiguous_phone':
+   expect(dialog.get_by_role('alert')).to_contain_text('more than one')
+   expect(dialog.get_by_text('Bob',exact=True)).to_have_count(0);assert not posts
+   dialog.get_by_role('button',name='Email',exact=True).click();dialog.get_by_label('Recipient’s email address').fill('friend@example.com')
+   dialog.get_by_role('button',name='Find recipient',exact=True).click()
   expect(dialog.get_by_text('Bob',exact=True)).to_be_visible()
   dialog.get_by_label('Amount (₦)').fill('250.251');dialog.get_by_role('button',name='Review transfer',exact=True).click();assert not posts
   expect(dialog.get_by_label('Amount (₦)')).to_be_visible()

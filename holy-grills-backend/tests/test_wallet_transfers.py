@@ -78,3 +78,32 @@ def test_recovery_is_bounded_and_receipt_only(body):
         assert service.recover(limit=200)=={'processed':1,'pending':0}
     rpc.assert_called_once_with('due',data={'limit':20})
     assert dispatch.call_args.args[0]['amount']==250.25
+
+@pytest.mark.parametrize('args,expected',[
+ ({'email':' Friend@Example.COM '},{'lookup_type':'email','value':'friend@example.com'}),
+ ({'code':' friend_123 '},{'lookup_type':'code','value':'FRIEND_123'}),
+ *[({'phone':number},{'lookup_type':'phone','value':'2348011223344'}) for number in ('08011223344','+2348011223344','2348011223344','8011223344','+234 (0) 801 122 3344','080-1122-3344')],
+ ({'phone':'+44 20 1234 5678'},{'lookup_type':'phone','value':'442012345678'}),
+])
+def test_exact_recipient_identifiers_are_canonical(args,expected):
+    assert service.recipient_lookup(args)==expected
+
+@pytest.mark.parametrize('args',[{}, {'name':'Alice'}, {'email':'friend@example.com','code':'FRIEND'}, {'email':'%example.com'},
+ {'email':'a@example.com,b@example.com'}, {'phone':'08011223344 ext 3'}, {'phone':'12'}, {'phone':'++2348011223344'},
+ {'phone':True}, {'phone':'0000000000000000'}, {'email':'a@'}, {'code':'FRI%'}])
+def test_lookup_does_not_accept_names_partial_search_or_mixed_identity(args):
+    with pytest.raises(service.TransferError):service.recipient_lookup(args)
+
+
+def test_repeated_query_parameters_do_not_pick_an_arbitrary_recipient():
+    from werkzeug.datastructures import MultiDict
+    with pytest.raises(service.TransferError):service.recipient_lookup(MultiDict([('email','one@example.com'),('email','two@example.com')]))
+
+
+def test_email_recipient_route_uses_session_campus_actor_and_canonical_value():
+    from app.routes.wallet_transfers import recipient
+    app=Flask(__name__)
+    with app.test_request_context('/?email=Friend%40Example.com'), patch.object(service,'rpc',return_value={'id':'friend','name':'Friend','code':'FRIEND'}) as rpc:
+        g.user_id='session-owner';response=recipient.__wrapped__.__wrapped__()
+    assert response.json['recipient']['id']=='friend'
+    rpc.assert_called_once_with('lookup','session-owner',data={'lookup_type':'email','value':'friend@example.com'})
