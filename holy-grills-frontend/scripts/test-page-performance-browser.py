@@ -8,8 +8,8 @@ U = '11111111-1111-4111-8111-111111111111'; C = '70000001-cafe-cafe-cafe-0000000
 expect.set_options(timeout=15000)
 with sync_playwright() as p:
  browser = p.chromium.launch(executable_path='/usr/bin/chromium', args=['--no-sandbox'])
- for case in ('menu', 'dashboard', 'cms', 'settings', 'settings_admin'):
-  role = 'student' if case == 'menu' else 'admin' if case == 'settings_admin' else 'super_admin'
+ for case in ('menu', 'dashboard', 'cms', 'settings', 'settings_admin', 'rewards'):
+  role = 'student' if case in ('menu', 'rewards') else 'admin' if case == 'settings_admin' else 'super_admin'
   ctx = browser.new_context(viewport={'width':393 if case=='menu' else 1280,'height':950})
   ctx.add_init_script(f"localStorage.setItem('hg_access_token','controlled');localStorage.setItem('hg_user_role','{role}');localStorage.setItem('hg_campus_id','{C}');localStorage.setItem('hg_user_campus_id','{C}');localStorage.setItem('hg_admin_campus_id','{C}');")
   calls=[]; held=[]; settings_fail=[True]; settings_value=[False]; writes=[]
@@ -20,6 +20,8 @@ with sync_playwright() as p:
    elif path.endswith('/campuses'):data={'campuses':[{'id':C,'name':'FUTA','is_active':True}]}
    elif path.endswith('/wallet'):data={'balance':0}
    elif path.endswith('/hp/balance'):data={'active':0,'pending':0}
+   elif case=='rewards' and ('exclusive' in path or '/challenges/my' in path):
+    route.fulfill(status=403,json={'error':'Feature disabled'});return
    elif path.endswith('/menu/items'):
     assert 'authorization' not in {k.lower():v for k,v in req.headers.items()}
     if query.get('q'): held.append(route);return
@@ -41,7 +43,7 @@ with sync_playwright() as p:
    route.fulfill(status=200,json=data)
   ctx.route('**/api/**',api);ctx.route('https://*.onesignal.com/**',lambda r:r.abort());ctx.route('https://res.cloudinary.com/**',lambda r:r.abort())
   page=ctx.new_page()
-  target={'menu':'/menu','dashboard':'/admin','cms':'/admin?section=storefront','settings':'/admin?section=settings','settings_admin':'/admin?section=settings'}[case]
+  target={'menu':'/menu','dashboard':'/admin','cms':'/admin?section=storefront','settings':'/admin?section=settings','settings_admin':'/admin?section=settings','rewards':'/rewards'}[case]
   page.goto(BASE+target,wait_until='domcontentloaded')
   if case=='menu':
    expect(page.get_by_role('heading',name='Grill Wings',exact=True)).to_be_visible()
@@ -84,6 +86,9 @@ with sync_playwright() as p:
    switch.click()
    expect(switch).to_have_attribute('aria-checked','true')
    assert writes==[{'value':True,'campus_id':C}],writes
+  elif case=='rewards':
+   expect(page.get_by_role('heading',name='Rewards',exact=False).first).to_be_visible()
+   assert not page.get_by_text('Rewards or tier details could not be loaded.',exact=True).count()
   else:
    expect(page.get_by_text('controlled_toggle',exact=True)).to_be_visible()
    expect(page.get_by_role('switch')).to_have_count(1)

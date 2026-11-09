@@ -33,6 +33,8 @@ changed. This pass creates no database rows or migrations.
   polling, and the whole-dashboard automatic retry burst was removed.
 - Rewards loads challenges, free-side credits and exclusive-spin details
   independently, instead of delaying all three behind the slowest request.
+  Intentionally disabled or unsupported optional features (403/404) do not
+  produce a false reward-load failure; genuine outages remain retryable.
 - CMS editing waits for its authoritative content/supporter reads, with
   newsletter reports loaded separately. Newsletter loading/errors cannot hide
   the CMS, falsely show zero subscribers or expose campaign controls before

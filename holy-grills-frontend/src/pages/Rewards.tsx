@@ -111,9 +111,9 @@ export default function Rewards() {
       } catch { if (active) setLoadError(true); }
       if (active) setLoading(false);
     };
-    liveApi.challenges.my().then(value => { if (active) setChallenges(value); }).catch(() => { if (active) setLoadError(true); });
-    liveApi.rewards.getFreeSideCredits().then(value => { if (active) setFreeSideCredits(value); }).catch(() => { if (active) setLoadError(true); });
-    liveApi.hp.getExclusiveSpinStatus().then(value => { if (active) setExclusiveStatus(value); }).catch(() => { if (active) setLoadError(true); });
+    liveApi.challenges.my().then(value => { if (active) setChallenges(value); }).catch(error => { if (active && ![403, 404].includes(error?.status)) setLoadError(true); });
+    liveApi.rewards.getFreeSideCredits().then(value => { if (active) setFreeSideCredits(value); }).catch(error => { if (active && ![403, 404].includes(error?.status)) setLoadError(true); });
+    liveApi.hp.getExclusiveSpinStatus().then(value => { if (active) setExclusiveStatus(value); }).catch(error => { if (active && ![403, 404].includes(error?.status)) setLoadError(true); });
     load();
     return () => { active = false; };
   }, [user?.id, campusId, reload]);
