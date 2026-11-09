@@ -259,13 +259,14 @@ export default function AdminStorefront() {
     setBusy(null); await load();
   };
   const move = async (s, dir) => {
-    const sameType = sections.filter((x) => x.section_type === s.section_type && x.campus_id === s.campus_id).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    if (busy) return;
+    const sameType = sections.filter((x) => x.section_type === s.section_type && x.campus_id === s.campus_id && (x.content?.placement ?? 'home') === (s.content?.placement ?? 'home'));
     const i = sameType.findIndex((x) => x.id === s.id); const j = i + dir; if (j < 0 || j >= sameType.length) return;
-    const other = sameType[j];
     setBusy(`mv-${s.id}`);
-    try { await Promise.all([mockApi.admin.updateStorefrontSection(s.id, { key: keyFor(s), sort_order: other.sort_order ?? j }), mockApi.admin.updateStorefrontSection(other.id, { key: keyFor(other), sort_order: s.sort_order ?? i })]); await load(); }
-    catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_REORDER_FAILED', 'Reorder failed'), description: e.message, variant: 'destructive' }); }
-    setBusy(null);
+    try {
+      await mockApi.admin.moveStorefrontSection(s.id, { direction: dir, expected: sameType.map((row) => ({ id: row.id, sort_order: row.sort_order ?? 0, updated_at: row.updated_at ?? null })) });
+    } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_REORDER_FAILED', 'Reorder failed'), description: e.message, variant: 'destructive' }); }
+    finally { await load(); setBusy(null); }
   };
   const toggleActive = async (s, v) => { setBusy(`act-${s.id}`); try { await mockApi.admin.updateStorefrontSection(s.id, { key: keyFor(s), is_active: v }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } setBusy(null); };
   const del = async (id) => { if (!(await confirmAction({ title: "Delete this storefront section?", body: "It will be removed from the live homepage.", destructive: true, confirmLabel: "Delete" }))) return; try { await mockApi.admin.deleteStorefrontSection(id); toast({ title: msg('FE_ADMIN_STOREFRONT_DELETED', '✅ Deleted') }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_DELETE_FAILED', 'Delete failed'), description: e.message, variant: 'destructive' }); } };
@@ -455,8 +456,8 @@ export default function AdminStorefront() {
                 <span className="text-[10px] text-muted-foreground">{s.campus_id ? (campuses.find((campus) => campus.id === s.campus_id)?.name || msg('FE_ADMIN_STOREFRONT_CAMPUS_CONTENT', 'Campus content')) : msg('FE_ADMIN_STOREFRONT_GLOBAL_CONTENT', 'Global content')}</span>
                 {placementOf(s) && <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{placementOf(s)}</span>}
                 <div className="ml-auto flex items-center gap-1.5">
-                  <button type="button" onClick={() => move(s, -1)} className="px-2 py-1 rounded-lg hover:bg-muted text-muted-foreground text-xs" title="Move up">↑</button>
-                  <button type="button" onClick={() => move(s, 1)} className="px-2 py-1 rounded-lg hover:bg-muted text-muted-foreground text-xs" title="Move down">↓</button>
+                  <button type="button" disabled={!!busy} onClick={() => move(s, -1)} className="px-2 py-1 rounded-lg hover:bg-muted text-muted-foreground text-xs" title="Move up">↑</button>
+                  <button type="button" disabled={!!busy} onClick={() => move(s, 1)} className="px-2 py-1 rounded-lg hover:bg-muted text-muted-foreground text-xs" title="Move down">↓</button>
                   <Toggle checked={!!(s.is_active ?? s.active)} onChange={(v) => toggleActive(s, v)} disabled={busy === `act-${s.id}`} />
                 </div>
               </div>

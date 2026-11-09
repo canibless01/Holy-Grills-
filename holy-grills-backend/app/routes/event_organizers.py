@@ -8,7 +8,6 @@ from app.utils.campus_scope import as_campus_id
 from app.utils.validators import validate_uuid,validate_datetime_order
 from app.utils.upload_urls import is_trusted_upload_url
 from app.services.event_admission import admit_event_ticket
-from app.services.notification_service import send_notification
 from app.messages import MSG
 from app.utils.logger import get_logger
 
@@ -40,6 +39,8 @@ def _failure(exc):
  return db_error_response(exc,'event_organizer')
 
 def _rpc(name,body):
+ if name in ('hg_organizer_event_draft','hg_review_organizer_event','hg_event_payout_action'):
+  body={**body,'p_data':{**body.get('p_data',{}),'_notice':{'title':MSG.ORG_NOTICE_TITLE,'body':MSG.ORG_NOTICE_BODY}}}
  return get_db().rpc(name,{**body,'p_actor':g.user_id})
 
 def _object():
@@ -64,20 +65,18 @@ def _draft(data):
  return clean
 
 def _notice(event,kind,receipt=None):
- """Deterministic notices on retried requests; dispatch failures do not undo state."""
- db=get_db();event_id=event['id'];title=MSG.ORG_NOTICE_TITLE
- body=MSG.ORG_NOTICE_BODY.format(title=event['title'],status=(receipt or {}).get('state') or event.get('review_status'))
- version=(receipt or {}).get('updated_at') or event.get('updated_at') or event.get('submitted_at') or ''
- reference=str(uuid.uuid5(uuid.NAMESPACE_URL,f"holygrills:organizer:{event_id}:{kind}:{version}"))
+ """Only wake already committed pushes; the durable worker recovers a lost wake."""
+ import threading
+ from flask import current_app
+ from app.services.notification_outbox import dispatch_notification
  try:
-  if kind in ('event_review_submitted','event_payout_requested'):
-   staff=db.table('profiles').select('id,role,campus_id').eq('is_active',True).in_('role',['admin','super_admin']).execute() or []
-   targets=[row['id'] for row in staff if row['role']=='super_admin' or row.get('campus_id')==event.get('campus_id')]
-   url=f'/event-manager?event={event_id}'
-  else:targets=[event.get('organizer_id')];url=f'/event-manager?event={event_id}'
-  for target in filter(None,targets):
-   send_notification(target,kind,title=title,body=body,reference_id=reference,reference_type='event_organizer',action_url=url,channels=['in_app','push'],campus_id=event.get('campus_id'))
- except Exception:logger.exception('Organizer notice deferred/failed for %s',event_id)
+  rows=get_db().table('notifications').select('id').eq('metadata->>organizer_event_id',event['id']).eq('channel','push').order('created_at',ascending=False).limit(50).execute() or []
+  app=current_app._get_current_object()
+  def wake():
+   with app.app_context():
+    for row in rows:dispatch_notification(row['id'])
+  if rows:threading.Thread(target=wake,daemon=True).start()
+ except Exception:logger.warning('Organizer push wake deferred for %s',event['id'])
 
 @bp.route('/events',methods=['GET'])
 @require_role(*ROLES)

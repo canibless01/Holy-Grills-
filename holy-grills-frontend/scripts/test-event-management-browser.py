@@ -19,6 +19,8 @@ try:
    def api(route):
     request=route.request;url=urlparse(request.url);path=url.path;q=parse_qs(url.query);data={}
     if path.endswith('/auth/me'):data={'id':'controlled','role':'super_admin','campus_id':a,'profile':{'id':'controlled','role':'super_admin','campus_id':a},'is_active':True}
+    elif path.endswith('/upload/status'):data={'configured':True,'cloud_name':'test-cloud'}
+    elif path.endswith('/upload/signature'):data={'signature':'controlled','timestamp':1,'api_key':'controlled','cloud_name':'test-cloud','folder':'events'}
     elif path.endswith('/campuses'):data=[{'id':a,'name':'Campus A','is_active':True},{'id':b,'name':'Campus B','is_active':True}]
     elif path.endswith('/events/admin'):
      reads.append(q);offset=int(q.get('offset',['0'])[0]);data={'events':event_rows[offset:offset+int(q.get('limit',['25'])[0])]}
@@ -42,6 +44,8 @@ try:
      body=request.post_data_json;writes.append((path,body));next(row for row in event_rows if row['id']==path.split('/')[-1]).update(body);data=body
     route.fulfill(status=200,json=data)
    context=browser.new_context(viewport={'width':width,'height':1000},accept_downloads=True);context.route('**/api/**',api)
+   context.route('https://api.cloudinary.com/**',lambda route:route.fulfill(json={'secure_url':'https://res.cloudinary.com/test-cloud/image/upload/events/native.png'}))
+   context.route('https://res.cloudinary.com/**',lambda route:route.fulfill(content_type='image/png',body=__import__('base64').b64decode(png.split(',')[1])))
    context.add_init_script("sessionStorage.setItem('hg_access_token','controlled');localStorage.setItem('hg_user_role','super_admin');localStorage.setItem('hg_user_campus_id','"+a+"');localStorage.setItem('hg_admin_campus_id','"+a+"');")
    page=context.new_page();page.on('pageerror',lambda e:errors.append(str(e)));page.goto('http://127.0.0.1:5268/admin?section=events');expect(page.get_by_text('Flame Night: Live Grill & Music',exact=True)).to_be_visible()
    page.evaluate("localStorage.setItem('hg_cookie_consent',JSON.stringify({essential:true,analytics:false,date:new Date().toISOString()}))")
@@ -71,7 +75,10 @@ try:
    page.get_by_role('button',name='Previous events',exact=True).click();expect(page.get_by_text('Flame Night: Live Grill & Music',exact=True)).to_be_visible()
    page.get_by_role('button',name='Edit event',exact=True).first.click();dialog=page.get_by_role('dialog',name='Edit Event',exact=True)
    expect(dialog.get_by_label('Starts (WAT)',exact=True)).to_have_value('2026-11-12T10:00');expect(dialog.get_by_label('Ends (WAT)',exact=True)).to_have_value('2026-11-12T13:00');expect(dialog.get_by_label('Funding Source',exact=True)).to_have_value('host_prepaid')
-   dialog.get_by_role('button',name='Close dialog',exact=True).click()
+   dialog.locator('input[type=file]').set_input_files({'name':'event.png','mimeType':'image/png','buffer':__import__('base64').b64decode(png.split(',')[1])})
+   expect(dialog.locator('img')).to_have_attribute('src','https://res.cloudinary.com/test-cloud/image/upload/events/native.png')
+   dialog.get_by_role('button',name='Save Changes',exact=True).click();expect(dialog).to_have_count(0)
+   assert writes[-1][1]['image_url']=='https://res.cloudinary.com/test-cloud/image/upload/events/native.png'
    page.get_by_role('button',name='QR',exact=True).first.click();page.get_by_role('button',name='Generate QR',exact=True).click();qr=page.get_by_role('dialog',name='Event Check-in QR',exact=True);expect(qr.get_by_alt_text('Venue check-in QR code',exact=True)).to_be_visible();assert qr.get_by_alt_text('Venue check-in QR code',exact=True).evaluate('(img)=>img.complete&&img.naturalWidth>0')
    expect(qr.get_by_role('link',name='Download venue QR',exact=True)).to_have_attribute('download',f"event-{event_rows[0]['id']}-venue-qr.png");qr.get_by_role('button',name='Close dialog',exact=True).click()
    page.get_by_role('button',name='Registrants',exact=True).first.click();regs=page.get_by_role('dialog',name='Event Registrants',exact=True);expect(regs.get_by_role('alert')).to_be_visible();expect(regs.get_by_text('No registrants match your filters.',exact=True)).to_have_count(0)

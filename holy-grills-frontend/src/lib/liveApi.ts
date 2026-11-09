@@ -1197,6 +1197,8 @@ const admin = {
   // this, switching a section off removed it from the admin list for good.
   async getStorefrontSections(params = {}) { return unwrap(await apiClient.get('/storefront/sections', { include_inactive: '1', ...params }), 'sections'); },
   async createStorefrontSection(body) { return apiClient.post('/storefront/sections', body); },
+  async moveBanner(id, body) { return apiClient.post(`/storefront/banners/${id}/move`, body); },
+  async moveStorefrontSection(id, body) { return apiClient.post(`/storefront/sections/${id}/move`, body); },
   async updateStorefrontSection(id, body) { return apiClient.patch(`/storefront/sections/${id}`, body); },
   async deleteStorefrontSection(id) { return apiClient.delete(`/storefront/sections/${id}`); },
 

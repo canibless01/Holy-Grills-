@@ -627,10 +627,39 @@ def list_sections():
     section_type = request.args.get("section_type")
     if section_type:
         q = q.eq("section_type", section_type)
-    sections = q.order("sort_order").execute() or []
+    sections = q.order("sort_order").order("created_at").order("id").execute() or []
     if include_inactive and getattr(g, "user_role", None) == "super_admin" and not campus_id:
         return jsonify(sections), 200
     return jsonify(_scoped(sections, campus_id, key_fn=None if management_read else lambda row: (row.get("section_type"), row.get("key")))), 200
+
+
+@storefront_bp.route("/sections/<uuid:section_id>/move", methods=["POST"])
+@require_role("admin")
+def move_section(section_id):
+    return _move_cms(section_id, 'hg_move_storefront_section')
+
+
+@storefront_bp.route("/banners/<uuid:banner_id>/move", methods=["POST"])
+@require_role("admin")
+def move_banner(banner_id):
+    return _move_cms(banner_id, 'hg_move_storefront_banner')
+
+
+def _move_cms(section_id, helper):
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or type(data.get('direction')) is not int or data['direction'] not in (-1, 1) or not isinstance(data.get('expected'), list) or not 1 <= len(data['expected']) <= 500:
+        return _bad_request()
+    try:
+        result = get_db().rpc(helper, {'p_actor': g.user_id, 'p_section': str(section_id), 'p_direction': data['direction'], 'p_expected': data['expected']})
+        return jsonify(result), 200
+    except SupabaseError as exc:
+        if 'HG_STOREFRONT_ACCESS' in str(exc):
+            return jsonify({'error': MSG.RESOURCE_ACCESS_DENIED}), 403
+        if 'HG_STOREFRONT_STALE' in str(exc):
+            return jsonify({'error': MSG.STOREFRONT_REORDER_STALE}), 409
+        if 'HG_STOREFRONT_INVALID' in str(exc) or exc.details.get('code') in ('22P02','22007','22008'):
+            return _bad_request()
+        raise
 
 
 @storefront_bp.route("/sections/<section_id>", methods=["PATCH"])
@@ -1360,7 +1389,7 @@ def list_banners():
     placement = request.args.get("placement")
     if placement:
         q = q.eq("placement", placement)
-    banners = q.order("sort_order").execute() or []
+    banners = q.order("sort_order").order("created_at").order("id").execute() or []
     if not management_read:
         now = datetime.now(timezone.utc)
         def visible(banner):

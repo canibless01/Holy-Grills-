@@ -103,15 +103,13 @@ def test_owned_venue_qr_requires_approval_and_stays_local(status,expected):
   assert db.table.call_args.args[0]=='event_door_tokens'
  else:db.table.assert_not_called()
 
-def test_review_notice_targets_own_campus_staff_and_opens_exact_event():
- db=MagicMock();db.table.return_value.select.return_value.eq.return_value.in_.return_value.execute.return_value=[{'id':ACTOR,'role':'admin','campus_id':A},{'id':E,'role':'super_admin','campus_id':None},{'id':B,'role':'admin','campus_id':B}]
- event={'id':E,'title':'Controlled event','campus_id':A,'organizer_id':ACTOR,'review_status':'submitted','updated_at':'2026-11-08T12:00:00Z'}
- with app.app_context(),patch.object(org,'get_db',return_value=db),patch.object(org,'send_notification') as notify:
-  org._notice(event,'event_review_submitted');org._notice(event,'event_review_submitted')
- assert notify.call_count==4
- assert {call.args[0] for call in notify.call_args_list}=={ACTOR,E}
- assert all(call.kwargs['action_url']=='/event-manager?event='+E for call in notify.call_args_list)
- assert len({call.kwargs['reference_id'] for call in notify.call_args_list})==1
+def test_business_rpc_carries_central_copy_for_atomic_notice_capture():
+ db=MagicMock()
+ with context('POST'),patch.object(org,'get_db',return_value=db):
+  setup_actor();org._rpc('hg_event_payout_action',{'p_event':E,'p_data':{'account_number':'0123456789'}})
+ body=db.rpc.call_args.args[1]
+ assert body['p_data']['_notice']=={'title':org.MSG.ORG_NOTICE_TITLE,'body':org.MSG.ORG_NOTICE_BODY}
+ assert body['p_data']['account_number']=='0123456789' and body['p_actor']==ACTOR
 
 @pytest.mark.parametrize('campus',[A,None])
 def test_super_admin_draft_scope_comes_from_validated_header(campus):

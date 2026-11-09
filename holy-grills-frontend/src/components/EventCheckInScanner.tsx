@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Camera, X, AlertCircle, Keyboard } from 'lucide-react';
 import ModalPortal from '@/components/ModalPortal';
 import { msg } from '@/lib/messages';
-import { eventQrPayload } from '@/lib/eventQr';
+import { eventQrPayload, ticketQrPayload } from '@/lib/eventQr';
 
 /**
  * EventCheckInScanner — opens the device camera and reads the venue's QR code
@@ -13,7 +13,7 @@ import { eventQrPayload } from '@/lib/eventQr';
  *  eventId  — the event id, used to validate the scanned QR.
  *  onScan   — (qrToken) => void  called once a valid token is extracted.
  */
-export default function EventCheckInScanner({ eventId, onScan, onClose }) {
+export default function EventCheckInScanner({ eventId, onScan, onClose, mode = 'door' }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const detectorRef = useRef(null);
@@ -66,7 +66,7 @@ export default function EventCheckInScanner({ eventId, onScan, onClose }) {
 
   // Parse `HG-EVT-{event_id}-{token}` → validate event → emit token.
   const handleRaw = (raw) => {
-    const token = eventQrPayload(raw, eventId);
+    const token = mode === 'ticket' ? ticketQrPayload(raw, eventId) : eventQrPayload(raw, eventId);
     if (!token) { setError(msg('FE_EVENT_CHECK_IN_SCANNER_INVALID_QR_CODE', 'Invalid QR code.')); stopCamera(); return; }
     setScanning(false);
     stopCamera();
@@ -87,17 +87,17 @@ export default function EventCheckInScanner({ eventId, onScan, onClose }) {
     <div className="fixed inset-0 z-[70] hg-scrim flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-card rounded-3xl p-5 w-full max-w-sm animate-slide-up" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-3">
-          <h3 className="font-heading font-bold text-base text-foreground flex items-center gap-2"><Camera className="w-5 h-5 text-primary" /> Scan Event QR</h3>
+          <h3 className="font-heading font-bold text-base text-foreground flex items-center gap-2"><Camera className="w-5 h-5 text-primary" /> {mode === 'ticket' ? msg('FE_EVENT_SCAN_ATTENDEE', 'Scan attendee ticket') : msg('FE_EVENT_SCAN_DOOR', 'Scan venue QR')}</h3>
           <button onClick={() => { stopCamera(); onClose(); }}><X className="w-5 h-5 text-muted-foreground" /></button>
         </div>
 
         {manual ? (
           <div className="space-y-3">
-            <p className="text-xs text-muted-foreground">{msg('FE_EVENT_DOOR_QR_HELP', 'Paste the event door QR payload or its token.')}</p>
+            <p className="text-xs text-muted-foreground">{mode === 'ticket' ? msg('FE_EVENT_TICKET_QR_HELP', 'Scan the attendee’s ticket from their screen or email, or paste its ticket ID.') : msg('FE_EVENT_DOOR_QR_HELP', 'Paste the event door QR payload or its token.')}</p>
             <input
               value={manualToken}
               onChange={(e) => setManualToken(e.target.value)}
-              placeholder="token"
+              placeholder={mode === 'ticket' ? msg('FE_EVENT_TICKET_ID', 'Ticket ID or ticket QR payload') : 'token'}
               className="w-full p-3 rounded-xl border border-border text-sm font-mono focus:outline-none focus:border-primary/60"
             />
             <button onClick={submitManual} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm">Check In</button>
@@ -134,7 +134,7 @@ export default function EventCheckInScanner({ eventId, onScan, onClose }) {
             <input
               value={manualToken}
               onChange={(e) => setManualToken(e.target.value)}
-              placeholder="token from the QR code"
+              placeholder={mode === 'ticket' ? msg('FE_EVENT_TICKET_ID', 'Ticket ID or ticket QR payload') : 'token from the QR code'}
               className="w-full p-3 rounded-xl border border-border text-sm font-mono focus:outline-none focus:border-primary/60"
             />
             <button onClick={submitManual} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm">Check In</button>

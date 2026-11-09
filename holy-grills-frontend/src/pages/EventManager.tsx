@@ -106,7 +106,7 @@ function EventAccount({id,admin,externalRevision,onEdit,onChange}) {
     {admin && <ReviewControls account={account} busy={busy || loading} run={run} />}
     <Attendees id={id} revision={revision} busy={busy || loading} onScan={()=>setScanner(true)} onAdmit={ticket=>void admit(`hg-event:${id}:${ticket}`)} />
     {doorQr && <Modal open onClose={()=>setDoorQr(null)} title={msg('FE_ORG_VENUE_QR','Venue QR')}><div className="text-center space-y-3"><img alt={msg('FE_EVENT_VENUE_QR','Venue check-in QR code')} src={doorQr.qr_image} className="w-64 h-64 mx-auto object-contain"/><a href={doorQr.qr_image} download={`event-${id}-venue-qr.png`} className={secondary}>{msg('FE_EVENT_DOWNLOAD_QR','Download venue QR')}</a><p className="text-xs break-all">{doorQr.qr_payload}</p></div></Modal>}
-    {scanner && <EventCheckInScanner eventId={id} onClose={()=>setScanner(false)} onScan={token=>{setScanner(false);void admit(token);}} />}
+    {scanner && <EventCheckInScanner mode="ticket" eventId={id} onClose={()=>setScanner(false)} onScan={token=>{setScanner(false);void admit(token);}} />}
   </div>;
 }
 

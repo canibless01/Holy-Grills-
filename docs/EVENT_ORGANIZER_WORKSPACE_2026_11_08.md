@@ -21,7 +21,7 @@ Example: public cash price NGN1,600; agreed organizer amount NGN1,500. A confirm
 - Contracts, immutable ticket earnings, payout/bank records and review feedback are in the private hg_internal schema with RLS and service-only grants. Public catalogue/customer ticket rows contain no organizer financial agreement or private feedback fields.
 - Privileged RPCs revalidate active actor/ownership/campus and have one intended signature, no browser EXECUTE. Existing protected admin/balance role rules remain; a campus admin may appoint/manage its subordinate organizer role.
 - No extra credentials or automatic-bank-transfer provider is introduced. Organizer artwork uploads use the existing Cloudinary integration, signed into the organizer's own folder.
-- Review/payout notices target the organizer or relevant own-campus/super-admin staff and link directly to the event workspace. Request/version-based IDs suppress duplicates. Notice creation still runs after the business transaction; complete crash-window notification capture is not certified here.
+- Review/payout notices target the organizer or relevant own-campus/super-admin staff and link directly to the event workspace. Request/version-based IDs suppress duplicates. Notice capture now commits inside the business transaction; Python only wakes the existing durable dispatch. See EVENT_RELIABILITY_2026_11_09.md.
 
 ## Verification
 

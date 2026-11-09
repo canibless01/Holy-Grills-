@@ -69,3 +69,7 @@ Evidence and remaining verification are in [stock metadata editing](ADMIN_STOCK_
 ## Organizer workspace completion — 8 November
 
 [Organizer workspace evidence and use](EVENT_ORGANIZER_WORKSPACE_2026_11_08.md): subordinate role, own drafts/submission, private admin feedback/finalization, fixed per-tier settlement contracts, immutable ticket earnings, own statistics/search/QR/admission/export and manual payout request/approval/recorded-transfer loop are implemented. Mobile/desktop native journeys, real handler/middleware and fresh Supabase rollback cases pass; frontend typecheck/lint/build pass. Event-wide cancellation/reschedule notices, exceptional receipt recovery and device/bank acceptance remain separate; this is not whole-event, whole-admin or whole-database sign-off.
+
+## Event reliability and storefront ordering — 9 November
+
+[Independent-session evidence and fixes](EVENT_RELIABILITY_2026_11_09.md): simultaneous member/guest scans, process-exit rollback, committed-response replay, admission/refund races, payout reservation/replay and notification worker leases are verified on isolated PostgreSQL. Organizer notices now commit with the action using existing durable dispatch. Fresh Supabase rollback tests verify notification capture, equal-rank CMS/banner ordering and service-only permissions. Global super-admin uploads now pass the explicit-scope browser CORS preflight. Native ordering and event-image wiring checks pass; event exceptions are the next batch. Group/third-party ticket purchasing and HP sharing remain explicitly deferred.

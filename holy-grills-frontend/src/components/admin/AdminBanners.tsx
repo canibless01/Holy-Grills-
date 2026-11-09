@@ -99,20 +99,16 @@ export default function AdminBanners({ placement = 'home' }) {
   };
 
   const move = async (b, dir) => {
+    if (busy) return;
     const scoped = banners.filter((x) => x.campus_id === b.campus_id);
     const i = scoped.findIndex((x) => x.id === b.id);
     const j = i + dir;
     if (j < 0 || j >= scoped.length) return;
-    const other = scoped[j];
     setBusy(`mv-${b.id}`);
     try {
-      await Promise.all([
-        liveApi.admin.updateBanner(b.id, { sort_order: other.sort_order ?? j }),
-        liveApi.admin.updateBanner(other.id, { sort_order: b.sort_order ?? i }),
-      ]);
-      await load();
+      await liveApi.admin.moveBanner(b.id, { direction: dir, expected: scoped.map((row) => ({ id: row.id, sort_order: row.sort_order ?? 0, updated_at: row.updated_at ?? null })) });
     } catch (e) { toast({ title: msg('FE_ADMIN_BANNERS_REORDER_FAILED', 'Reorder failed'), description: e.message, variant: 'destructive' }); }
-    setBusy(null);
+    finally { await load(); setBusy(null); }
   };
 
   const editSlide = (b, index, patch) => upd(b.id, { slides: b.slides.map((s, i) => i === index ? { ...s, ...patch } : s) });
@@ -193,8 +189,8 @@ export default function AdminBanners({ placement = 'home' }) {
               <span className="text-[10px] text-muted-foreground">{msg('FE_CMS_SLIDE_COUNT', '{count} slides', { count: images.length })}</span>
               {(b.is_active === false) && <Pill tone="red">{msg('FE_CMS_INACTIVE', 'Inactive')}</Pill>}
               <div className="ml-auto flex items-center gap-1.5">
-                <button type="button" onClick={() => move(b, -1)} className="px-2 py-1 rounded-lg hover:bg-muted text-muted-foreground text-xs">↑</button>
-                <button type="button" onClick={() => move(b, 1)} className="px-2 py-1 rounded-lg hover:bg-muted text-muted-foreground text-xs">↓</button>
+                <button type="button" disabled={!!busy} title={msg('FE_CMS_MOVE_CAROUSEL_UP', 'Move carousel up')} onClick={() => move(b, -1)} className="px-2 py-1 rounded-lg hover:bg-muted text-muted-foreground text-xs">↑</button>
+                <button type="button" disabled={!!busy} title={msg('FE_CMS_MOVE_CAROUSEL_DOWN', 'Move carousel down')} onClick={() => move(b, 1)} className="px-2 py-1 rounded-lg hover:bg-muted text-muted-foreground text-xs">↓</button>
                 <Toggle checked={!!(b.is_active ?? true)} onChange={(v) => toggleActive(b, v)} disabled={busy === `act-${b.id}`} />
               </div>
             </div>

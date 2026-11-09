@@ -110,7 +110,7 @@ def create_app(config_class=Config, *, background=False):
         app,
         origins=[*Config.CORS_ORIGINS, *Config.CORS_ORIGIN_PATTERNS],
         methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-Campus-ID", "Accept", "Origin", "X-Requested-With"],
+        allow_headers=["Authorization", "Content-Type", "X-Campus-ID", "X-Campus-Scope", "Accept", "Origin", "X-Requested-With"],
         expose_headers=["Authorization", "Deprecation", "Sunset", "Link"],
         supports_credentials=False,
         max_age=86400,
