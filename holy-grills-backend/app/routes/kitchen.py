@@ -66,7 +66,7 @@ def handoff_batches():
               .eq('role', 'rider').eq('is_active', True).order('full_name').execute()) or []
     orders = []
     if batches:
-        query = (db.table('orders').select('id,batch_id,user_id,guest_name,status,delivery_type,delivery_location_id,delivery_window_id,is_scheduled,scheduled_for,created_at,order_items(name_snapshot,quantity,options_snapshot,order_addon_selections(name_snapshot,quantity))')
+        query = (db.table('orders').select('id,batch_id,user_id,guest_name,status,delivery_type,delivery_location_id,delivery_address_snapshot,delivery_location_lat,delivery_location_lon,delivery_window_id,is_scheduled,scheduled_for,created_at,order_items(name_snapshot,quantity,options_snapshot,order_addon_selections(name_snapshot,quantity))')
                  .eq('campus_id', campus).in_('batch_id', [batch['id'] for batch in batches])
                  .in_('status', ['ready', 'assigned']))
         orders = _attach_kitchen_customer_names(_today_preparation(query).execute() or [])
@@ -765,7 +765,7 @@ def live_queue():
     db = get_user_client()
     q = (
         db.table("orders")
-        .select("id,user_id,guest_name,status,notes,delivery_type,is_squad_order,squad_name,received_at,created_at,is_scheduled,scheduled_for,delivery_window_id,preparing_at,delivery_windows(label,ends_at),order_items(menu_item_id,name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
+        .select("id,user_id,guest_name,status,notes,delivery_type,delivery_address_snapshot,delivery_location_lat,delivery_location_lon,is_squad_order,squad_name,received_at,created_at,is_scheduled,scheduled_for,delivery_window_id,preparing_at,delivery_windows(label,ends_at),order_items(menu_item_id,name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
         .in_("status", ["received", "paid", "preparing", "ready"])
     )
     try:

@@ -1,3 +1,4 @@
+import DeliveryAddress from '@/components/DeliveryAddress';
 import AdminAbandonedCarts from './AdminAbandonedCarts';
 import { Link } from 'react-router-dom';
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
@@ -247,6 +248,7 @@ export default function AdminOrders() {
                   </div>
                 </button>
 
+                <DeliveryAddress order={o} />
                 {isOpen && (
                   <div className="mt-3 pt-3 border-t border-border space-y-3">
                     {o.order_items.map((item, i) => <div key={i} className="text-sm"><span className="font-semibold">{item.quantity}× {item.name_snapshot}</span><OrderItemCustomizations item={item} /></div>)}

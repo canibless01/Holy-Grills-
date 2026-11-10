@@ -140,6 +140,7 @@ const normOrder = (o) => {
   };
 };
 const orders = {
+  async abandonCheckout(body) { return apiClient.post('/orders/checkout/abandon', body); },
   async create(body) {
     const res = await apiClient.post('/orders', body);
     return normOrder(res?.order || res);
@@ -548,7 +549,7 @@ const riders = {
     // backend added (other_batches, sequencing_mode) so the rider UI can surface
     // upcoming batches and the sequencing policy.
     // Flat live shape: { batch_id, zone, status, delivery_window, orders, ... }
-    const orders = (res && res.orders ? res.orders : []).map((o) => {
+    const normalizeDelivery = (o) => {
       const cust = getOrderCustomer(o);
       return {
       ...o,
@@ -566,8 +567,9 @@ const riders = {
       delivery_rank: o.delivery_rank ?? '',
       delivery_hint: o.delivery_hint || o.notes || '',
       };
-    });
-    if (res && res.batch) return { ...res, orders, batches: (res.batches || []).map(b => ({ ...b, orders: (b.orders || []).map(o => orders.find(normalized => normalized.id === o.id) || o) })) };
+    };
+    const orders = (res.orders || []).map(normalizeDelivery);
+    if (res && res.batch) return { ...res, orders, batches: (res.batches || []).map(b => ({ ...b, orders: (b.orders || []).map(normalizeDelivery) })) };
     return {
       batch: {
         id: (res && (res.batch_id || res.id)) || '',

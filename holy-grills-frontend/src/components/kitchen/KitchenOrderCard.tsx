@@ -1,3 +1,4 @@
+import DeliveryAddress from '@/components/DeliveryAddress';
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
 import { Check, Users, Trophy, MapPin, Ban, RotateCcw } from 'lucide-react';
 import { ORDER_STATUS_LABELS } from '@/lib/hgUtils';
@@ -19,7 +20,7 @@ const STATUS_DOT = {
 };
 
 // A single order ticket in the KDS board. Kitchen staff see the ordering
-// student's name + items only — no phone numbers, no financials (spec).
+// student's name, saved delivery address and items; financials stay in admin.
 // Each item line has a compact "86" toggle to mark the menu item sold out
 // (PATCH /menu/items/:id via kitchen.markItemUnavailable/Available).
 // isNew drives the flash ring for freshly arrived orders.
@@ -60,6 +61,7 @@ export default function KitchenOrderCard({ order, onStatusUpdate, onMarkUnavaila
         </span>
       </div>
 
+      <DeliveryAddress order={order} />
       {/* Badges — free side, squad */}
       {(order.has_free_side || order.is_squad || order.squad_name) && (
         <div className="flex flex-wrap gap-1 mb-2">

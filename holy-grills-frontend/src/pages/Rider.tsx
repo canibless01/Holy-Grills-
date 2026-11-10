@@ -33,7 +33,8 @@ export default function Rider() {
   if (!authed) return <Navigate to="/login" state={{ from: '/rider' }} replace />;
   if (loading) return <StaffPanelSkeleton variant="rider" />;
 
-  const orderCount = batch?.orders?.length || 0;
+  const activeBatches = batch?.batches?.length ? batch.batches : batch?.batch ? [{ ...batch.batch, orders: batch.orders || [] }] : [];
+  const orderCount = activeBatches.reduce((total, view) => total + (view.orders?.length || 0), 0);
   const periodLabel = period === 'all' ? 'All-Time' : period === 'today' ? "Today's" : `This ${period === 'week' ? 'Week' : 'Month'}'s`;
 
   return (
@@ -99,8 +100,8 @@ export default function Rider() {
         </div>
 
         {/* Batch */}
-        {tab === 'batch' && batch && (
-          <div className="space-y-3">
+        {tab === 'batch' && activeBatches.map((view) => { const batch = { batch: view, orders: view.orders || [] }; return (
+          <section key={view.id} aria-label={`Delivery zone ${view.zone || view.id}`} className="space-y-3 border-b border-border pb-5">
             <div className="rounded-2xl bg-card border border-border p-3.5 shadow-card">
               <div className="flex items-center justify-between">
                 <div>
@@ -116,7 +117,7 @@ export default function Rider() {
               )}
             </div>
 
-            {(batch?.orders || []).some(order => ['ready', 'assigned'].includes(order.status)) && <button onClick={handleBatchPickup} disabled={batchPickupBusy || !!actionLoading} className="w-full rounded-full bg-gradient-cta py-3 text-sm font-bold text-white disabled:opacity-50">
+            {(batch?.orders || []).some(order => ['ready', 'assigned'].includes(order.status)) && <button onClick={() => handleBatchPickup(view.id)} disabled={batchPickupBusy || !!actionLoading} className="w-full rounded-full bg-gradient-cta py-3 text-sm font-bold text-white disabled:opacity-50">
               {batchPickupBusy ? msg('FE_RIDER_BATCH_COLLECTING', 'Collecting batch…') : msg('FE_RIDER_BATCH_COLLECT', 'Collect batch · start deliveries')}
             </button>}
             <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-1">Delivery Route (sorted by distance)</div>
@@ -131,17 +132,17 @@ export default function Rider() {
                 calling={calling}
               />
             ))}
-            {orderCount === 0 && (
+            {batch.orders.length === 0 && (
               <div className="text-center py-12 rounded-2xl border-2 border-dashed border-border">
                 <Bike className="w-10 h-10 text-muted-foreground/40 mx-auto mb-2" />
                 <p className="text-sm text-muted-foreground font-medium">No active deliveries in your batch.</p>
                 <p className="text-xs text-muted-foreground mt-1">New orders will appear here automatically.</p>
               </div>
             )}
-          </div>
-        )}
+          </section>
+        ); })}
 
-        {tab === 'batch' && !batch && !loading && (
+        {tab === 'batch' && activeBatches.length === 0 && !loading && (
           <div className="text-center py-12 rounded-2xl border-2 border-dashed border-border">
             <Bike className="w-10 h-10 text-muted-foreground/40 mx-auto mb-2" />
             <p className="text-sm text-muted-foreground font-medium">{msg('FE_RIDER_NO_ACTIVE_BATCH', 'No active delivery batch.')}</p>

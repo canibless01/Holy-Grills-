@@ -98,3 +98,7 @@ Evidence and remaining verification are in [stock metadata editing](ADMIN_STOCK_
 ## Campus operations, customer recovery and test-order scope — 10 November
 
 [Implementation and evidence](CAMPUS_OPERATIONS_AND_RECOVERY_2026_11_10.md): private configurable operator recipients, paid-only order/cart alerts and concise WAT daily/weekly reports; atomic customer email/inbox/push recovery steps, truthful counters and payment/preparation stops. Server-derived super-admin test orders stay out of real fulfilment/capacity and customer reporting, while the test balance remains. Fresh production rollback and independent local-session checks pass. The newly reported cancelled-checkout recovery lock, rider multi-zone visibility/bulk assignment and kitchen/admin address visibility are the next work; they are not claimed closed here.
+
+## Checkout restart, addresses and rider zones — 10 November
+
+[Checkout/handoff evidence](CHECKOUT_AND_RIDER_HANDOFF_2026_11_10.md) closes the newly reported cancelled-payment recovery lock, hidden later rider zones, missing pre-assignment addresses and kitchen multi-batch rider assignment. An unpaid intent can be safely closed, including delayed creation; paid money/benefit restoration uses existing atomic rules. Kitchen/admin show saved addresses/pins, and riders see every returned active zone together. Full merged backend tests, native controls, production rollback money cases and an independent local creation/closure race are verified. These are bounded fixes, not a blanket certification of every historical audit group.

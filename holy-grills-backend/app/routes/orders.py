@@ -1678,3 +1678,47 @@ def order_status_history(order_id):
         .execute()
     )
     return jsonify(history), 200
+
+
+@orders_bp.route('/checkout/abandon', methods=['POST'])
+@optional_auth
+@rate_limit('RATE_LIMIT_ORDERS_REQUESTS', 'RATE_LIMIT_ORDERS_WINDOW')
+def abandon_checkout():
+    """Close this customer's unpaid intent without charging or recreating it."""
+    import hashlib
+    from app.db import SupabaseError
+    from app.utils.validators import validate_email
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': MSG.JSON_OBJECT_REQUIRED}), 400
+    key = data.get('idempotency_key')
+    if not isinstance(key, str) or not key.strip() or len(key)>200:
+        return jsonify({'error': MSG.ORDER_INTENT_INVALID}), 400
+    campus = getattr(g, 'campus_id', None)
+    if not campus:
+        from app.routes.events import _get_campus_id
+        campus = _get_campus_id()
+    if not campus:
+        return jsonify({'error': MSG.CAMPUS_REQUIRED}), 400
+    actor = g.user_id
+    email = str(data.get('guest_email') or '').strip().lower() if actor is None else None
+    phone = str(data.get('guest_phone') or '').strip() if actor is None else None
+    if actor is None and (not validate_email(email) or not phone or len(phone)>40):
+        return jsonify({'error': MSG.ORDER_ACCESS_DENIED}), 400
+    identity = f'user:{actor}' if actor else f'guest:{email}:{phone}'
+    scoped = 'v2:' + hashlib.sha256(f'{identity}:{campus}:{key}'.encode()).hexdigest()
+    try:
+        result = get_db().rpc('hg_abandon_checkout', {'p_actor': actor, 'p_campus': campus,
+            'p_key': scoped, 'p_legacy_key': key, 'p_guest_email': email, 'p_guest_phone': phone})
+        if not isinstance(result, dict) or result.get('state') not in ('paid', 'closed'):
+            raise ValueError('Invalid checkout release response')
+        return jsonify(result), 200
+    except SupabaseError as exc:
+        code = str((exc.details or {}).get('message') or '')
+        if code == 'checkout_forbidden':
+            return jsonify({'error': MSG.ORDER_ACCESS_DENIED}), 403
+        logger.warning('Checkout release requires retry: %s', type(exc).__name__)
+        return jsonify({'error': 'This checkout could not be closed yet. Retry before starting a new one.'}), 503
+    except Exception:
+        logger.exception('Checkout release unavailable')
+        return jsonify({'error': 'This checkout could not be closed yet. Retry before starting a new one.'}), 503

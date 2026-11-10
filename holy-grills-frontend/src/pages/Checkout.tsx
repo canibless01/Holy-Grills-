@@ -1,6 +1,6 @@
 import { rememberPaymentCart, settlePaidCart } from '@/lib/paidCart';
 import ScheduleOrderPanel from '@/components/ScheduleOrderPanel';
-import { guestOrders as readGuestOrders, saveGuestOrder, settleGuestCart } from '@/lib/guestOrders';
+import { guestOrders as readGuestOrders, saveGuestOrder, settleGuestCart, forgetGuestOrder } from '@/lib/guestOrders';
 import { isAllowedPaymentUrl } from '@/lib/safeNavigation';
 import { localStore } from '@/lib/storage';
 import { isFeatureEnabled, useFeatureFlags } from '@/lib/featureConfig';
@@ -82,9 +82,14 @@ export default function Checkout() {
   const rewardStateKey = user?.id && campus?.id ? `hg_checkout_rewards:${user.id}:${campus.id}` : null;
   const pendingKey = campus?.id ? `hg_pending_checkout:${user?.id || 'guest'}:${campus.id}` : null;
   const [rewardSelection, setRewardSelection] = useState({ key: null as string | null, hp: 'none', delivery: 'none' });
+  const checkoutScope = useRef(pendingKey); checkoutScope.current = pendingKey;
+  const attemptNonce = useRef<string | null>(null);
+  const abandonment = useRef(false);
+  const [abandoning, setAbandoning] = useState(false);
   const [pendingCheckout, setPendingCheckout] = useState<any>(null);
   const [rewardOptions, setRewardOptions] = useState<{ hp: any[]; delivery: any[] }>({ hp: [], delivery: [] });
   useEffect(() => {
+    attemptNonce.current = pendingKey ? localStore.getItem(pendingKey + ':attempt') : null;
     let saved;
     try { saved = JSON.parse(rewardStateKey ? localStore.getItem(rewardStateKey) || 'null' : 'null'); } catch { saved = null; }
     setRewardSelection({ key: rewardStateKey, hp: typeof saved?.hp === 'string' ? saved.hp : 'none', delivery: typeof saved?.delivery === 'string' ? saved.delivery : 'none' });
@@ -98,7 +103,10 @@ export default function Checkout() {
     if (rewardStateKey) localStore.setItem(rewardStateKey, JSON.stringify(next));
     setRewardSelection(next);
   };
-  const clearPendingCheckout = () => { if (pendingKey) localStore.removeItem(pendingKey); setPendingCheckout(null); };
+  const clearPendingCheckout = (rotate = false) => {
+    if (rotate && pendingKey) { attemptNonce.current = crypto.randomUUID(); localStore.setItem(pendingKey + ':attempt', attemptNonce.current); }
+    if (pendingKey) localStore.removeItem(pendingKey); setPendingCheckout(null);
+  };
 
   const [loading, setLoading] = useState(true);
   const [referenceLoading, setReferenceLoading] = useState(true);
@@ -517,7 +525,7 @@ export default function Checkout() {
       }
     }, 300);
     return () => { active = false; clearTimeout(timer); controller.abort(); };
-  }, [quoteKey, quoteRetry, addressNeedsReselect]);
+  }, [quoteKey, quoteRetry, addressNeedsReselect, !!pendingCheckout]);
 
   const validateCheckout = () => {
     setError(null);
@@ -655,6 +663,7 @@ export default function Checkout() {
   };
 
   const submitOrder = async (payload: CreateOrderPayload, recover = false) => {
+    const submittedCart = recover ? pendingCheckout?.cart_items : cart?.items;
     if (!orderRequest.current) {
       orderRequest.current = (async () => {
         const base = { ...payload };
@@ -669,9 +678,10 @@ export default function Checkout() {
         const idempotency_key = recover ? pendingCheckout.payload.idempotency_key : await checkoutIntent({
           actor: user?.id || 'guest', campus: campus?.id,
           cartRows: (cart?.items || []).map((item) => item.id), payload: base,
+          ...(attemptNonce.current ? { attempt: attemptNonce.current } : {}),
         });
         const requestPayload = recover ? pendingCheckout.payload : { ...payload, expected_total: quote.total_amount, idempotency_key };
-        const checkpoint = { payload: requestPayload, created_at: new Date().toISOString() };
+        const checkpoint = { payload: requestPayload, cart_items: submittedCart, created_at: new Date().toISOString() };
         if (pendingKey) localStore.setItem(pendingKey, JSON.stringify(checkpoint));
         setPendingCheckout(checkpoint);
         try {
@@ -695,24 +705,25 @@ export default function Checkout() {
     const order = result?.order || result;
     if (!order?.id) throw new Error(msg('FE_CHECKOUT_CONFIRMATION_MISSING', 'We could not confirm the saved order. Recover this checkout before trying another order.'));
     if (['cancelled', 'refunded'].includes(order.status)) {
-      clearPendingCheckout();
+      clearPendingCheckout(true);
+      if (!isAuthenticated) forgetGuestOrder(order.id);
       throw new Error('This checkout has closed. Your cart is still available; review it and try again.');
     }
     if (pendingKey) {
       try {
         const checkpoint = JSON.parse(localStore.getItem(pendingKey) || 'null');
         if (checkpoint) {
-          const saved = { ...checkpoint, order_id: order.id };
+          const saved = { ...checkpoint, order_id: order.id, claim_token: order.claim_token };
           localStore.setItem(pendingKey, JSON.stringify(saved)); setPendingCheckout(saved);
         }
       } catch { /* Existing checkout recovery remains available in state. */ }
     }
-    rememberPaymentCart(order, cart?.items);
+    if (Array.isArray(submittedCart)) rememberPaymentCart(order, submittedCart);
     let paymentError = '';
     if (isAuthenticated) { try { await refreshUser(); } catch { /* ignore */ } }
     try { await refreshCart(); } catch { /* confirmation still resolves a successful order */ }
     
-    if (!isAuthenticated) saveGuestOrder(order, order.claim_token, cart?.items || []);
+    if (!isAuthenticated) saveGuestOrder(order, order.claim_token, submittedCart);
 
     if (payload.is_scheduled || payload.accept_next_available_date) { try { sessionStorage.removeItem('hg_scheduled_window'); } catch { /* ignore */ } }
     const cardPending = order?.payment_status === 'pending' && Number(order?.card_amount_used) > 0;
@@ -770,6 +781,35 @@ export default function Checkout() {
     setPlacing(false);
   };
 
+  const startNewCheckout = async () => {
+    if (!pendingCheckout || placing || scheduling || abandonment.current) return;
+    const scope = pendingKey;
+    abandonment.current = true; setAbandoning(true); setError(null);
+    try {
+      const result = await mockApi.orders.abandonCheckout({
+        idempotency_key: pendingCheckout.payload.idempotency_key,
+        guest_email: pendingCheckout.payload.guest_email, guest_phone: pendingCheckout.payload.guest_phone,
+      });
+      if (checkoutScope.current !== scope) return;
+      if (result.state === 'paid' && result.order?.id) {
+        const paid = { ...result.order, campus_id: campus.id, user_id: user?.id || null };
+        if (Array.isArray(pendingCheckout.cart_items)) rememberPaymentCart(paid, pendingCheckout.cart_items);
+        if (!isAuthenticated) saveGuestOrder(paid, paid.claim_token, pendingCheckout.cart_items);
+        clearPendingCheckout();
+        navigate(`/order-confirmation/${result.order.id}`, { state: { claim_token: result.order.claim_token, startPayment: false } });
+        return;
+      }
+      if (result.state !== 'closed') throw new Error('Could not close the previous checkout. Please retry.');
+      const oldId = result.order_id || pendingCheckout.order_id;
+      if (!isAuthenticated && oldId) forgetGuestOrder(oldId);
+      clearPendingCheckout(true);
+      setQuoteState(null); setQuoteRetry((value) => value + 1); setReschedule(null);
+      await Promise.allSettled([refreshCart(), refreshUser(), refreshFreeSides()]);
+      toast({ title: 'Previous checkout closed', description: 'Review your current cart and start a new order.' });
+    } catch (exception) { setError(exception.message || 'Could not close the previous checkout. Please retry.'); }
+    finally { abandonment.current = false; setAbandoning(false); }
+  };
+
   // Confirm the "schedule for the next available day" offer — one extra attempt only.
   const handleAcceptReschedule = async () => {
     if (!reschedule) return;
@@ -805,8 +845,9 @@ export default function Checkout() {
 
       {pendingCheckout && <section role="alert" className="rounded-2xl border border-primary/40 bg-primary/5 p-4 space-y-2">
         <h2 className="font-bold">{msg('FE_CHECKOUT_RECOVER_TITLE', 'Recover your previous checkout')}</h2>
-        <p className="text-sm text-muted-foreground">{msg('FE_CHECKOUT_RECOVER_HELP', 'Your previous checkout did not return confirmation. Recover it before placing another order; this reuses the same request.')}</p>
-        <button disabled={placing || scheduling} onClick={recoverCheckout} className="rounded-full bg-gradient-cta text-white font-bold px-4 py-2 disabled:opacity-50">{msg('FE_CHECKOUT_RECOVER_ACTION', 'Recover checkout')}</button>
+        <p className="text-sm text-muted-foreground">{msg('FE_CHECKOUT_RECOVER_HELP', 'Your previous checkout did not return confirmation. You can resume that payment, or close the unpaid checkout and use your current cart for a new order.')}</p>
+        <button disabled={placing || scheduling || abandoning} onClick={recoverCheckout} className="rounded-full bg-gradient-cta text-white font-bold px-4 py-2 disabled:opacity-50">{msg('FE_CHECKOUT_RECOVER_ACTION', 'Recover checkout')}</button>
+        <button type="button" disabled={placing || scheduling || abandoning} onClick={startNewCheckout} className="ml-2 rounded-full border border-border px-4 py-2 font-semibold disabled:opacity-50">{abandoning ? 'Closing previous checkout…' : 'Start a new checkout'}</button>
       </section>}
       {isAuthenticated && <section className="rounded-2xl border border-border bg-card p-4 space-y-3" aria-label={msg('FE_CHECKOUT_REWARDS_TITLE', 'Available rewards')}>
         <h2 className="font-bold">{msg('FE_CHECKOUT_REWARDS_TITLE', 'Available rewards')}</h2>

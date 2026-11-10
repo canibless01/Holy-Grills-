@@ -36,7 +36,8 @@ export function useRiderData() {
 
   const applyBatch = (b) => {
     setBatch(b);
-    const orderIds = new Set((b?.orders || []).map((o) => o.id));
+    const visibleOrders = b?.batches?.length ? b.batches.flatMap((view) => view.orders || []) : (b?.orders || []);
+    const orderIds = new Set(visibleOrders.map((o) => o.id));
     if (initialized.current) {
       const newIds = [...orderIds].filter((id) => !prevOrderIds.current.has(id));
       if (newIds.length > 0) play('push_received');
@@ -138,9 +139,11 @@ export function useRiderData() {
     setActionLoading(null);
   };
 
-  const handleBatchPickup = async () => {
+  const handleBatchPickup = async (batchId?: string) => {
     if (pickupGuard.current || actionLoading) return;
-    const pending = (batch?.orders || []).filter(order => ['ready', 'assigned'].includes(order.status));
+    const selected = batch?.batches?.find((view) => view.id === batchId);
+    const orders = selected?.orders || (batch?.batch?.id === batchId ? batch?.orders : []) || [];
+    const pending = orders.filter(order => ['ready', 'assigned'].includes(order.status));
     if (!pending.length) return;
     pickupGuard.current = true;
     setBatchPickupBusy(true);

@@ -3448,7 +3448,7 @@ class MSG:
     FE_CHECKOUT_CONFIRMATION_MISSING        = "We could not confirm the saved order. Recover this checkout before trying another order."
     FE_CHECKOUT_RECOVERY_FAILED             = "Checkout recovery failed. Please retry."
     FE_CHECKOUT_RECOVER_TITLE               = "Recover your previous checkout"
-    FE_CHECKOUT_RECOVER_HELP                = "Your previous checkout did not return confirmation. Recover it before placing another order; this reuses the same request."
+    FE_CHECKOUT_RECOVER_HELP                = "Your previous checkout did not return confirmation. You can resume that payment, or close the unpaid checkout and use your current cart for a new order."
     FE_CHECKOUT_RECOVER_ACTION              = "Recover checkout"
     FE_CHECKOUT_REWARDS_TITLE               = "Available rewards"
     FE_CHECKOUT_REWARDS_HELP                = "Choose rewards for this order, or save them for later. An HP bonus is reserved for this order and used when it is delivered."
