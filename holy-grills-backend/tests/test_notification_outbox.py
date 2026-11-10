@@ -245,3 +245,30 @@ def test_malformed_ambassador_receipt_is_cancelled_without_private_lookup(setup_
     assert outbox.dispatch_notification(ID)['state']=='cancelled'
     assert not any(call.args==('ambassador_grants',) for call in db.table.call_args_list)
     email.assert_not_called();push.assert_not_called()
+
+
+def test_guest_event_cancellation_notice_is_generic_not_a_new_ticket(setup_dispatch):
+    db,claim,_,email,_=ticket_claim(setup_dispatch,status='cancelled',payment_status='refund_pending')
+    claim['payload']['kind']='event_status_email'
+    claim['payload']['notification'].update(type='event_cancelled',title='Event cancelled',body='Your ticket payment is being refunded.')
+    claim['payload']['notification']['metadata']={'event_id':ID,'event_change_id':TOKEN}
+    db.table.return_value.execute.side_effect=[{'event_id':ID,'user_id':None,'guest_email':'student@example.com','status':'cancelled','payment_status':'refund_pending'},{'metadata':{'latest_change_id':TOKEN,'lifecycle_status':'cancelled'}}]
+    with patch('app.utils.email._prepare_qr_ticket_email') as qr:
+        assert outbox.dispatch_notification(TOKEN)['state']=='accepted'
+    qr.assert_not_called();email.assert_called_once()
+
+
+def test_older_event_date_notice_is_not_sent_after_newer_change(setup_dispatch):
+    db,claim,_,email,push=setup_dispatch
+    claim['payload']['notification']['metadata']={'event_id':ID,'event_change_id':TOKEN}
+    db.table.return_value.execute.side_effect=[{'email':'student@example.com'},{'metadata':{'latest_change_id':ID}}]
+    assert outbox.dispatch_notification(ID)['error']=='event_notice_superseded'
+    email.assert_not_called();push.assert_not_called()
+
+
+def test_queued_ticket_email_uses_current_rescheduled_date(setup_dispatch):
+    db,claim,_,email,_=ticket_claim(setup_dispatch)
+    db.table.return_value.execute.side_effect=[{'event_id':ID,'user_id':None,'guest_email':'student@example.com','status':'confirmed','payment_status':'paid'},{'title':'Updated event','starts_at':'2027-12-01T10:00:00Z','location':'New hall','metadata':{'lifecycle_status':'rescheduled'}}]
+    with patch('app.utils.email._prepare_qr_ticket_email',return_value={'to_email':'student@example.com'}) as qr:
+        assert outbox.dispatch_notification(TOKEN)['state']=='accepted'
+    assert qr.call_args.args[2]=='Updated event' and qr.call_args.args[5]=='2027-12-01T10:00:00Z' and qr.call_args.args[6]=='New hall'

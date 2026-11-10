@@ -270,6 +270,7 @@ const events = {
   // Ownership: for guest tickets the caller MUST pass guest_email as a query
   // param (spec §11.10). apiClient is JSON-only, so fetch the blob directly with
   // the same auth + campus headers and hand back an object URL for <a download>.
+  async ticketQr(eventId, ticketId, guestEmail) { return apiClient.post(`/events/${eventId}/tickets/${ticketId}/qr`, guestEmail ? { guest_email: guestEmail } : {}); },
   async downloadTicketPdf(eventId, ticketId, guestEmail) {
     const token = getToken();
     const guestCampusId = !token && localStorage.getItem('hg_campus_id');

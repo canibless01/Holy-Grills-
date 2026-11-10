@@ -39,6 +39,6 @@ Each is applied once and matches Supabase history. Each new helper has one signa
 
 ## Next work / deferred scope
 
-Event-wide cancellation/rescheduling, durable attendee notices and explicit refund policy are next. Exceptional ticket receipt/resend/recovery and configurable check-in opening times remain in that event-exceptions batch. Real camera/device/provider delivery and actual bank-transfer acceptance remain external acceptance checks. Recovery after a lost immediate wake needs the existing recovery worker to be running; this batch does not configure hosting/Cron.
+Event-wide cancellation/rescheduling, durable attendee notices and the explicit ticket-amount refund policy are now implemented; see EVENT_OPERATIONS_2026_11_10.md. Exceptional ticket receipt/resend/recovery and configurable check-in opening times remain in that event-exceptions batch. Real camera/device/provider delivery and actual bank-transfer acceptance remain external acceptance checks. Recovery after a lost immediate wake needs the existing recovery worker to be running; this batch does not configure hosting/Cron.
 
 Group purchases, buying tickets for friends, ticket ownership/HP attribution and any squad-style distribution are deferred by the owner. Current admission remains individual-ticket based. Ticket transfer and delegated door staff are also deferred.

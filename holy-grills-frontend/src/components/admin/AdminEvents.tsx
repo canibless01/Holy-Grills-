@@ -260,6 +260,7 @@ export default function AdminEvents() {
             <div className="flex flex-wrap items-center gap-1.5">
               {e.is_published ? <Pill tone="green">{msg('FE_EVENTS_PUBLISHED', 'Published')}</Pill> : <Pill tone="amber">{msg('FE_EVENTS_DRAFT', 'Draft')}</Pill>}
               {e.is_featured && <Pill tone="flame">{msg('FE_EVENTS_FEATURED', 'Featured')}</Pill>}
+              {e.metadata?.lifecycle_status === 'cancelled' && <Pill tone="amber">{msg('FE_EVENT_CANCELLED', 'Event cancelled')}</Pill>}
               {e.is_paid && <Pill tone="blue">{msg('FE_EVENTS_PAID', 'Paid event')}</Pill>}
               {e.review_status === 'submitted' && <Pill tone="amber">{msg('FE_ORG_SUBMITTED', 'Awaiting review')}</Pill>}
             </div>

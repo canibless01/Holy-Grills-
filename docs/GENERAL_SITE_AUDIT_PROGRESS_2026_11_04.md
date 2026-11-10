@@ -89,3 +89,9 @@ Evidence and remaining verification are in [stock metadata editing](ADMIN_STOCK_
 ## Wallet/funding reporting — 10 November
 
 [Wallet & Funding](WALLET_FUNDING_ANALYTICS_2026_11_10.md) adds current customer-credit exposure, confirmed funding/activity, automatic plan/payment health and capped calendar projections, with super-admin accounts excluded throughout. One read-only aggregate, campus/role checks, date/CSV/retry/stale-response controls and no authorization exposure are verified. Backend 1,461 tests, seven native browser scenarios, typecheck/build and fresh Supabase rollback arithmetic/projection cases pass. Broader super-admin customer-test isolation and campus paid-order/cart alerts plus daily/weekly summaries are newly requested and next; the confirmed FUTA destination is grillthevibe@gmail.com.
+
+
+
+## Event operations and customer QR — 10 November
+
+[Event operations evidence and use](EVENT_OPERATIONS_2026_11_10.md): implemented admin-reviewed cancellation/rescheduling, transactional member/guest notices, preserved ticket/earning values, full unused ticket-amount refunds through existing wallet/provider paths, and safe handling of late/expired payments. Stale requests and direct lifecycle/date writes are guarded. Customer pages display actual private ticket QR images and avoid false unpaid/refund confirmations. Native, independent-session/process-exit and fresh Supabase rollback matrices pass for the recorded cases. Ticket resend/recovery, admission-opening configuration and live device/provider acceptance remain separate; this is not whole-admin/database sign-off.

@@ -117,11 +117,11 @@ def list_events():
     now = datetime.now(timezone.utc).isoformat()
     q = (
         db.table("events")
-        .select("id,title,slug,description,location,starts_at,ends_at,hp_reward,hp_promo_enabled,is_featured,campus_id,is_global")
+        .select("id,title,slug,description,location,starts_at,ends_at,hp_reward,hp_promo_enabled,is_featured,campus_id,is_global,metadata")
         .eq("is_published", "true")
         .or_(f"ends_at.gt.{now},and(ends_at.is.null,starts_at.gte.{now})")
     )
-    events = q.order("starts_at").execute() or []
+    events = [row for row in (q.order("starts_at").execute() or []) if (row.get("metadata") or {}).get("lifecycle_status") != "cancelled"]
     if campus_id:
         events = [
             e for e in events
@@ -362,7 +362,7 @@ def update_event(event_id):
         description: Not found
     """
     db = get_user_client()
-    event = db.table("events").select("id,starts_at,ends_at,capacity,title,campus_id").eq("id", event_id).single().execute()
+    event = db.table("events").select("id,starts_at,ends_at,location,capacity,title,campus_id").eq("id", event_id).single().execute()
     if not event:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
     assert_can_modify(event.get("campus_id"))
@@ -410,6 +410,16 @@ def update_event(event_id):
     if not safe:
         return jsonify({"error": MSG.NO_VALID_FIELDS}), 400
 
+    changed_schedule = False
+    for field in ('starts_at', 'ends_at'):
+        if field in safe:
+            old = datetime.fromisoformat(str(event[field]).replace('Z', '+00:00')) if event.get(field) else None
+            new = datetime.fromisoformat(str(safe[field]).replace('Z', '+00:00')) if safe[field] else None
+            changed_schedule = changed_schedule or old != new
+    changed_schedule = changed_schedule or ('location' in safe and safe['location'] != event.get('location'))
+    if changed_schedule and db.table('event_tickets').select('id').eq('event_id', event_id).limit(1).execute():
+        return jsonify({'error': MSG.EVENT_CHANGE_USE_WORKSPACE}), 409
+
     if "capacity" in safe and safe["capacity"] is not None:
         try:
             cap = int(safe["capacity"])
@@ -442,7 +452,12 @@ def update_event(event_id):
         if bool_field in safe and not isinstance(safe[bool_field], bool):
             return jsonify({"error": f"{bool_field} must be a boolean"}), 400
 
-    result = db.table("events").eq("id", event_id).update(safe)
+    try:
+        result = db.table("events").eq("id", event_id).update(safe)
+    except SupabaseError as exc:
+        if "HG_EVENT_CHANGE_USE_WORKSPACE" in str(exc):
+            return jsonify({"error": MSG.EVENT_CHANGE_USE_WORKSPACE}), 409
+        raise
     return jsonify(result[0] if isinstance(result, list) else result), 200
 
 
@@ -655,7 +670,7 @@ def register_for_event(event_id):
             return jsonify({"error": str(exc)}), 400
 
         if isinstance(rpc_res, dict) and rpc_res.get("error"):
-            return jsonify({"error": rpc_res["error"]}), 400
+            return jsonify({"error": MSG.EVENT_ALREADY_CANCELLED if "HG_EVENT_ALREADY_CANCELLED" in str(rpc_res["error"]) else rpc_res["error"]}), 400
 
         if isinstance(rpc_res, dict):
             ticket_id = rpc_res.get("ticket_id")
@@ -734,7 +749,7 @@ def register_for_event(event_id):
         return jsonify({"error": str(exc)}), 400
 
     if isinstance(rpc_res, dict) and rpc_res.get("error"):
-        return jsonify({"error": rpc_res["error"]}), 400
+        return jsonify({"error": MSG.EVENT_ALREADY_CANCELLED if "HG_EVENT_ALREADY_CANCELLED" in str(rpc_res["error"]) else rpc_res["error"]}), 400
 
     ticket_id = rpc_res.get("ticket_id")
     already = rpc_res.get("already_registered", False)
@@ -817,6 +832,39 @@ def _initiate_event_card_payment(db, ticket_id, event_id, amount_naira, email, c
     except Exception:
         logger.exception("Event payment initialization failed for ticket %s", ticket_id)
         return {"error": MSG.EVENT_CARD_SETUP_FAILED}
+
+
+@events_bp.route("/<event_id>/tickets/<ticket_id>/qr", methods=["POST"])
+@optional_auth
+@rate_limit(max_requests=120, window_seconds=60)
+def ticket_qr_image(event_id, ticket_id):
+    """Private QR artwork; never send ticket credentials to a third party."""
+    if not validate_uuid(event_id) or not validate_uuid(ticket_id):
+        return jsonify({'error': MSG.TICKET_NOT_FOUND}), 404
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': MSG.EVENT_REQUEST_INVALID}), 400
+    db = get_db()
+    ticket = db.table('event_tickets').select('id,event_id,user_id,guest_email,status,payment_status,qr_expires_at').eq('id', ticket_id).eq('event_id', event_id).single().execute() or {}
+    if not ticket:
+        return jsonify({'error': MSG.TICKET_NOT_FOUND}), 404
+    if ticket.get('user_id'):
+        if str(ticket['user_id']) != str(getattr(g, 'user_id', None)):
+            return jsonify({'error': MSG.TICKET_ACCESS_DENIED}), 403
+    elif not isinstance(data.get('guest_email'), str) or data['guest_email'].strip().lower() != str(ticket.get('guest_email') or '').strip().lower() or not data['guest_email'].strip():
+        return jsonify({'error': MSG.TICKET_ACCESS_DENIED}), 403
+    event = db.table('events').select('metadata,ends_at').eq('id', event_id).single().execute() or {}
+    if not event:
+        return jsonify({'error': MSG.EVENT_NOT_FOUND}), 404
+    expired = ticket.get('qr_expires_at') or event.get('ends_at')
+    if ticket.get('status') not in ('confirmed','checked_in') or ticket.get('payment_status') not in ('paid','not_required') or (event.get('metadata') or {}).get('lifecycle_status') == 'cancelled' or (expired and datetime.fromisoformat(str(expired).replace('Z','+00:00')) <= datetime.now(timezone.utc)):
+        return jsonify({'error': MSG.EVENT_TICKET_NOT_ADMISSIBLE}), 409
+    import io, base64, qrcode
+    payload = f'hg-event:{event_id}:{ticket_id}'
+    image = io.BytesIO();qrcode.make(payload).save(image, format='PNG')
+    response = jsonify({'qr_payload': payload, 'qr_image': 'data:image/png;base64,' + base64.b64encode(image.getvalue()).decode('ascii')})
+    response.headers['Cache-Control'] = 'private, no-store'
+    return response, 200
 
 
 @events_bp.route("/<event_id>/tickets/<ticket_id>/pdf", methods=["GET"])
@@ -981,10 +1029,12 @@ def verify_event_ticket_payment(event_id):
         if not provided_email or provided_email != (ticket.get("guest_email") or "").lower():
             return jsonify({"error": MSG.TICKET_ACCESS_DENIED}), 403
 
-    if ticket.get("payment_status") == "paid":
-        return jsonify({"payment_status": "paid", "ticket_id": ticket_id}), 200
+    if ticket.get("payment_status") in ("paid", "refund_pending", "refunded"):
+        return jsonify({"payment_status": ticket["payment_status"], "ticket_id": ticket_id}), 200
     if str(ticket.get("status") or "").lower() in TICKET_EXCLUDED_STATUSES:
-        return jsonify({"error": MSG.EVENT_CARD_NOT_PENDING, "payment_status": ticket.get("payment_status")}), 409
+        changed_event = db.table("events").select("metadata").eq("id", event_id).single().execute() or {}
+        if (changed_event.get("metadata") or {}).get("lifecycle_status") != "cancelled" or not (ticket.get("metadata") or {}).get("expiry_receipt"):
+            return jsonify({"error": MSG.EVENT_CARD_NOT_PENDING, "payment_status": ticket.get("payment_status")}), 409
     if not current_app.config.get("PAYSTACK_SECRET_KEY"):
         return jsonify({"error": MSG.EVENT_CARD_UNAVAILABLE}), 503
     expected_amount = float(ticket.get("card_amount_used") or 0)
@@ -1011,7 +1061,7 @@ def verify_event_ticket_payment(event_id):
         return jsonify({"error": str(exc), "payment_status": "pending", "ticket_id": ticket_id}), 409
 
     try:
-        confirm_event_ticket_payment(
+        updated_ticket = confirm_event_ticket_payment(
             ticket_id, reference,
             provider_response={**txn, "_amount_breakdown": breakdown},
         )
@@ -1019,7 +1069,7 @@ def verify_event_ticket_payment(event_id):
         logger.error("event ticket verify: confirmation failed for %s: %s", ticket_id, exc)
         return jsonify({"error": MSG.EVENT_CARD_SETUP_FAILED, "payment_status": "pending", "ticket_id": ticket_id}), 502
 
-    return jsonify({"payment_status": "paid", "ticket_id": ticket_id}), 200
+    return jsonify({"payment_status": updated_ticket.get("payment_status", "paid") if isinstance(updated_ticket, dict) else "paid", "ticket_id": ticket_id}), 200
 
 
 def confirm_event_ticket_payment(ticket_id: str, payment_reference: str, provider_response: dict = None) -> dict:

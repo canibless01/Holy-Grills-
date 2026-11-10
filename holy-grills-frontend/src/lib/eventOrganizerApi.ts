@@ -6,6 +6,7 @@ export const eventOrganizerApi = {
   edit: (id, body) => apiClient.patch(`${root}/${id}`, body),
   account: (id) => apiClient.get(`${root}/${id}`),
   submit: (id) => apiClient.post(`${root}/${id}/submit`, {}),
+  change: (id, body) => apiClient.post(`${root}/${id}/change`, body, { timeoutMs: 45000 }),
   review: (id, body) => apiClient.post(`${root}/${id}/review`, body),
   attendees: (id, params = {}) => apiClient.get(`${root}/${id}/attendees`, params),
   export: (id) => apiClient.get(`${root}/${id}/attendees/export`),

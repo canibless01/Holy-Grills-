@@ -6,6 +6,7 @@ import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { formatDateTime, formatNaira } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import EventDetailSkeleton from '@/components/skeletons/EventDetailSkeleton';
+import TicketQrImage from '@/components/events/TicketQrImage';
 import EventCheckInScanner from '@/components/EventCheckInScanner';
 import RegisterModal from '@/components/events/RegisterModal';
 import { msg } from '@/lib/messages';
@@ -43,7 +44,7 @@ export default function EventDetail() {
           }
         } catch { /* my-tickets unavailable for guests */ }
         setEvent({ ...e, checked_in: !!(myTicket?.checked_in) });
-        if (myTicket) setTicket({ ticket_id: myTicket.ticket_id, status: myTicket.status || 'confirmed', qr_code: myTicket.qr_token, tier_name: myTicket.tier_name });
+        if (myTicket && ['paid', 'not_required'].includes(myTicket.payment_status)) setTicket({ ticket_id: myTicket.ticket_id, status: myTicket.status || 'confirmed', qr_code: myTicket.qr_token, tier_name: myTicket.tier_name, payment_status: myTicket.payment_status });
         try { setTiers(await liveApi.events.getTiers(id)); } catch { /* no tiers */ }
       } catch (e) { console.error(e); }
       setLoading(false);
@@ -66,9 +67,11 @@ export default function EventDetail() {
     let cancelled = false;
     const confirmAndClean = (found) => {
       if (cancelled) return;
-      setTicket({ ticket_id: found?.ticket_id || found?.id, status: found?.status || 'confirmed', qr_code: found?.qr_token, tier_name: found?.tier_name, guest_email: found?.guest_email });
+      setTicket({ ticket_id: found?.ticket_id || found?.id, status: found?.status || 'confirmed', qr_code: found?.qr_token, tier_name: found?.tier_name, guest_email: found?.guest_email || guestEmail, payment_status: found?.payment_status });
       setPaystackProcessing(false);
-      toast({ title: msg('FE_EVENT_DETAIL_PAYMENT_CONFIRMED', '✅ Payment confirmed!'), description: msg('FE_EVENT_DETAIL_YOUR_TICKET_IS_READY', 'Your ticket is ready.') });
+      if (['refund_pending', 'refunded'].includes(found?.payment_status)) {
+        toast({ title: msg('FE_EVENT_REFUND_RECORDED', 'Ticket refund recorded'), description: msg('FE_EVENT_REFUND_RETURN_HELP', 'This payment did not issue an entry ticket. Check the event update for refund details.') });
+      } else toast({ title: msg('FE_EVENT_DETAIL_PAYMENT_CONFIRMED', '✅ Payment confirmed!'), description: msg('FE_EVENT_DETAIL_YOUR_TICKET_IS_READY', 'Your ticket is ready.') });
       sessionStorage.removeItem('hg_event_guest_email');
       window.history.replaceState({}, '', window.location.pathname);
     };
@@ -76,6 +79,12 @@ export default function EventDetail() {
       try {
         // Idempotent: if the webhook already confirmed the ticket this returns paid.
         const verified = await liveApi.events.verifyTicket(id, guestEmail ? { reference, guest_email: guestEmail } : { reference });
+        if (['refund_pending', 'refunded'].includes(verified?.payment_status)) {
+          confirmAndClean({ ...verified, status: 'cancelled' });
+          const latest = unwrap(await liveApi.events.get(id));
+          if (!cancelled) setEvent(latest);
+          return;
+        }
         if (verified?.payment_status === 'paid') {
           if (isAuthenticated) {
             const mine = await liveApi.events.myTickets();
@@ -109,16 +118,16 @@ export default function EventDetail() {
     return () => { cancelled = true; };
   }, [id, isAuthenticated]);
 
-  const price = event?.ticket_price ?? 0;
+  const price = event?.ticket_price ?? (tiers.length ? Number(tiers[0].price_naira) || 0 : 0);
   const hpReward = event?.hp_per_attendee ?? event?.hp_reward ?? 0;
-  const isFree = !event?.is_paid || price === 0;
+  const isFree = !event?.is_paid;
   const effPrice = selectedTier ? (selectedTier.price_naira ?? 0) : price;
 
   const handleScannedToken = async (qrToken) => {
     setShowScanner(false);
     setScanning(true);
     try {
-      const result = unwrap(await liveApi.events.checkin(id, { qr_token: qrToken }));
+      const result = unwrap(await liveApi.events.checkin(id, { qr_token: qrToken, ...(ticket?.ticket_id ? { ticket_id: ticket.ticket_id } : {}) }));
       const hpAdded = result?.hp_added_to_active ?? result?.hp_added_to_pending ?? result?.hp_earned ?? result?.pending_hp ?? result?.hp_awarded ?? 0;
       setCheckinResult({ ...result, hp_added_to_active: hpAdded });
       await refreshHp();
@@ -194,6 +203,7 @@ export default function EventDetail() {
         </span>
       </div>
 
+      {event.metadata?.lifecycle_status === 'rescheduled' && <div className="rounded-2xl border border-primary/20 bg-secondary p-4 text-sm"><p className="font-bold">{msg('FE_EVENT_RESCHEDULED', 'Event rescheduled')}</p><p>{event.metadata.change_reason}</p><p className="mt-1 text-xs">{msg('FE_EVENT_TICKET_STILL_VALID', 'Your existing ticket remains valid for the date and venue shown above.')}</p></div>}
       {event.description && (
         <div className="rounded-2xl bg-card border border-border p-4 shadow-card">
           <h3 className="font-bold text-sm text-foreground mb-2">About this event</h3>
@@ -201,16 +211,16 @@ export default function EventDetail() {
         </div>
       )}
 
-      <div className="rounded-2xl bg-secondary/50 border border-border p-4 flex gap-3">
+      {event.metadata?.lifecycle_status !== 'cancelled' && <div className="rounded-2xl bg-secondary/50 border border-border p-4 flex gap-3">
         <Info className="w-4 h-4 text-primary mt-0.5 shrink-0" />
         <div className="text-xs text-foreground leading-relaxed">
-          {isFree
+          {!isAuthenticated ? msg('FE_EVENT_GUEST_ENTRY_HELP', 'Show your ticket QR to the organizer, or scan the venue QR to record your attendance.') : isFree
             ? "Free to attend. Register so we know you're coming, then scan the Holy Grill QR at the entrance to claim your HP."
             : "After registering, your ticket is your payment proof. At the event, scan the Holy Grill QR code at the entrance to check in and earn your HP."}
         </div>
-      </div>
+      </div>}
 
-      {tiers.length > 0 && (
+      {tiers.length > 0 && event.metadata?.lifecycle_status !== 'cancelled' && (
         <div className="rounded-2xl bg-card border border-border p-4 shadow-card">
           <h3 className="font-bold text-sm text-foreground mb-3">Ticket Tiers</h3>
           <div className="space-y-2">
@@ -236,10 +246,10 @@ export default function EventDetail() {
         <div className="rounded-2xl bg-success/10 border border-success/20 p-4 text-center animate-count-up">
           <div className="text-4xl mb-2">✅</div>
           <h3 className="font-heading font-bold text-lg text-success">{checkinResult.replayed ? msg('FE_EVENT_CHECKIN_REPLAY', 'Your check-in is already confirmed') : 'Check-in Successful!'}</h3>
-          <div className="flex items-center justify-center gap-1 mt-2">
+          {checkinResult.is_guest ? <p className="mt-2 text-sm">{msg('FE_EVENT_ATTENDANCE_RECORDED', 'Your attendance has been recorded.')}</p> : <div className="flex items-center justify-center gap-1 mt-2">
             <Flame className="w-5 h-5 text-primary" />
             <span className="font-bold text-primary text-sm">{checkinResult.replayed ? msg('FE_EVENT_HP_RECEIPT', '{amount} HP recorded for this check-in', { amount: checkinResult.hp_added_to_active }) : msg('FE_EVENT_ACTIVE_HP', '+{amount} HP added to your active balance', { amount: checkinResult.hp_added_to_active })}</span>
-          </div>
+          </div>}
         </div>
       )}
 
@@ -261,22 +271,22 @@ export default function EventDetail() {
         </div>
       )}
 
-      {event.checked_in ? (
+      {event.metadata?.lifecycle_status === 'cancelled' ? <div className="space-y-3 rounded-2xl border border-destructive/20 bg-destructive/5 p-5"><h3 className="font-heading font-bold text-destructive">{msg('FE_EVENT_CANCELLED', 'Event cancelled')}</h3><p className="text-sm">{event.metadata.change_reason}</p><p className="text-xs leading-relaxed">{msg('FE_EVENT_PUBLIC_CANCEL_POLICY', 'Unused paid tickets receive a refund of the ticket amount paid; separately charged payment-provider fees are excluded. Account purchases return to the Holy Grills wallet with spent HP restored; guest card refunds return through the payment provider. Checked-in tickets are excluded. Contact support with your ticket ID if you need help.')}</p><Link to="/contact" className="inline-flex rounded-full bg-secondary px-4 py-2 text-sm font-bold">{msg('FE_EVENT_CONTACT', 'Contact support')}</Link></div> : ['refund_pending', 'refunded'].includes(ticket?.payment_status) ? <div className="rounded-2xl border border-border bg-card p-4"><p className="font-bold">{msg('FE_EVENT_REFUND_RECORDED', 'Ticket refund recorded')}</p><p className="mt-2 text-sm text-muted-foreground">{msg('FE_EVENT_REFUND_RETURN_HELP', 'This payment did not issue an entry ticket. Check the event update for refund details.')}</p></div> : event.checked_in ? (
         <div className="rounded-2xl bg-success/10 border border-success/20 p-4 flex items-center gap-3">
           <Check className="w-6 h-6 text-success shrink-0" />
           <div>
             <div className="font-bold text-success text-sm">You've checked in! 🎉</div>
-            <div className="text-xs text-success">{hpReward} HP added to your pending pool</div>
+            <div className="text-xs text-success">{msg('FE_EVENT_ATTENDANCE_RECORDED', 'Your attendance has been recorded.')}</div>
           </div>
         </div>
       ) : isFree ? (
         <div className="rounded-2xl bg-card border-2 border-primary/20 p-5 text-center space-y-3 shadow-card">
-          <QrCode className="w-12 h-12 text-muted-foreground mx-auto" />
+          <div>{ticket ? <TicketQrImage eventId={id} ticketId={ticket.ticket_id} guestEmail={ticket.guest_email} /> : <QrCode className="w-12 h-12 text-muted-foreground mx-auto" />}</div>
           <div>
             <div className="font-bold text-foreground text-sm">{ticket ? "You're in. Bring a friend." : 'Ready to check in?'}</div>
             <div className="text-xs text-muted-foreground mt-1">
               {ticket
-                ? 'Point your camera at the Holy Grill QR code displayed at the event entrance to claim your HP.'
+                ? (isAuthenticated ? 'Point your camera at the Holy Grill QR code displayed at the event entrance to claim your HP.' : msg('FE_EVENT_GUEST_ENTRY_HELP', 'Show your ticket QR to the organizer, or scan the venue QR to record your attendance.'))
                 : "Register so we know you're coming, then scan the QR at the entrance."}
             </div>
           </div>
@@ -306,10 +316,10 @@ export default function EventDetail() {
                 <Ticket className="w-3.5 h-3.5" /> {ticket.tier_name}
               </div>
             )}
-            <p className="text-xs text-muted-foreground mt-2">Your entry is confirmed. At the event, scan the Holy Grill QR code at the entrance to check in and earn {hpReward} HP.</p>
+            <p className="text-xs text-muted-foreground mt-2">{isAuthenticated ? <>Your entry is confirmed. At the event, scan the Holy Grill QR code at the entrance to check in and earn {hpReward} HP.</> : msg('FE_EVENT_GUEST_ENTRY_HELP', 'Show your ticket QR to the organizer, or scan the venue QR to record your attendance.')}</p>
           </div>
           <div className="rounded-2xl border-2 border-dashed border-primary/30 p-4 text-center bg-primary/5">
-            <QrCode className="w-16 h-16 text-foreground mx-auto mb-2" />
+            <TicketQrImage eventId={id} ticketId={ticket.ticket_id} guestEmail={ticket.guest_email} />
             <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Ticket ID</div>
             <div className="font-mono font-bold text-sm text-foreground break-all">{ticket.ticket_id}</div>
             {ticket.qr_code && <div className="font-mono text-[10px] text-muted-foreground mt-1 break-all">{ticket.qr_code}</div>}
@@ -346,7 +356,7 @@ export default function EventDetail() {
         </button>
       )}
 
-      {showRegister && (
+      {showRegister && event.metadata?.lifecycle_status !== 'cancelled' && (
         <RegisterModal
           event={event}
           tiers={tiers}
@@ -364,7 +374,7 @@ export default function EventDetail() {
         />
       )}
 
-      {showScanner && (
+      {showScanner && event.metadata?.lifecycle_status !== 'cancelled' && (
         <EventCheckInScanner eventId={id} onScan={handleScannedToken} onClose={() => setShowScanner(false)} />
       )}
     </div>

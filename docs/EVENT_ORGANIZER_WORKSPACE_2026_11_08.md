@@ -5,7 +5,7 @@ This completes the initial organizer draft → admin review/publication → own-
 ## How to use it
 
 1. A normal account signs up with its campus. In Admin → Users, its campus admin or a super admin assigns **Event Organizer**. The account refreshes/signs in to pick up the role.
-2. The organizer opens **/event-manager**, also available through the student/staff panel switcher. Admins can enter through the admin header or Events → **Organizer / settlement** on the relevant event. Each organizer sees only owned events; admins retain campus scope and super admins retain global access.
+2. The organizer opens **/event-manager**, also available through the student/staff panel switcher. Admins can enter through the admin header or Events → **Open event workspace** on the relevant event. Each organizer sees only owned events; admins retain campus scope and super admins retain global access.
 3. The organizer creates an event draft (title, description, venue, WAT times, capacity and optional Cloudinary image), saves it, and submits it. Submitted/approved drafts are not directly editable by the organizer. An admin can request changes with private feedback; the organizer edits and resubmits.
 4. Admin event/tier controls finalize public prices and attendee HP. The workspace assigns the organizer and sets the **separate fixed organizer amount per tier**. Approval requires active tiers to have agreed amounts, then publishes the event. Set ownership/terms before tickets are issued; ownership cannot be changed after issuance. Super-admin draft creation supports both the selected campus and global scope.
 5. The workspace shows confirmed/pending/cancelled tickets, check-ins, agreed amounts, earned/paid/reserved/available settlement balances and attendee search/export. It offers a locally rendered/downloadable venue QR and ticket scanner/manual fallback. Admission uses the existing atomic reward receipt, so retrying a checked-in ticket cannot award HP again.
@@ -43,7 +43,7 @@ Each was applied once, with intended grants and no duplicate helper overload/sna
 
 ## Still separate
 
-Event-wide cancellation/rescheduling with durable attendee notices and an explicit refund policy; exceptional ticket receipt/resend/recovery cases; configurable check-in opening times; independent simultaneous-session/process-kill proofs; actual handset camera and real bank-transfer/provider acceptance. Group purchases, transferable tickets and delegated door staff are additional product scope, not silently included in this release. The wider admin/database audit remains open in GENERAL_SITE_AUDIT_PROGRESS_2026_11_04.md.
+Event-wide cancellation/rescheduling, durable attendee notices, cancellation refund policy and independent-session/process-exit cases now have implementation and verification in [event operations](EVENT_OPERATIONS_2026_11_10.md) and [event reliability](EVENT_RELIABILITY_2026_11_09.md). Exceptional ticket resend/expired-reservation recovery, configurable check-in opening times and actual handset/provider/bank-transfer acceptance remain separate. Group purchases, transferable tickets and delegated door staff are deferred product scope. The wider admin/database audit remains open in GENERAL_SITE_AUDIT_PROGRESS_2026_11_04.md.
 
 ## Admin event layout — 9 November 2026
 

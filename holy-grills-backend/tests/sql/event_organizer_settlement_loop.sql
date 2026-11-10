@@ -42,7 +42,10 @@ BEGIN
  r:=public.hg_admit_event_ticket(e,t1,owner,NULL,c,0);IF NOT (r->>'replayed')::boolean THEN RAISE EXCEPTION 'owner duplicate admission failed';END IF;
  BEGIN PERFORM public.hg_admit_event_ticket(e,t2,other_owner,NULL,c,0);RAISE EXCEPTION 'other organizer admitted ticket';EXCEPTION WHEN raise_exception THEN IF SQLERRM='other organizer admitted ticket' THEN RAISE;END IF;END;
  BEGIN PERFORM public.hg_event_payout_action(owner,e,req,'request',bank);RAISE EXCEPTION 'payout before event completion';EXCEPTION WHEN check_violation THEN NULL;END;
+ -- Privileged fixture clock setup, not a production rescheduling action.
+ PERFORM set_config('hg.event_operation',e::text,true);
  UPDATE public.events SET starts_at=now()-interval '2 days',ends_at=now()-interval '1 day' WHERE id=e;
+ PERFORM set_config('hg.event_operation','',true);
  r:=public.hg_event_payout_action(owner,e,cancel_req,'request',bank);
  r:=public.hg_event_payout_action(owner,e,cancel_req,'cancel');r:=public.hg_event_payout_action(owner,e,cancel_req,'cancel');IF r->>'state'<>'cancelled' THEN RAISE EXCEPTION 'cancel replay failed';END IF;
  r:=public.hg_event_payout_action(owner,e,req,'request',bank);IF (r->>'amount')::numeric<>3200 THEN RAISE EXCEPTION 'request amount not authoritative';END IF;

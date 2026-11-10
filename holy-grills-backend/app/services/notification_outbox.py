@@ -20,10 +20,11 @@ def dispatch_notification(notification_id):
             saved=db.rpc('hg_finish_notification_dispatch',{'p_id':notification_id,'p_token':claim['token'],'p_outcome':outcome})
             return outcome if saved is True else {'state':'lease_lost'}
         refund_email=claim['payload'].get('kind')=='event_refund_email'
-        ticket_email=refund_email or claim['payload'].get('kind')=='event_ticket_email'
+        status_email=claim['payload'].get('kind')=='event_status_email'
+        ticket_email=status_email or refund_email or claim['payload'].get('kind')=='event_ticket_email'
         if ticket_email:
             ticket=db.table('event_tickets').select('event_id,user_id,guest_email,status,payment_status').eq('id',claim['payload']['ticket_id']).single().execute() or {}
-            valid_ticket_state=(ticket.get('status')=='cancelled' and ticket.get('payment_status')=='refunded') if refund_email else (ticket.get('status') in ('confirmed','checked_in') and ticket.get('payment_status') in ('paid','not_required'))
+            valid_ticket_state=status_email or ((ticket.get('status')=='cancelled' and ticket.get('payment_status')=='refunded') if refund_email else (ticket.get('status') in ('confirmed','checked_in') and ticket.get('payment_status') in ('paid','not_required')))
             if (not valid_ticket_state
                     or ticket.get('event_id')!=claim['payload']['event_id'] or ticket.get('user_id')!=snapshot.get('user_id')):
                 return finish({'state':'cancelled','error':'ticket_not_payable_or_owner_changed'})
@@ -53,12 +54,20 @@ def dispatch_notification(notification_id):
                 return finish({'state':'cancelled','error':'campaign_cancelled'})
         from app.services import notification_service as service
         meta=snapshot.get('metadata') or {}
+        if meta.get('event_change_id'):
+            current_event=db.table('events').select('id,metadata').eq('id',meta['event_id']).single().execute() or {}
+            if str((current_event.get('metadata') or {}).get('latest_change_id'))!=str(meta['event_change_id']):
+                return finish({'state':'cancelled','error':'event_notice_superseded'})
         prepared=claim['payload'].get('prepared')
         if channel=='email':
             if str(profile.get('email') or '').strip().lower()!=str(snapshot.get('email') or '').strip().lower():
                 return finish({'state':'skipped','error':'recipient_email_changed'})
             if prepared is None:
-                if ticket_email and not refund_email:
+                if ticket_email and not refund_email and not status_email:
+                    event=db.table('events').select('title,starts_at,location,metadata').eq('id',claim['payload']['event_id']).single().execute() or {}
+                    if (event.get('metadata') or {}).get('lifecycle_status')=='cancelled':
+                        return finish({'state':'cancelled','error':'event_cancelled'})
+                    meta={**meta,'event_title':event.get('title') or meta.get('event_title'),'event_date':event.get('starts_at') or meta.get('event_date'),'event_location':event.get('location') or meta.get('event_location')}
                     from app.utils.email import _prepare_qr_ticket_email
                     prepared=_prepare_qr_ticket_email(snapshot['email'],snapshot['name'],meta['event_title'],
                         claim['payload']['ticket_id'],claim['payload']['event_id'],meta.get('event_date'),meta.get('event_location'))

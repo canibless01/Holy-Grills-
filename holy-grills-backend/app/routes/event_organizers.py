@@ -15,6 +15,11 @@ bp=Blueprint('event_organizers',__name__)
 logger=get_logger(__name__)
 ROLES=('event_organizer','admin')
 ERRORS={
+ 'HG_EVENT_CHANGE_STALE':('EVENT_CHANGE_STALE',409),
+ 'HG_EVENT_CHANGE_INVALID':('EVENT_CHANGE_INVALID',400),
+ 'HG_EVENT_ALREADY_CANCELLED':('EVENT_ALREADY_CANCELLED',409),
+ 'HG_EVENT_ADMISSION_STARTED':('EVENT_CHANGE_ADMISSION_STARTED',409),
+ 'HG_EVENT_CHANGE_UNCHANGED':('EVENT_CHANGE_UNCHANGED',400),
  'HG_ORGANIZER_ACCESS':('RESOURCE_ACCESS_DENIED',403),
  'HG_ORGANIZER_NOT_FOUND':('EVENT_NOT_FOUND',404),
  'HG_ORGANIZER_REVIEW_LOCKED':('ORG_REVIEW_LOCKED',409),
@@ -32,8 +37,10 @@ ERRORS={
 }
 
 def _failure(exc):
+ if 'HG_EVENT_CHANGE_STALE' in str(exc):return jsonify({'error':MSG.EVENT_CHANGE_STALE,'code':'event_changed'}),409
  if 'Events disabled' in str(exc):return jsonify({'error':MSG.EVENT_RELEASE_CLOSED}),403
  if any(text in str(exc) for text in ('Event not available','Ticket not admissible')):return jsonify({'error':MSG.EVENT_TICKET_NOT_ADMISSIBLE}),409
+ if any(text in str(exc) for text in ('Ticket financial breakdown invalid','Confirmed card payment receipt required','Guest ticket financial breakdown invalid')):return jsonify({'error':MSG.EVENT_CHANGE_FINANCIAL_REVIEW}),409
  for marker,(key,status) in ERRORS.items():
   if marker in str(exc):return jsonify({'error':getattr(MSG,key)}),status
  return db_error_response(exc,'event_organizer')
@@ -147,6 +154,48 @@ def review_event(event_id):
   return jsonify(result),200
  except (ValueError,AttributeError):return jsonify({'error':MSG.INVALID_INPUT}),400
  except SupabaseError as exc:return _failure(exc)
+
+@bp.route('/events/<event_id>/change',methods=['POST'])
+@require_role('admin')
+def change_event_operation(event_id):
+ try:
+  data=_object();action=data.get('action')
+  if action not in ('cancel','reschedule') or set(data)-{'request_id','action','reason','starts_at','ends_at','location','expected_updated_at'}:raise ValueError
+  body={'reason':as_text(data.get('reason'),500),'expected_updated_at':as_instant(data.get('expected_updated_at'))}
+  if len(body['reason'])<10:raise ValueError
+  if action=='reschedule':
+   body.update(starts_at=as_instant(data.get('starts_at')),ends_at=as_instant(data.get('ends_at')),location=as_text(data.get('location'),500))
+   if not validate_datetime_order(body['starts_at'],body['ends_at'])[0]:raise ValueError
+  body['_copy']={'event_cancelled_title':MSG.EVENT_CANCELLED_NOTICE_TITLE,'event_cancelled_body':MSG.EVENT_CANCELLED_NOTICE_BODY,'event_rescheduled_title':MSG.EVENT_RESCHEDULED_NOTICE_TITLE,'event_rescheduled_body':MSG.EVENT_RESCHEDULED_NOTICE_BODY}
+  request_id=_uuid(data.get('request_id'))
+  result=_rpc('hg_change_event_operation',{'p_event':_uuid(event_id),'p_request':request_id,'p_action':action,'p_data':body})
+  if not isinstance(result,dict) or result.get('id')!=request_id:return jsonify({'error':MSG.SERVICE_UNAVAILABLE}),503
+  # Both scans are bounded and operate only on committed durable rows. A lost
+  # wake is recoverable by the existing scheduled dispatch/refund scans.
+  _wake_event_operation(event_id)
+  return jsonify(result),200
+ except ValueError:return jsonify({'error':MSG.EVENT_CHANGE_INVALID}),400
+ except SupabaseError as exc:return _failure(exc)
+
+
+def _wake_event_operation(event_id):
+ import threading
+ from flask import current_app
+ from app.services.notification_outbox import dispatch_notification
+ from app.services.event_refunds import process_event_refund
+ app=current_app._get_current_object()
+ def wake():
+  with app.app_context():
+   try:
+    db=get_db()
+    notices=db.table('notification_deliveries').select('id').eq('status','queued').eq('dispatch_payload->notification->metadata->>event_id',event_id).order('created_at').limit(50).execute() or []
+    for row in notices:dispatch_notification(row['id'])
+    refunds=db.rpc('hg_event_refund_list',{'p_actor_id':actor,'p_event_id':event_id}) or []
+    for row in refunds[:20]:process_event_refund(row['id'])
+   except Exception:logger.warning('Event operation wake deferred for %s',event_id)
+ actor=g.user_id
+ threading.Thread(target=wake,daemon=True).start()
+
 
 @bp.route('/events/<event_id>/attendees',methods=['GET'])
 @require_role(*ROLES)
