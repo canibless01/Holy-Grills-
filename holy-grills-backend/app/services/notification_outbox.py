@@ -39,6 +39,10 @@ def dispatch_notification(notification_id):
             prefs=effective_preferences(db,snapshot['user_id'],profile)
             if channel not in permitted_channels(snapshot['type'],[channel],prefs):
                 return finish({'state':'skipped','error':'recipient_opted_out'})
+        if snapshot.get('type') == 'abandoned_cart':
+            from app.services.cart_recovery import notification_still_valid
+            if not notification_still_valid(db, snapshot):
+                return finish({'state': 'cancelled', 'error': 'cart_recovered_changed_or_preparation_started'})
         if snapshot.get('type') == 'ambassador_grant_issued':
             meta = snapshot.get('metadata') or {}
             if meta.get('reference_type') != 'ambassador_grant' or not meta.get('reference_id'):
@@ -79,6 +83,8 @@ def dispatch_notification(notification_id):
                         provider=meta.get('email_provider'),rich_content=rich,blast_id=blast_id,recipient=snapshot)
             if not prepared:
                 return finish({'state':'skipped','error':'recipient_email_missing'})
+            if snapshot.get('type') == 'abandoned_cart':
+                prepared = {**prepared, 'transactional': False}
         elif channel=='push':
             if prepared is None:
                 if not all(service._get_onesignal_creds()):

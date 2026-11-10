@@ -96,7 +96,7 @@ def test_cost_profile_keeps_all_jobs_with_fewer_nonurgent_scans():
     schedule=celery_app.conf.beat_schedule
     assert len(schedule['send-newsletter-campaigns']['schedule'].minute)==4
     assert len(schedule['process-scheduled-orders']['schedule'].minute)==4
-    assert len(schedule['abandoned-cart-scan']['schedule'].minute)==1
+    assert len(schedule['abandoned-cart-scan']['schedule'].minute)==6 # New operator alerts: 10-minute scan, one existing scheduler.
     assert len(schedule['check-post-delivery-nudges']['schedule'].minute)==1
     assert 'reset-weekly-leaderboard' in schedule and 'reset-monthly-leaderboard' in schedule
     assert celery_app.conf.timezone=='Africa/Lagos'

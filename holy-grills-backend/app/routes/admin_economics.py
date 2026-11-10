@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, request, jsonify
-from app.db import get_user_client
+from app.services.activity_scope import get_reporting_client as get_user_client
 from app.messages import MSG
 from app.middleware.auth import require_role, resolve_scoped_campus_id
 from app.services import economics_dashboard_service

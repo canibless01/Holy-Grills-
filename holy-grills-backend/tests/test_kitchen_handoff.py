@@ -31,7 +31,7 @@ class KitchenHandoffTests(unittest.TestCase):
                 self.assertEqual(status,400);transaction.assert_not_called()
 
     def test_due_filter_uses_end_of_day_instead_of_delivery_hour(self):
-        query=MagicMock();query.in_.return_value=query;query.or_.return_value=query
+        query=MagicMock();query.neq.return_value=query;query.in_.return_value=query;query.or_.return_value=query
         with patch.object(kitchen,'today_wat',return_value=date(2026,10,27)):
             kitchen._due_preparation(query)
         query.in_.assert_called_once_with('payment_status',['paid','partially_refunded'])

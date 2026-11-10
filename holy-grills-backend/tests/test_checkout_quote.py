@@ -11,11 +11,12 @@ MEAL='22222222-2222-4222-8222-222222222222'
 HOSTEL='33333333-3333-4333-8333-333333333333'
 
 class Query:
-    def __init__(self,db,table):self.db,self.table,self.filters,self.one=db,table,[],False
+    def __init__(self,db,table):self.db,self.table,self.filters,self.one=db,table,[],False;self.excluded=[]
     @property
     def not_(self):return self
     def select(self,*a):return self
     def eq(self,key,value):self.filters.append((key,value));return self
+    def neq(self,key,value):self.excluded.append((key,value));return self
     def gte(self,*a):return self
     def in_(self,*a):return self
     def or_(self,*a):return self
@@ -25,7 +26,7 @@ class Query:
     def single(self):self.one=True;return self
     def execute(self):
         if self.table in self.db.fail:raise RuntimeError('database unavailable')
-        rows=[copy.deepcopy(row) for row in self.db.rows.get(self.table,[]) if all((row.get(k.split('->>')[0],{}).get(k.split('->>')[1]) if '->>' in k else row.get(k))==v for k,v in self.filters)]
+        rows=[copy.deepcopy(row) for row in self.db.rows.get(self.table,[]) if all(row.get(k)!=v for k,v in self.excluded) and all((row.get(k.split('->>')[0],{}).get(k.split('->>')[1]) if '->>' in k else row.get(k))==v for k,v in self.filters)]
         return (rows[0] if rows else None) if self.one else rows
     def insert(self,*a):raise AssertionError('Quote attempted an insert')
     def update(self,*a):raise AssertionError('Quote attempted an update')

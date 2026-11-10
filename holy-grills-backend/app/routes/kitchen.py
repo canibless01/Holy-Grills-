@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 kitchen_bp = Blueprint("kitchen", __name__)
 def _due_preparation(query):
     tomorrow = (today_wat() + timedelta(days=1)).isoformat()
-    return (query.in_("payment_status", ["paid", "partially_refunded"])
+    return (query.neq("is_test", True).in_("payment_status", ["paid", "partially_refunded"])
             .or_(f"is_scheduled.eq.false,scheduled_for.lt.{tomorrow}T00:00:00+01:00"))
 
 
@@ -31,7 +31,7 @@ def _today_preparation(query):
 def _preparation_range(query, first_day, last_day):
     start = first_day.isoformat() + 'T00:00:00+01:00'
     end = (last_day + timedelta(days=1)).isoformat() + 'T00:00:00+01:00'
-    return (query.in_('payment_status', ['paid', 'partially_refunded'])
+    return (query.neq("is_test", True).in_('payment_status', ['paid', 'partially_refunded'])
             .not_.is_('delivery_window_id', 'null')
             .or_(f'and(is_scheduled.eq.true,scheduled_for.gte.{start},scheduled_for.lt.{end}),'
                  f'and(is_scheduled.eq.false,created_at.gte.{start},created_at.lt.{end})'))

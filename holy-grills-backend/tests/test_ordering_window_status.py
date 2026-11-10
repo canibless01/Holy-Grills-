@@ -55,6 +55,10 @@ class _Chain:
     def select(self, *_a, **_k):
         return self
 
+    def neq(self, key, value):
+        self.filters["neq_"+key] = value
+        return self
+
     def eq(self, key, value):
         self.filters[key] = value
         return self

@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ShoppingCart, RefreshCw, Search, Bell } from 'lucide-react';
+import { useCampus } from '@/lib/campusContext';
 import { liveApi } from '@/lib/liveApi';
 import { formatNaira, formatDateTime } from '@/lib/hgUtils';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
@@ -23,21 +24,25 @@ const STATUS_TONE = {
  * Backend: GET /admin/abandoned-carts, POST /admin/abandoned-carts/:id/nudge.
  */
 export default function AdminAbandonedCarts() {
+  const { adminCampusId } = useCampus();
+  const generation = useRef(0);
   const [carts, setCarts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(null);
 
   const load = async () => {
-    setLoading(true);
-    try { setCarts(await liveApi.admin.getAbandonedCarts()); } catch { setCarts([]); }
-    setLoading(false);
+    const request = ++generation.current;
+    setLoading(true); setError('');
+    try { const rows = await liveApi.admin.getAbandonedCarts(); if (request === generation.current) setCarts(rows); } catch (e) { if (request === generation.current) setError(e.message || 'Could not load carts. Please retry.'); }
+    if (request === generation.current) setLoading(false);
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { setCarts([]); load(); return () => { generation.current++; }; }, [adminCampusId]);
 
   const filtered = carts.filter((c) => {
-    const okStatus = statusFilter === 'all' || c.status === statusFilter;
+    const okStatus = statusFilter === 'all' || (c.is_recovered ? 'recovered' : 'pending') === statusFilter;
     const name = (c.profiles?.full_name || c.user?.name || c.user?.email || c.user_name || c.user_email || '').toLowerCase();
     const okQ = !q || name.includes(q.toLowerCase());
     return okStatus && okQ;
@@ -62,7 +67,7 @@ export default function AdminAbandonedCarts() {
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="p-2 rounded-xl border border-border text-sm">
           <option value="all">All statuses</option>
           <option value="pending">Pending</option>
-          <option value="pending_unrecovered">Pending</option>
+
           <option value="recovered">Recovered</option>
           <option value="exhausted">Exhausted</option>
           <option value="cleared">Cleared</option>
@@ -70,7 +75,8 @@ export default function AdminAbandonedCarts() {
         <button onClick={load} className="p-2 rounded-xl border border-border"><RefreshCw className="w-4 h-4 text-muted-foreground" /></button>
       </div>
 
-      {filtered.length === 0 ? (
+      {error && <p role="alert" className="rounded-xl bg-destructive/10 p-3 text-destructive">{error}</p>}
+      {!error && filtered.length === 0 ? (
         <div className="text-center py-10 text-muted-foreground">
           <ShoppingCart className="w-10 h-10 mx-auto mb-2 text-muted-foreground" />
           No abandoned carts found.
@@ -78,7 +84,9 @@ export default function AdminAbandonedCarts() {
       ) : (
         <div className="space-y-2">
           {filtered.map((c) => {
-            const items = c.items || c.cart_items || c.snapshot || [];
+            const items = c.cart_payload?.items || c.items || c.cart_items || c.snapshot || [];
+            const phone = c.profiles?.phone || c.guest_phone;
+            const digits = (phone || '').replace(/\D/g, '').replace(/^0(?=\d{10}$)/, '234');
             const userName = c.profiles?.full_name || c.user?.name || c.user_name || 'User';
             return (
               <div key={c.id} className="rounded-2xl bg-card border border-border p-4">
@@ -86,14 +94,17 @@ export default function AdminAbandonedCarts() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-sm text-foreground truncate">{userName}</span>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize ${STATUS_TONE[c.status] || 'bg-secondary text-muted-foreground'}`}>{c.status || 'pending'}</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize ${STATUS_TONE[c.status] || 'bg-secondary text-muted-foreground'}`}>{c.is_recovered ? 'recovered' : 'pending'}</span>
                     </div>
-                    <div className="text-xs text-muted-foreground truncate">{c.user?.email || c.user_email}</div>
+                    <div className="text-xs text-muted-foreground truncate">{c.profiles?.email || c.guest_email || c.user?.email || c.user_email}</div>
+                    <div className="text-xs">{phone && <><a href={`tel:${phone}`}>{phone}</a> · <button onClick={() => navigator.clipboard.writeText(phone).catch(() => toast({ title: 'Copy unavailable; select the phone number.' }))}>Copy</button> · <a href={`https://wa.me/${digits}`} target="_blank" rel="noopener noreferrer">WhatsApp</a></>}</div>
                     <div className="text-[11px] text-muted-foreground">Last active {formatDateTime(c.last_active_at || c.updated_at || c.created_at)}</div>
                   </div>
                   <div className="text-right shrink-0">
-                    <div className="font-heading font-bold text-foreground">{formatNaira(c.subtotal || c.total || 0)}</div>
-                    <div className="text-[10px] text-muted-foreground">{c.recovery_attempts ?? c.nudges_sent ?? c.nudge_count ?? 0} nudge{(c.recovery_attempts ?? c.nudges_sent ?? c.nudge_count ?? 0) === 1 ? '' : 's'}</div>
+                    <div className="font-heading font-bold text-foreground">{c.subtotal != null || c.total != null ? formatNaira(c.subtotal ?? c.total) : 'View checkout details'}</div>
+                    <div className="text-[10px] text-muted-foreground">{c.saved_nudges ?? '—'} reminder{c.saved_nudges === 1 ? '' : 's'} saved</div>
+                    <div className="text-[10px] text-muted-foreground">Email accepted: {c.email_accepted ?? '—'} · Push accepted: {c.push_accepted ?? '—'}</div>
+                    {c.delivery_issues > 0 && <div className="text-[10px] text-destructive">Delivery needs review</div>}
                   </div>
                 </div>
                 {items.length > 0 && (
@@ -105,7 +116,7 @@ export default function AdminAbandonedCarts() {
                     ))}
                   </div>
                 )}
-                {(c.status === 'pending' || c.status === 'pending_unrecovered') && (
+                {(!c.is_recovered && c.user_id) && (
                   <div className="mt-3 flex gap-2">
                     <button onClick={() => nudge(c.id)} disabled={busy === c.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary text-white text-xs font-bold disabled:opacity-50">
                       <Bell className="w-3.5 h-3.5" /> {busy === c.id ? 'Sending…' : 'Send nudge'}

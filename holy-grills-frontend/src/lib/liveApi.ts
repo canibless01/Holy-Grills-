@@ -795,6 +795,7 @@ const admin = {
   async markBatchesUnpaid(batchIds) { return apiClient.post('/riders/admin/payments/mark-unpaid', { batch_ids: Array.isArray(batchIds) ? batchIds : [batchIds] }); },
 
   // --- Abandoned Carts (verified: /admin/abandoned-carts + /:id/nudge) ---
+  async getOperationsEmails(campusId) { return apiClient.get('/admin/operations-emails', { campus_id: campusId }); },
   async getAbandonedCarts() { return unwrap(await apiClient.get('/admin/abandoned-carts'), 'carts', 'abandoned_carts'); },
   async nudgeAbandonedCart(id) { return apiClient.post(`/admin/abandoned-carts/${id}/nudge`); },
   // --- Order Locks Admin (verified: /order-locks/admin/all) ---

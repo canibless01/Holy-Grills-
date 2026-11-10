@@ -26,6 +26,13 @@ def notify_wallet_transfer(transfer_id):
         dispatch_receipt({**row, 'amount': row['amount_kobo'] / 100})
 
 
+@celery_app.task(name="app.tasks.scheduled.dispatch_cart_recovery", ignore_result=True)
+def dispatch_cart_recovery(notification_ids):
+    from app.services.notification_outbox import dispatch_notification
+    for notice_id in notification_ids[:3]:
+        dispatch_notification(notice_id)
+
+
 def _log_cron_execution(job_name: str, status: str, result: dict = None, error: str = None):
     """Record scheduled cron execution in admin_audit_logs for cron_status observability."""
     try:
@@ -1589,44 +1596,12 @@ def send_scheduled_notifications(self):
                            "run (%s) — the job may be skipped next time", exc)
 
 
-def _sync_abandoned_carts_from_cart_items(db):
-    """Create or refresh abandoned_carts rows from cart_items. A cart is abandoned when its newest item is
-    older than 60 minutes. The row needs cart_payload (NOT NULL); the old version omitted it, so every run that
-    found a new abandoned cart failed."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=60)).isoformat()
-    items = (
-        db.table("cart_items")
-        .select("user_id,campus_id,menu_item_id,quantity,selected_variations,selected_addons,updated_at")
-        .limit(5000).execute()
-    ) or []
-    carts = {}
-    for it in items:
-        uid = it.get("user_id")
-        if not uid:
-            continue
-        c = carts.setdefault(uid, {"campus_id": it.get("campus_id"), "last": "", "items": []})
-        c["last"] = max(c["last"], it.get("updated_at") or "")
-        c["items"].append({k: it.get(k) for k in ("menu_item_id", "quantity", "selected_variations", "selected_addons")})
-    for uid, c in carts.items():
-        existing = (
-            db.table("abandoned_carts").select("id").eq("user_id", uid).eq("is_recovered", False).limit(1).execute()
-        )
-        payload = {"items": c["items"], "item_count": len(c["items"])}
-        if existing:
-            # keep the row current: a user who came back is no longer abandoned
-            db.table("abandoned_carts").eq("id", existing[0]["id"]).update({"cart_payload": payload, "last_active_at": c["last"]})
-        elif c["last"] and c["last"] < cutoff:
-            db.table("abandoned_carts").insert({
-                "user_id": uid, "campus_id": c["campus_id"], "cart_payload": payload, "last_active_at": c["last"],
-            })
-
-
 @celery_app.task(name="app.tasks.scheduled.scan_abandoned_carts", bind=True)
 @with_cron_logging("scan-abandoned-carts")
 def scan_abandoned_carts(self):
     """
-    Runs: Every 30 minutes.
-    Flags carts inactive for 60+ minutes as abandoned.
+    Operations: every 10 minutes; campus setting controls abandonment delay.
+    Customer reminders use their separate flag, timing setting and preparation cutoff.
     """
     db = get_db()
     try:
@@ -1638,63 +1613,10 @@ def scan_abandoned_carts(self):
         return {"skipped": "Lock not acquired"}
 
     try:
-        _sync_abandoned_carts_from_cart_items(db)
-        from datetime import datetime, timezone, timedelta
-        from flask import current_app
-        from app.services.notification_service import send_notification
-        now = datetime.now(timezone.utc)
-        cutoff = (now - timedelta(minutes=current_app.config.get("ABANDONED_CART_MINUTES", 60))).isoformat()
-
-        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
-        results = {}
-        from app.services.feature_flags import is_feature_enabled
-
-        for campus in (campuses if isinstance(campuses, list) else []):
-            campus_id = campus["id"]
-            if not is_feature_enabled("abandoned_cart_nudge", campus_id):
-                continue
-            abandoned = (
-                db.table("abandoned_carts")
-                .select("id,user_id,recovery_attempts")
-                .eq("is_recovered", False)
-                .eq("campus_id", campus_id)
-                .lt("last_active_at", cutoff)
-                .execute()
-            ) or []
-
-            notified = 0
-            for cart in abandoned:
-                user_id = cart.get("user_id")
-                if not user_id:
-                    continue
-
-                already_notified = (
-                    db.table("notifications")
-                    .select("id")
-                    .eq("user_id", user_id)
-                    .eq("type", "abandoned_cart")
-                    .gte("created_at", (now - timedelta(hours=24)).isoformat())
-                    .limit(1)
-                    .execute()
-                )
-                if already_notified:
-                    continue
-
-                send_notification(
-                    user_id=user_id,
-                    notif_type="abandoned_cart",
-                    template_data={},
-                    campus_id=campus_id,
-                )
-                db.table("abandoned_carts").eq("id", cart["id"]).update({
-                    "recovery_attempts": int(cart.get("recovery_attempts") or 0) + 1,
-                    "last_recovery_sent_at": now.isoformat(),
-                })
-                notified += 1
-
-            results[campus_id] = {"scanned": len(abandoned), "notified": notified, "cutoff": cutoff}
-
-        return results
+        from app.services.operations_email import capture_and_dispatch
+        operations = capture_and_dispatch()
+        from app.services.cart_recovery import scan
+        return {"operations": operations, "nudges": scan(db)}
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "scan_abandoned_carts"})

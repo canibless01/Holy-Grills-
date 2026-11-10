@@ -196,7 +196,7 @@ def list_all_orders():
     campus_id = resolve_scoped_campus_id(requested_campus)
     try:
         q = (db.table("orders").select("*,order_items(name_snapshot,quantity,price_snapshot,line_total,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
-             .in_("payment_status", ["paid", "partially_refunded", "refunded"]))
+             .in_("payment_status", ["paid", "partially_refunded", "refunded"]).neq("is_test", True))
         if campus_id:
             q = q.eq("campus_id", campus_id)
         if status:
@@ -1584,7 +1584,7 @@ _CRON_INTERVAL_MINUTES = {
     "hp-decay-check":                (1440, "daily @ 05:00 WAT"),
     "reset-monthly-leaderboard":     (44640, "1st of month @ 00:01 WAT"),
     "reset-weekly-leaderboard":      (10080, "every Monday @ 00:01 WAT"),
-    "scan-abandoned-carts":          (60, "every 60 minutes"),
+    "scan-abandoned-carts":          (10, "every 10 minutes"),
     "win-back-notifications":        (1440, "daily @ 10:00 WAT"),
     "check-order-locks":             (1440, "daily @ 09:00 WAT"),
     "reset-monthly-hp-tracker":      (44640, "1st of month @ 00:05 WAT"),
@@ -1630,19 +1630,26 @@ def abandoned_carts():
         return jsonify({"error": MSG.INVALID_INPUT}), 400
     campus_id = resolve_scoped_campus_id(requested)
     try:
-        q = db.table("abandoned_carts").select("*,profiles(full_name,email,phone)").eq("is_recovered", False)
+        q = db.table("reporting_abandoned_carts").select("*,profiles(full_name,email,phone)").eq("is_recovered", False)
         if campus_id:
             q = q.eq("campus_id", campus_id)
         carts = q.order("last_active_at", ascending=False).limit(limit).offset(offset).execute() or []
     except (SupabaseError, requests.RequestException) as e:
         return db_error_response(e, "abandoned_carts")
+    if carts:
+        try:
+            metrics = get_db().rpc('hg_cart_recovery_metrics', {'p_ids': [cart['id'] for cart in carts]})
+            if not isinstance(metrics, dict): raise ValueError('Cart reminder metrics unavailable')
+            carts = [{**cart, **metrics.get(cart['id'], {})} for cart in carts]
+        except (SupabaseError, requests.RequestException, ValueError) as exc:
+            return db_error_response(exc, 'abandoned_carts.metrics')
     return jsonify(carts), 200
 
 
 @admin_bp.route("/abandoned-carts/<cart_id>/nudge", methods=["POST"])
 @require_role("admin")
 def nudge_cart(cart_id):
-    # ADM-40. One nudge per user per 24 hours, counting the automatic ones; never for a recovered cart or an inactive user.
+    # Manual and automatic reminders claim the same due step; neither can bypass preferences, payment or preparation cutoff.
     if not validate_uuid(cart_id):
         return jsonify({"error": MSG.ADMIN_CART_NOT_FOUND}), 404
     db = get_user_client()
@@ -1658,44 +1665,13 @@ def nudge_cart(cart_id):
     user_id = cart.get("user_id")
     if not user_id:
         return jsonify({"error": MSG.ADMIN_CART_GUEST_NO_NUDGE}), 409
-    svc = get_db()
-    since = (datetime.now(timezone.utc) - timedelta(hours=_NUDGE_COOLDOWN_HOURS)).isoformat()
     try:
-        owner = svc.table("profiles").select("is_active").eq("id", user_id).single().execute()
-        recent = (
-            svc.table("notifications").select("id").eq("user_id", user_id).eq("type", "abandoned_cart")
-            .gte("created_at", since).limit(1).execute()
-        )
-    except (SupabaseError, requests.RequestException) as e:
-        return db_error_response(e, "nudge_cart.checks")
-    if not owner or not owner.get("is_active"):
-        return jsonify({"error": MSG.ADMIN_CART_USER_INACTIVE}), 409
-    if recent:
-        return jsonify({"error": MSG.ADMIN_NUDGE_TOO_SOON}), 409
-    # Claim the nudge first (conditional on nothing having been sent since we read the row), so a double
-    # click or two admins cannot send it twice.
-    previous_sent = cart.get("last_recovery_sent_at")
-    attempts = int(cart.get("recovery_attempts") or 0)
-    claim = db.table("abandoned_carts").eq("id", cart_id).eq("is_recovered", False)
-    claim = claim.eq("last_recovery_sent_at", previous_sent) if previous_sent else claim.is_("last_recovery_sent_at", "null")
-    try:
-        claimed = claim.update({
-            "recovery_attempts": attempts + 1,
-            "last_recovery_sent_at": datetime.now(timezone.utc).isoformat(),
-        })
-    except (SupabaseError, requests.RequestException) as e:
-        return db_error_response(e, "nudge_cart.claim")
-    if not claimed:
-        return jsonify({"error": MSG.ADMIN_NUDGE_TOO_SOON}), 409
-    try:
-        send_notification(user_id=user_id, notif_type="abandoned_cart", template_data={},
-                          action_url="/cart", campus_id=cart.get("campus_id"))
-    except Exception as e:  # broad on purpose: give the claim back so the nudge can be retried
-        logger.error("nudge_cart: sending failed for cart %s: %s", cart_id, e)
-        db.table("abandoned_carts").eq("id", cart_id).update(
-            {"recovery_attempts": attempts, "last_recovery_sent_at": previous_sent}
-        )
-        return jsonify({"error": MSG.ADMIN_NUDGE_FAILED}), 502
+        from app.services.cart_recovery import nudge
+        result = nudge(cart)
+    except (SupabaseError, requests.RequestException) as exc:
+        return db_error_response(exc, "nudge_cart.capture")
+    if not result or not result.get('saved'):
+        return jsonify({'error': 'No reminder queued: it is not due, the cart changed, preparation has started, or notification preferences are disabled.'}), 409
     _audit(g.user_id, "abandoned_carts", cart_id, "nudge_cart", after_data={"user_id": user_id},
            target_campus_id=cart.get("campus_id"))
     return jsonify({"message": MSG.ADMIN_RECOVERY_NUDGE_SENT}), 200
@@ -3171,3 +3147,20 @@ def set_campus_location(campus_id):
 
 
 
+
+
+@admin_bp.route('/operations-emails', methods=['GET'])
+@admin_bp.route('/operations-emails/<mail_id>/retry', methods=['POST'])
+@require_role('admin')
+def operations_emails(mail_id=None):
+    try:
+        campus = resolve_scoped_campus_id(as_campus_id(request.args.get('campus_id')))
+        if not campus or (mail_id is not None and not validate_uuid(mail_id)):
+            return jsonify({'error': MSG.INVALID_INPUT}), 400
+        result = get_db().rpc('hg_operations_email_status', {
+            'p_actor': g.user_id, 'p_campus': campus, 'p_retry': mail_id})
+        return jsonify(result), 200
+    except ValueError:
+        return jsonify({'error': MSG.INVALID_INPUT}), 400
+    except (SupabaseError, requests.RequestException) as exc:
+        return db_error_response(exc, 'operations_emails')

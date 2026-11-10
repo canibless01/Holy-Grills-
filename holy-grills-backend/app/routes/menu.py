@@ -133,7 +133,7 @@ def _today_paid_orders(campus_id):
     cached = getattr(g, '_menu_order_snapshot', None) if cacheable else None
     if cached and cached[0] == key:
         return cached[1]
-    query = (get_db().table("orders").select("id,is_squad_order,squad_item_count")
+    query = (get_db().table("orders").select("id,is_squad_order,squad_item_count").neq("is_test", True)
         .or_(_today_fulfilment_filter()).in_('payment_status', ['paid', 'partially_refunded'])
         .not_.in_("status", ["cancelled", "refunded"]))
     if campus_id:

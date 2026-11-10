@@ -5,6 +5,7 @@ import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
 import { Card, Skeleton, EmptyState, Modal, Field, TextInput, Toggle, Pill } from './ui/AdminKit';
 import EmailDeliverySettings from './EmailDeliverySettings';
+import OperationsEmailControls from './OperationsEmailControls';
 import SocialLinksSettings from './SocialLinksSettings';
 import { useCampus } from '@/lib/campusContext';
 import { useIsSuperAdmin, SuperAdminBadge } from './SuperAdminGate';
@@ -32,6 +33,8 @@ const UNITS: Record<string, string> = {
 };
 
 const KNOWN_SETTINGS = {
+  campus_cart_recovery: { default: { initial_minutes: 30, repeat_minutes: 1440, max_hours: 48 }, purpose: 'Customer cart reminder timing', hint: 'First delay and repeat interval in minutes. Maximum 48 hours; stops at the first preparation cutoff. Email, push and inbox respect saved preferences.' },
+  campus_operations_email: { default: { recipients: [], paid_order_alerts: true, abandoned_cart_alerts: true, daily_report: true, weekly_report: true, abandoned_minutes: 10 }, purpose: 'Private campus operations mail', hint: 'JSON: recipients accepts up to five emails. Alert and report switches are true/false; abandoned_minutes is 10–1440. Keep this campus-scoped and private.' },
   hp_multiplier: { default: 1, purpose: 'Active loyalty points earn multiplier', hint: 'Must be 0.5, 1.0, or 2.0 — any other value is rejected. Setting it above 1.0 immediately notifies all active users.' },
   flash_discount_pct: { default: 0.5, purpose: 'Discount applied to flash redemptions', hint: 'FRACTION, not a percent: 0.5 = half price, 1 = free. Anything above 1 is refused by the database.' },
   hp_unlock_rate_pct: { default: 0.3, purpose: 'Share of earned HP unlocked immediately', hint: 'FRACTION, not a percent: 0.3 = 30% unlocks now, the rest stays pending. Anything above 1 is refused by the database.' },
@@ -56,7 +59,7 @@ const KNOWN_SETTINGS = {
 // Parse an edit-string back into the jsonb value shape: arrays for known
 // list keys, booleans, numbers, or the raw string.
 const parseValue = (key, raw) => {
-  if (key === 'global_social_links') return JSON.parse(raw);
+  if (key === 'global_social_links' || key === 'campus_operations_email' || key === 'campus_cart_recovery') return JSON.parse(raw);
   if (KNOWN_SETTINGS[key]?.default != null && typeof KNOWN_SETTINGS[key].default !== 'string' && !Array.isArray(KNOWN_SETTINGS[key].default)) {
     if (typeof KNOWN_SETTINGS[key].default === 'boolean') return raw === 'true';
     const n = Number(raw);
@@ -317,7 +320,7 @@ export default function AdminSystemSettings() {
                     )}
                   </div>
                   {desc && <div className="text-[11px] text-muted-foreground mb-2 break-words">{desc}{known && s.value !== known.default && ` · documented default: ${displayValue(known.default)}`}</div>}
-                  {isBool ? (
+                  {s.key === 'campus_operations_email' ? <OperationsEmailControls value={s.value} campusId={s.campus_id} editable={editable} busy={busy === id} onSave={(value) => save(s, value)} /> : isBool ? (
                     <div className="font-bold text-sm text-foreground">{s.value ? 'Enabled' : 'Disabled'}</div>
                   ) : editKey === id ? (
                     <div>

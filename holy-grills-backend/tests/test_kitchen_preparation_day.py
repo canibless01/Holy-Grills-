@@ -7,6 +7,7 @@ from flask import Flask
 def test_queue_summary_and_bulk_actions_use_one_wat_preparation_date():
     query = MagicMock()
     query.in_.return_value = query
+    query.neq.return_value = query
     query.not_.is_.return_value = query
     query.or_.return_value = query
     with patch.object(kitchen, 'today_wat', return_value=date(2026, 10, 30)):

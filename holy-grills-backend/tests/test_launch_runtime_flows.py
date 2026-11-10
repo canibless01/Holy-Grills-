@@ -13,6 +13,7 @@ def query_db(rows=None):
     q=MagicMock()
     for method in ('select','eq','in_','order','limit','offset','gte','lt','single'):
         getattr(q,method).return_value=q
+    q.neq.return_value=q
     q.not_.in_.return_value=q
     q.execute.return_value=rows or []
     db=MagicMock();db.table.return_value=q

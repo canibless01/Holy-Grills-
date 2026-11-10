@@ -216,6 +216,7 @@ export default function OrderDetail() {
         <ChevronLeft className="w-4 h-4" /> Back to orders
       </button>
 
+      {order.is_test && <p role="status" className="rounded-xl border border-border bg-secondary p-3 text-sm">Test order — excluded from kitchen, delivery queues and customer reports.</p>}
       {/* Status Card */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}

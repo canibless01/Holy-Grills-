@@ -190,6 +190,7 @@ def get_notification_channels(notif_type: str, extra: list = None) -> list:
       - Renamed: tier_dropped → tier_downgrade
     """
     EMAIL_TYPES = {
+        "abandoned_cart",
         # Order (7)
         "order_confirmed", "order_delivered", "order_refunded",
         "order_cancelled", "order_cancelled_user", "order_cancelled_admin",

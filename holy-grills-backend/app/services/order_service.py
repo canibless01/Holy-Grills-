@@ -189,7 +189,7 @@ def _daily_capacity_remaining(db, campus_id, date_iso, *, paid_only=False):
         return None
     day = datetime.fromisoformat(str(date_iso)).date()
     start, end = f"{day.isoformat()}T00:00:00+01:00", f"{(day + timedelta(days=1)).isoformat()}T00:00:00+01:00"
-    query = db.table("orders").select("id,is_squad_order,squad_item_count").eq("campus_id", campus_id)
+    query = db.table("orders").select("id,is_squad_order,squad_item_count").neq("is_test", True).eq("campus_id", campus_id)
     if paid_only:
         query = query.in_('payment_status', ['paid', 'partially_refunded'])
     orders = (query.not_.in_("status", ["cancelled", "refunded"])
@@ -623,7 +623,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
     # Pre-fetch today's active order IDs once for daily-limit checks (excludes cancelled/refunded)
     today_orders = (
         get_db().table("orders")
-        .select("id")
+        .select("id").neq("is_test", True)
         .gte("created_at", _today_start_iso())
         .eq("campus_id", campus_id)
         .not_.in_("status", ["cancelled", "refunded"])
@@ -1372,16 +1372,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         except Exception as _ose:
             logger.warning("create_order: failed to set order_source: %s", _ose)
 
-    # The customer came back and ordered: close their open abandoned-cart rows so recovery stats are
-    # real and the recovery cron stops nudging them. Service role (RLS); never blocks the order.
-    if user_id and result.get("order_id"):
-        try:
-            get_db().table("abandoned_carts").eq("user_id", user_id).eq("is_recovered", False).update({
-                "is_recovered": True,
-                "recovered_order_id": result["order_id"],
-            }).execute()
-        except Exception as _rce:
-            logger.warning("create_order: failed to mark abandoned cart recovered: %s", _rce)
+    # Paid-order SQL trigger closes recovered carts atomically with payment.
 
     if order and isinstance(order, dict):
         order["total_amount"] = rpc_total
@@ -1567,6 +1558,8 @@ def _on_order_paid(order: dict):
         return
     db = get_db()
     try:
+        if order.get("is_test"):
+            return
         paid_orders = db.table("orders").select("id").eq("user_id", order["user_id"]).eq("payment_status", "paid").execute() or []
         if len(paid_orders) == 1:
             from app.routes.referrals import _complete_referral_award
@@ -1815,13 +1808,13 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
     if new_status in ("preparing", "ready", "assigned", "out_for_delivery", "delivered") and order.get("payment_status") not in ("paid", "partially_refunded"):
         raise OrderConflictError(MSG.ORDER_PAYMENT_REQUIRED_FOR_PREPARATION)
     if new_status == current_status:
-        if new_status == "delivered" and order.get("user_id"):
+        if new_status == "delivered" and order.get("user_id") and not order.get("is_test"):
             try:
                 _handle_delivery_rewards(order)
             except Exception:
                 logger.exception("Delivery HP recovery remains pending for %s", order_id)
                 return {**order, "unchanged": True, "rewards_pending": True}
-        if new_status == "delivered" and order.get("user_id"):
+        if new_status == "delivered" and order.get("user_id") and not order.get("is_test"):
             # Idempotent: the RPC upserts on order_id, so a re-drive is safe.
             from app.services import ambassador_service
             try:
@@ -1865,7 +1858,7 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
         _restore_order_consumables(order)
 
     # Gift wiring: notify rider assigned; auto-return on failed/unclaimed delivery
-    if order.get("user_id"):
+    if order.get("user_id") and not order.get("is_test"):
         if new_status == "assigned":
             try:
                 from app.services.gift_service import notify_gift_rider_assigned
@@ -1881,7 +1874,7 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
 
     # HP award must complete before we return so callers see the updated balance.
     rewards_pending = False
-    if new_status == "delivered" and order.get("user_id"):
+    if new_status == "delivered" and order.get("user_id") and not order.get("is_test"):
         try:
             _handle_delivery_rewards(order)
         except Exception:
@@ -1915,6 +1908,8 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
 
 def _notify_rider_order_ready(order: dict):
     """Tell the rider whose batch holds this order that it can be collected (template rider_order_ready)."""
+    if order.get("is_test"):
+        return
     try:
         rider_id = _effective_rider_id(order)
         if rider_id:
@@ -1965,6 +1960,8 @@ def _handle_delivery_rewards(order: dict):
     3. Welcome bonus
     4. Tier recalculation
     """
+    if order.get("is_test"):
+        return
     user_id = order["user_id"]
     order_id = order["id"]
     subtotal = float(order.get("subtotal", 0))
@@ -2165,7 +2162,7 @@ def _apply_promo(user_id: str, code: str, order_subtotal: float, campus_id=None,
         total_uses = (
             db.table("orders")
             .select("id")
-            .eq("promo_code_id", promo["id"])
+            .eq("promo_code_id", promo["id"]).neq("is_test", True)
             .neq("status", "cancelled").neq("status", "refunded")
             .execute()
         ) or []
@@ -2249,7 +2246,7 @@ def _send_guest_status_email(order: dict, new_status: str):
         cta_buttons = []
         if new_status == "out_for_delivery":
             cta_buttons = [{"label": "Track Your Order", "url": f"https://holygrills.online/track-orders?order_number={number}&claim_token={order.get('claim_token', '')}", "primary": True}]
-        elif new_status == "delivered":
+        elif new_status == "delivered" and not order.get("is_test"):
             cta_buttons = [{"label": "Order Again", "url": "https://holygrills.online/menu", "primary": True}]
         elif new_status == "delivery_attempted":
             cta_buttons = [
@@ -2287,7 +2284,7 @@ def _send_status_notification(order: dict, new_status: str):
             reference_type="order",
             urgency="high" if new_status == "delivery_attempted" else None,
         )
-        if new_status == "delivered":
+        if new_status == "delivered" and not order.get("is_test"):
             try:
                 send_notification(
                     user_id=user_id,
@@ -2313,7 +2310,7 @@ def _window_capacity_orders(db, campus_id, window_id, date_iso, *, paid_only=Fal
     day = date.fromisoformat(str(date_iso))
     start = f"{day.isoformat()}T00:00:00+01:00"
     end = f"{(day + timedelta(days=1)).isoformat()}T00:00:00+01:00"
-    query = db.table("orders").select("id,is_squad_order,squad_item_count").eq("campus_id", campus_id).eq("ordering_window_id", window_id)
+    query = db.table("orders").select("id,is_squad_order,squad_item_count").neq("is_test", True).eq("campus_id", campus_id).eq("ordering_window_id", window_id)
     if paid_only:
         query = query.in_('payment_status', ['paid', 'partially_refunded'])
     return (query

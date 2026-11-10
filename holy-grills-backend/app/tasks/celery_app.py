@@ -101,7 +101,7 @@ celery_app.conf.beat_schedule = {
     },
     "abandoned-cart-scan": {
         "task": "app.tasks.scheduled.scan_abandoned_carts",
-        "schedule": _scan_schedule("CELERY_RECOVERY_SCAN_MINUTES", 60),
+        "schedule": _scan_schedule("CELERY_OPERATIONS_SCAN_MINUTES", 10),
     },
     "monthly-birthday-report": {
         "task": "app.tasks.scheduled.monthly_birthday_report",

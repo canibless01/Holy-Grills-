@@ -21,7 +21,7 @@ export const KNOWN_CRON_JOBS = [
   { job: 'monthly-birthday-report', cadence: '1st of month · 07:00 WAT', desc: 'Send admins the month\'s birthday list (in-app + email)' },
   { job: 'process-scheduled-orders', cadence: 'Every 5 min', desc: 'Notify kitchen when scheduled order delivery window arrives' },
   { job: 'send-scheduled-notifications', cadence: 'Every 15 min', desc: 'Deliver due scheduled notification campaigns' },
-  { job: 'scan-abandoned-carts', cadence: 'Every 30 min', desc: 'Flag carts idle 60+ min as abandoned + notify' },
+  { job: 'scan-abandoned-carts', cadence: 'Every 10 min', desc: 'Capture staff alerts, summaries and due customer cart reminders' },
   { job: 'check-post-delivery-nudges', cadence: 'Every 30 min', desc: 'Satisfaction check (2h) + re-engagement nudge (24h)' },
 ];
 

@@ -25,6 +25,7 @@ HOSTEL = '33333333-3333-4333-8333-333333333333'
 class Query:
     def __init__(self, db, table):
         self.db, self.table, self.filters, self.one = db, table, [], False
+        self.excluded = []
 
     @property
     def not_(self):
@@ -35,6 +36,10 @@ class Query:
 
     def eq(self, key, value):
         self.filters.append((key, value))
+        return self
+
+    def neq(self, key, value):
+        self.excluded.append((key,value))
         return self
 
     def gte(self, *a):
@@ -62,7 +67,7 @@ class Query:
 
     def execute(self):
         rows = [dict(row) for row in self.db.rows.get(self.table, [])
-                if all(row.get(k) == v for k, v in self.filters)]
+                if all(row.get(k) != v for k,v in self.excluded) and all(row.get(k) == v for k, v in self.filters)]
         return (rows[0] if rows else None) if self.one else rows
 
     def insert(self, *a):

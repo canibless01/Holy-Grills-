@@ -1,3 +1,4 @@
+import AdminAbandonedCarts from './AdminAbandonedCarts';
 import { Link } from 'react-router-dom';
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
 import { useState, useEffect, useRef } from 'react';
@@ -56,10 +57,10 @@ export default function AdminOrders() {
 
   const openAssign = async (orderId: string) => {
     // TODO(ts): the delivery-window row is untyped; the modal only needs id+label.
-     
+
     let windows: Array<{ id?: string | number; label?: string }> = [];
     try {
-       
+
       const w: any = await mockApi.admin.getDeliveryWindows();
       windows = Array.isArray(w) ? w : (w?.windows || []);
     } catch { /* modal shows the create-window guidance */ }
@@ -161,7 +162,7 @@ export default function AdminOrders() {
       </div>
 
       {tab === 'abandoned' ? (
-        <AbandonedCarts />
+        <AdminAbandonedCarts />
       ) : (
       <>
       {/* KPI summary — computed from the loaded, filtered orders */}
@@ -370,72 +371,6 @@ export default function AdminOrders() {
       )}
       </>
       )}
-    </div>
-  );
-}
-
-function AbandonedCarts() {
-  const [carts, setCarts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [nudging, setNudging] = useState(null);
-
-  useEffect(() => { load(); }, []);
-
-  const load = async () => {
-    setLoading(true);
-    try { setCarts(await mockApi.admin.getAbandonedCarts()); } catch (e) { console.error(e); }
-    setLoading(false);
-  };
-
-  const nudge = async (id) => {
-    setNudging(id);
-    try {
-      await mockApi.admin.nudgeAbandonedCart(id);
-      toast({ title: msg('FE_ADMIN_ORDERS_NUDGE_SENT', '🔔 Nudge sent'), description: msg('FE_ADMIN_ORDERS_REMINDER_PUSHED_TO_THE_CUSTOMER', 'Reminder pushed to the customer.') });
-      await load();
-    } catch (e) {
-      toast({ title: msg('FE_ADMIN_ORDERS_NUDGE_FAILED', 'Nudge failed'), description: e.message, variant: 'destructive' });
-    }
-    setNudging(null);
-  };
-
-  if (loading) return <StaffPanelSkeleton />;
-
-  return (
-    <div className="space-y-3">
-      <div className="rounded-xl tone-warn border border-warn/40 p-3 text-xs text-warn flex items-center gap-2">
-        <Bell className="w-3.5 h-3.5 shrink-0" />
-        Carts left without checkout. Send a nudge to remind the customer to complete their order.
-      </div>
-      {carts.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <ShoppingCart className="w-8 h-8 mx-auto mb-2 text-muted-foreground" /> No abandoned carts right now
-        </div>
-      ) : carts.map((c) => (
-        <Card key={c.id} className="flex items-center gap-3 !p-3">
-          <div className="flex-1 min-w-0">
-            <div className="font-bold text-sm text-foreground">{c.profiles?.full_name || c.profiles?.email || c.user_name || c.user_email || 'Guest'}</div>
-            <div className="text-xs text-muted-foreground">
-              {c.item_count || 0} item{(c.item_count || 0) !== 1 ? 's' : ''} · {formatNaira(c.total || c.subtotal || 0)} · abandoned {timeAgo(c.abandoned_at || c.updated_at)}
-            </div>
-            {c.items && c.items.length > 0 && (
-              <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                {(c.items || []).slice(0, 3).map((it, i) => <span key={i}>{it.name || it.name_snapshot}{i < Math.min(c.items.length, 3) - 1 ? ', ' : ''}</span>)}
-                {c.items.length > 3 && ` +${c.items.length - 3} more`}
-              </div>
-            )}
-          </div>
-          {(c.recovery_attempts ?? 0) > 0 ? (
-            <Pill tone="green">Nudged</Pill>
-          ) : (
-            <button onClick={() => nudge(c.id)} disabled={nudging === c.id}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary text-white text-xs font-bold disabled:opacity-50">
-              {nudging === c.id ? <div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <Bell className="w-3.5 h-3.5" />}
-              Nudge
-            </button>
-          )}
-        </Card>
-      ))}
     </div>
   );
 }

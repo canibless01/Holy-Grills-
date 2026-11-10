@@ -8,6 +8,8 @@ class Query:
     def __init__(self, table): self.table, self.filters = table, []
     def select(self,*a): return self
     def eq(self,*a): return self
+    def neq(self,key,value):
+        self.filters.append((key,[value],True));return self
     def or_(self,*a): return self
     def limit(self,*a): return self
     def single(self): return self
