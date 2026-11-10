@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright,expect
 BASE=os.environ.get('HG_BROWSER_BASE','http://127.0.0.1:4193')
 C='11111111-1111-4111-8111-111111111111';U='22222222-2222-4222-8222-222222222222'
-config={'recipients':['ops@example.invalid'],'paid_order_alerts':True,'abandoned_cart_alerts':True,'daily_report':True,'weekly_report':True,'abandoned_minutes':10}
+config={'recipients':['ops@example.invalid'],'paid_order_alerts':True,'abandoned_cart_alerts':True,'daily_report':True,'weekly_report':True,'abandoned_minutes':30,'daily_report_time':'21:00'}
 with sync_playwright() as p:
  browser=p.chromium.launch(executable_path='/usr/bin/chromium',args=['--no-sandbox'])
  for case in ('settings_mobile','settings_desktop','cart_contact','status_error','cart_error'):
@@ -38,9 +38,11 @@ with sync_playwright() as p:
    expect(page.get_by_role('button',name='Save operations email')).to_be_visible()
    page.get_by_label('Report and alert recipients').fill('one@example.invalid, two@example.invalid')
    page.get_by_label('Daily summary',exact=True).uncheck()
+   page.get_by_label('Daily report time (Nigeria time)',exact=True).fill('21:00')
+   page.get_by_label('Alert staff after cart inactivity (minutes)',exact=True).fill('30')
    page.get_by_role('button',name='Save operations email').click()
    expect(page.get_by_text('Provider accepted',exact=True)).to_be_visible()
-   assert len(writes)==1 and writes[0]['value']['recipients']==['one@example.invalid','two@example.invalid'] and not writes[0]['value']['daily_report']
+   assert len(writes)==1 and writes[0]['value']['recipients']==['one@example.invalid','two@example.invalid'] and not writes[0]['value']['daily_report'] and writes[0]['value']['daily_report_time']=='21:00' and writes[0]['value']['abandoned_minutes']==30
    if case=='settings_mobile':page.screenshot(path='/workspace/Holy-Grills-/work/operations-email-mobile.png',full_page=True)
   elif case=='cart_contact':
    expect(page.get_by_text('1 reminder saved',exact=True)).to_be_visible()

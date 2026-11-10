@@ -4,7 +4,7 @@ SET LOCAL request.jwt.claims='{"role":"service_role"}';
 CREATE FUNCTION pg_temp.ops_assert(ok boolean,label text) RETURNS void LANGUAGE plpgsql AS $$BEGIN IF ok IS DISTINCT FROM true THEN RAISE EXCEPTION 'Operations acceptance: %',label;END IF;END$$;
 CREATE FUNCTION pg_temp.ops_person(c uuid,r text DEFAULT 'student') RETURNS uuid LANGUAGE plpgsql AS $$DECLARE u uuid:=gen_random_uuid();BEGIN
  INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES(u,'audit-ops-'||u||'@example.invalid','{"full_name":"[AUDIT rollback] Operations"}');
- UPDATE public.profiles SET campus_id=c,role=(jsonb_populate_record(NULL::public.profiles,jsonb_build_object('role',r))).role,push_enabled=false,email_notifications=true WHERE id=u;
+ UPDATE public.profiles SET campus_id=c,last_seen_at=NULL,role=(jsonb_populate_record(NULL::public.profiles,jsonb_build_object('role',r))).role,push_enabled=false,email_notifications=true WHERE id=u;
  RETURN u;
 END$$;
 DO $test$
@@ -13,7 +13,7 @@ DECLARE c uuid:=gen_random_uuid();sa uuid;student uuid;cart_owner uuid;real_orde
 BEGIN
  INSERT INTO campuses(id,name,slug) VALUES(c,'[AUDIT rollback] Operations','audit-ops-'||c);
  sa:=pg_temp.ops_person(c,'super_admin');student:=pg_temp.ops_person(c);cart_owner:=pg_temp.ops_person(c);
- cfg:='{"recipients":["ops@example.invalid","OPS@example.invalid"],"paid_order_alerts":true,"abandoned_cart_alerts":true,"daily_report":true,"weekly_report":true,"abandoned_minutes":10}';
+ cfg:='{"recipients":["ops@example.invalid","OPS@example.invalid"],"paid_order_alerts":true,"abandoned_cart_alerts":true,"daily_report":true,"weekly_report":true,"abandoned_minutes":30}';
  INSERT INTO system_settings(key,campus_id,value,is_public,updated_at) VALUES('campus_operations_email',c,cfg,false,now()-interval '2 days');
  INSERT INTO feature_flags(feature_name,campus_id,is_active) VALUES('abandoned_cart_nudge',c,true);
  INSERT INTO orders(id,user_id,campus_id,payment_status,total_amount,is_test) VALUES(real_order,student,c,'paid',2000,true),(test_order,sa,c,'paid',9000,false);

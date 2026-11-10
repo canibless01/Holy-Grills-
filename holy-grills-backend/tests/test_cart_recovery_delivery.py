@@ -85,3 +85,25 @@ def test_customer_contact_html_is_escaped_and_digest_has_only_core_figures():
     with patch.object(operations_email,'_order',return_value=fake):
         _,html=operations_email.render(db,{'campus_id':C,'kind':'paid_order','payload':{'order_id':'order'}})
     assert '<script>bad' not in html and '&lt;script&gt;' in html
+
+
+def test_daily_report_renders_precise_evening_window_without_internal_test_note():
+    db=MagicMock();query=db.table.return_value
+    for method in ('select','eq','single'):getattr(query,method).return_value=query
+    query.execute.return_value={'name':'FUTA'}
+    payload={key:0 for key in ('signups','paid_orders','order_value','refunds_on_orders','wallet_funded','auto_funding_setups','auto_funded','event_tickets','marketplace_purchases','abandoned_carts','recovered_carts')}
+    payload.update({'from':'2026-11-09','to':'2026-11-10','period_start':'2026-11-09T20:00:00+00:00','period_end':'2026-11-10T20:00:00+00:00'})
+    _,html=operations_email.render(db,{'campus_id':C,'kind':'daily_report','payload':payload})
+    assert '09 Nov 2026, 09:00 PM' in html and '10 Nov 2026, 09:00 PM' in html
+    assert 'Super-admin' not in html and 'customer tests' not in html
+
+
+def test_abandoned_cart_mail_contains_contact_details_without_repeated_checkout_warning():
+    db=MagicMock();query=db.table.return_value
+    for method in ('select','eq','single'):getattr(query,method).return_value=query
+    query.execute.side_effect=[{'name':'FUTA'}, {'id':'cart','user_id':None,'is_recovered':False,'guest_email':'guest@example.invalid','cart_payload':{'pending_order_id':'order'}}]
+    order={'id':'order','guest_name':'Student','guest_phone':'08012345678','guest_email':'guest@example.invalid','status':'received','payment_status':'pending','total_amount':500,'order_items':[]}
+    with patch.object(operations_email,'_order',return_value=order):
+        _,html=operations_email.render(db,{'campus_id':C,'kind':'abandoned_cart','payload':{'cart_id':'cart'}})
+    assert '08012345678' in html and 'guest@example.invalid' in html
+    assert 'before contacting' not in html and 'Super-admin' not in html

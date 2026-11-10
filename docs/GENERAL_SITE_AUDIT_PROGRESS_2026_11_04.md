@@ -102,3 +102,8 @@ Evidence and remaining verification are in [stock metadata editing](ADMIN_STOCK_
 ## Checkout restart, addresses and rider zones — 10 November
 
 [Checkout/handoff evidence](CHECKOUT_AND_RIDER_HANDOFF_2026_11_10.md) closes the newly reported cancelled-payment recovery lock, hidden later rider zones, missing pre-assignment addresses and kitchen multi-batch rider assignment. An unpaid intent can be safely closed, including delayed creation; paid money/benefit restoration uses existing atomic rules. Kitchen/admin show saved addresses/pins, and riders see every returned active zone together. Full merged backend tests, native controls, production rollback money cases and an independent local creation/closure race are verified. These are bounded fixes, not a blanket certification of every historical audit group.
+
+
+## Evening operational reporting — 10 November
+
+[Updated timing and evidence](EVENING_REPORT_SCHEDULE_2026_11_10.md): owner-selected 21:00 WAT daily summaries, full 24-hour windows, thirty-minute staff cart alerts with send-time activity/payment checks, and cleaner operational emails. Existing dedupe, test exclusions, recipient controls and weekly calendar reports are preserved. Targeted backend/native/build and fresh production rollback cases pass; this does not change the remaining broader reward exception audit.

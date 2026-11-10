@@ -1,5 +1,6 @@
 """Campus operator mail. SQL captures intent; one claimed send, no blind timeout retry."""
 from decimal import Decimal
+from datetime import datetime, timezone, timedelta
 from app.db import get_db
 from app.utils.email import _build_html, send_email_routed
 from app.services.notification_service import get_email_provider
@@ -48,7 +49,12 @@ def render(db, row):
                   ('event_tickets', 'Confirmed event admissions'), ('marketplace_purchases', 'Marketplace purchases'),
                   ('abandoned_carts', 'Abandoned carts recorded'), ('recovered_carts', 'Carts recovered with payment')]
         money = {'order_value', 'refunds_on_orders', 'wallet_funded', 'auto_funded'}
-        lines = [f"Period: {payload['from']} to {payload['to']} (Nigeria time)"]
+        if payload.get('period_start') and payload.get('period_end'):
+            def local_time(value):
+                return datetime.fromisoformat(value.replace('Z', '+00:00')).astimezone(timezone(timedelta(hours=1))).strftime('%d %b %Y, %I:%M %p')
+            lines = [f"Period: {local_time(payload['period_start'])} to {local_time(payload['period_end'])} (Nigeria time)"]
+        else:
+            lines = [f"Period: {payload['from']} to {payload['to']} (Nigeria time)"]
         lines += [f"{label}: {_amount(payload[key]) if key in money else payload[key]}" for key, label in labels]
         subject = prefix + (' · Daily report' if kind == 'daily_report' else ' · Weekly report')
     elif kind == 'paid_order':
@@ -85,8 +91,7 @@ def render(db, row):
             lines += [f"{item.get('quantity', 1)} × {item.get('name') or item.get('name_snapshot') or 'Meal'}" for item in items]
             lines.append('Final price and delivery location: available after checkout details are entered.')
         subject = prefix + ' · Cart awaiting payment'
-        lines.append('Please check the current cart/payment status before contacting the customer.')
-    lines += ['', 'Super-admin customer tests are excluded.', 'Manage: https://holygrills.online/admin']
+    lines += ['', 'Manage: https://holygrills.online/admin']
     return subject, _build_html('Campus team', '\n'.join(lines))
 
 

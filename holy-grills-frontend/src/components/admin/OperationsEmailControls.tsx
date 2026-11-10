@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { liveApi } from '@/lib/liveApi';
 
-type Config = { recipients: string[]; paid_order_alerts: boolean; abandoned_cart_alerts: boolean; daily_report: boolean; weekly_report: boolean; abandoned_minutes: number };
+type Config = { recipients: string[]; paid_order_alerts: boolean; abandoned_cart_alerts: boolean; daily_report: boolean; weekly_report: boolean; abandoned_minutes: number; daily_report_time?: string };
 type Receipt = { id: string; kind: string; recipient: string; state: string; created_at: string };
 const switches = { paid_order_alerts: 'Paid order alerts', abandoned_cart_alerts: 'Abandoned cart alerts', daily_report: 'Daily summary', weekly_report: 'Weekly summary' };
 export default function OperationsEmailControls({ value, campusId, editable, busy, onSave }: { value: Config; campusId: string; editable: boolean; busy: boolean; onSave: (value: string) => void }) {
@@ -38,9 +38,12 @@ export default function OperationsEmailControls({ value, campusId, editable, bus
         <input type="checkbox" checked={Boolean(draft[key])} disabled={!editable || busy} onChange={(e) => setDraft({ ...draft, [key]: e.target.checked })} />{label}
       </label>)}</div>
       <label className="block text-sm">Alert staff after cart inactivity (minutes)
-        <input type="number" min={10} max={1440} required value={draft.abandoned_minutes} disabled={!editable || busy} onChange={(e) => setDraft({ ...draft, abandoned_minutes: Number(e.target.value) })} className="ml-2 w-24 rounded-lg border border-border bg-background p-2" />
+        <input type="number" min={30} max={1440} required value={draft.abandoned_minutes} disabled={!editable || busy} onChange={(e) => setDraft({ ...draft, abandoned_minutes: Number(e.target.value) })} className="ml-2 w-24 rounded-lg border border-border bg-background p-2" />
       </label>
-      <p className="text-xs text-muted-foreground">Daily summaries cover the previous day. Weekly summaries cover Monday–Sunday. Nigeria time; super-admin customer tests excluded. Alerts are checked every ten minutes.</p>
+      <label className="block text-sm">Daily report time (Nigeria time)
+        <input type="time" required value={draft.daily_report_time || '21:00'} disabled={!editable || busy} onChange={(e) => setDraft({ ...draft, daily_report_time: e.target.value })} className="ml-2 rounded-lg border border-border bg-background p-2" />
+      </label>
+      <p className="text-xs text-muted-foreground">Daily summaries cover the 24 hours ending at your chosen time. Weekly summaries cover Monday–Sunday. Alerts and reports are checked every ten minutes. Cart alerts wait at least 30 minutes and recheck activity and payment before sending.</p>
       {editable && <button type="submit" disabled={busy} className="rounded-full bg-primary px-4 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">{busy ? 'Saving…' : 'Save operations email'}</button>}
     </form>
     <div className="border-t border-border pt-3">

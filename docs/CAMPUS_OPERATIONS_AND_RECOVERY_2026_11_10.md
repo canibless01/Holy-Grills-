@@ -1,5 +1,7 @@
 # Campus operations and cart recovery — 10 November 2026
 
+**Later owner update:** daily reports now run at 21:00 WAT for the preceding 24 hours; staff alerts wait at least 30 minutes and recheck activity/payment. The internal email notes were removed. [Current timing and evidence](EVENING_REPORT_SCHEDULE_2026_11_10.md).
+
 FUTA's explicit recipient is **grillthevibe@gmail.com**. In Admin → System Settings, `campus_operations_email` has a native recipient/switch/delay form and recent send states. Up to five private campus recipients; no automatic mailing of every campus admin. The real campus slug is `futa-main`; the follow-up configuration migration records that identity without hardcoding a UUID.
 
 - Paid-order intent commits with successful payment. Operator mail includes contact phone/email, items/extras, amount and saved delivery address. Unpaid checkouts do not generate paid-order alerts.
