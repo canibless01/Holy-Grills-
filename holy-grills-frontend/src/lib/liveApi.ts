@@ -642,6 +642,7 @@ const riders = {
 // token) and could not be verified. AdminDashboard guards every field so it
 // renders live values where the shape matches and degrades gracefully otherwise.
 const analytics = {
+  async wallet(params = {}) { return apiClient.get('/analytics/wallet', params); },
   async dashboard(params = {}) { return apiClient.get('/analytics/dashboard', params); },
   async sales(params = {}) { return apiClient.get('/analytics/sales', params); },
   async orders(params = {}) { return apiClient.get('/analytics/orders', params); },

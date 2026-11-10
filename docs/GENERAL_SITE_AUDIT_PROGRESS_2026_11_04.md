@@ -85,3 +85,7 @@ Evidence and remaining verification are in [stock metadata editing](ADMIN_STOCK_
 ## Wallet recipient choices — 9 November
 
 [Wallet lookup follow-up](WALLET_TRANSFERS_2026_11_09.md) adds owner-requested exact email/phone lookup alongside referral code. Normalized phone ambiguity refuses selection; account confirmation, same-campus restrictions, paired money movement and lost-response recovery are retained. Backend 1,436 tests, nine native wallet scenarios, original concurrency checks and both Supabase rollback matrices pass. This enhancement is separate from the open audit coverage groups above; those groups are not evidence that every listed area is broken.
+
+## Wallet/funding reporting — 10 November
+
+[Wallet & Funding](WALLET_FUNDING_ANALYTICS_2026_11_10.md) adds current customer-credit exposure, confirmed funding/activity, automatic plan/payment health and capped calendar projections, with super-admin accounts excluded throughout. One read-only aggregate, campus/role checks, date/CSV/retry/stale-response controls and no authorization exposure are verified. Backend 1,461 tests, seven native browser scenarios, typecheck/build and fresh Supabase rollback arithmetic/projection cases pass. Broader super-admin customer-test isolation and campus paid-order/cart alerts plus daily/weekly summaries are newly requested and next; the confirmed FUTA destination is grillthevibe@gmail.com.

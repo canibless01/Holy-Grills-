@@ -1,9 +1,9 @@
 """
 Analytics routes — admin-only reporting and insights.
 """
-from flask import Blueprint, request, jsonify, current_app, Response
+from flask import Blueprint, request, jsonify, current_app, Response, g
 from app.middleware.auth import require_role, resolve_scoped_campus_id
-from app.db import get_user_client
+from app.db import get_user_client, get_db, SupabaseError
 from app.messages import MSG
 from app.utils.settings import setting_or_config
 from datetime import date, datetime, timezone, timedelta
@@ -1776,3 +1776,32 @@ def retention_analytics():
         })
 
     return jsonify({"cohorts": cohorts, "weeks": weeks}), 200
+
+
+@analytics_bp.route('/wallet', methods=['GET'])
+@require_role('admin')
+def wallet_funding_analytics():
+    """One service-only aggregate; never return saved payment authorizations."""
+    try:
+        campus = _scoped_campus()
+        from_date, to_date, _, _ = _date_range(29)
+        if (date.fromisoformat(to_date) - date.fromisoformat(from_date)).days > 365:
+            raise ValueError('date')
+    except ValueError as exc:
+        return jsonify({'error': MSG.ANALYTICS_INVALID_CAMPUS if str(exc) == 'campus' else MSG.ANALYTICS_INVALID_DATE}), 400
+    try:
+        result = get_db().rpc('hg_wallet_funding_analytics', {
+            'p_actor': g.user_id, 'p_campus': campus, 'p_from': from_date, 'p_to': to_date})
+        if not isinstance(result, dict) or not result.get('as_of'):
+            raise RuntimeError('Wallet analytics result unavailable')
+        return jsonify(result), 200
+    except SupabaseError as exc:
+        code = (exc.details or {}).get('message') or str(exc)
+        if code == 'wallet_analytics_forbidden':
+            return jsonify({'error': MSG.ROLE_NOT_PERMITTED}), 403
+        if code in ('wallet_analytics_date_invalid', 'wallet_analytics_campus_invalid'):
+            return jsonify({'error': MSG.ANALYTICS_INVALID_CAMPUS if code.endswith('campus_invalid') else MSG.ANALYTICS_INVALID_DATE}), 400
+        logger.warning('Wallet analytics unavailable: %s', type(exc).__name__)
+    except Exception as exc:
+        logger.warning('Wallet analytics unavailable: %s', type(exc).__name__)
+    return jsonify({'error': 'Wallet analytics could not be loaded. Please try again.'}), 503

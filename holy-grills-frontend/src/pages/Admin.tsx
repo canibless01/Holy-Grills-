@@ -8,6 +8,7 @@ import BrandLogo from '@/components/BrandLogo';
 import AdminLayout from '@/components/admin/AdminLayout';
 const AdminDashboard = lazy(() => import('@/components/admin/AdminDashboard'));
 const AdminAnalytics = lazy(() => import('@/components/admin/AdminAnalytics'));
+const AdminWalletAnalytics = lazy(() => import('@/components/admin/AdminWalletAnalytics'));
 const AdminEconomics = lazy(() => import('@/components/admin/AdminEconomics'));
 const AdminUsers = lazy(() => import('@/components/admin/AdminUsers'));
 const AdminOrders = lazy(() => import('@/components/admin/AdminOrders'));
@@ -50,6 +51,7 @@ const TITLES = {
   dashboard: 'Dashboard Overview',
   analytics: 'Analytics & Trends',
   economics: 'HP Economics',
+  walletanalytics: 'Wallet & Funding',
   users: 'User Management',
   orders: 'Order Management',
   wallet: 'Wallet Transactions',
@@ -150,6 +152,7 @@ export default function Admin({ communityWorkspace = false }: { communityWorkspa
       case 'dashboard': return <AdminDashboard />;
       case 'analytics': return <AdminAnalytics />;
       case 'economics': return <AdminEconomics />;
+      case 'walletanalytics': return <AdminWalletAnalytics />;
       case 'users': return <AdminUsers />;
       case 'orders': return <AdminOrders />;
       case 'wallet': return <AdminWalletTransactions />;

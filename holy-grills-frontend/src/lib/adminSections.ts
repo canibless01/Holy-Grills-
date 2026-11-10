@@ -38,6 +38,7 @@ export const ADMIN_GROUPS: Array<{ label: string | null; items: AdminSection[] }
   { label: null, items: [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3, desc: 'Live overview', keywords: ['overview', 'home', 'stats', 'summary'] },
     { id: 'analytics', label: 'Analytics', icon: TrendingUp, desc: 'Trends & exports', keywords: ['analytics', 'trends', 'reports', 'charts', 'data', 'export', 'dashboard', 'revenue', 'retention', 'engagement', 'demographics', 'cohort'] },
+    { id: 'walletanalytics', label: 'Wallet & Funding', icon: Wallet, desc: 'Balances & projections', keywords: ['wallet analytics', 'funding', 'automatic funding', 'auto debit', 'auto deduction', 'balance', 'projection', 'ecosystem', 'liability'] },
     { id: 'economics', label: 'HP Economics', icon: Coins, desc: 'Programme cost', keywords: ['economics', 'cost', 'budget', 'programme', 'tier breakdown'] },
   ]},
   { label: 'Menu', items: [
