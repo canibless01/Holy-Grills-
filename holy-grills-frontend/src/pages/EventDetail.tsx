@@ -30,27 +30,21 @@ export default function EventDetail() {
   const unwrap = (res) => res?.data || res;
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const e = unwrap(await liveApi.events.get(id));
-        // get_event returns no per-user ticket/checked-in field. For an authed
-        // user, look up their ticket for this event via /events/my-tickets.
-        let myTicket = null;
-        try {
-          if (isAuthenticated) {
-            const mine = await liveApi.events.myTickets();
-            const all = [...(mine?.upcoming || []), ...(mine?.past || []), ...(mine?.checked_in || []), ...(mine?.tickets || [])];
-            myTicket = all.find((t) => t.event_id === id) || null;
-          }
-        } catch { /* my-tickets unavailable for guests */ }
-        setEvent({ ...e, checked_in: !!(myTicket?.checked_in) });
-        if (myTicket && ['paid', 'not_required'].includes(myTicket.payment_status)) setTicket({ ticket_id: myTicket.ticket_id, status: myTicket.status || 'confirmed', qr_code: myTicket.qr_token, tier_name: myTicket.tier_name, payment_status: myTicket.payment_status });
-        try { setTiers(await liveApi.events.getTiers(id)); } catch { /* no tiers */ }
-      } catch (e) { console.error(e); }
-      setLoading(false);
-    };
-    load();
-  }, [id]);
+    let cancelled = false;
+    setLoading(true); setEvent(null); setTicket(null); setTiers([]);
+    liveApi.events.get(id).then(result => {
+      if (!cancelled) { setEvent(unwrap(result)); setLoading(false); }
+    }).catch(() => { if (!cancelled) setLoading(false); });
+    // Public content never waits for private ticket history or tier reads.
+    liveApi.events.getTiers(id).then(rows => { if (!cancelled) setTiers(rows); }).catch(() => {});
+    if (isAuthenticated) liveApi.events.myTickets().then(mine => {
+      if (cancelled) return;
+      const all = [...(mine?.upcoming || []), ...(mine?.past || []), ...(mine?.checked_in || []), ...(mine?.tickets || [])];
+      const owned = all.find(t => t.event_id === id);
+      if (owned && ['paid', 'not_required'].includes(owned.payment_status)) setTicket({ ...owned, ticket_id: owned.ticket_id || owned.id });
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [id, isAuthenticated]);
 
   // Card payments are webhook-driven (spec §11.6). After Paystack redirects back with a
   // `reference` query param we ask the backend to verify that reference with Paystack
@@ -207,7 +201,7 @@ export default function EventDetail() {
       {event.description && (
         <div className="rounded-2xl bg-card border border-border p-4 shadow-card">
           <h3 className="font-bold text-sm text-foreground mb-2">About this event</h3>
-          <p className="text-sm text-muted-foreground leading-relaxed">{event.description}</p>
+          <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap break-words">{event.description}</p>
         </div>
       )}
 
@@ -318,6 +312,7 @@ export default function EventDetail() {
             )}
             <p className="text-xs text-muted-foreground mt-2">{isAuthenticated ? <>Your entry is confirmed. At the event, scan the Holy Grill QR code at the entrance to check in and earn {hpReward} HP.</> : msg('FE_EVENT_GUEST_ENTRY_HELP', 'Show your ticket QR to the organizer, or scan the venue QR to record your attendance.')}</p>
           </div>
+          {!isAuthenticated && <div className="rounded-xl bg-secondary p-4 text-center space-y-3"><p className="text-sm">{msg('FE_EVENT_SIGNUP_REWARD', 'Create an account with your ticket email to earn HP when you attend.')}</p><Link to="/signup" state={{from:`/events/${id}`}} className="inline-flex rounded-full bg-primary px-5 py-2 text-sm font-bold text-white">{msg('FE_EVENT_CREATE_ACCOUNT', 'Create an account')}</Link></div>}
           <div className="rounded-2xl border-2 border-dashed border-primary/30 p-4 text-center bg-primary/5">
             <TicketQrImage eventId={id} ticketId={ticket.ticket_id} guestEmail={ticket.guest_email} />
             <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Ticket ID</div>

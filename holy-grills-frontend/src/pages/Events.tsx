@@ -15,14 +15,6 @@ import { msg } from '@/lib/messages';
 /** Head data for /events — the same object the pre-render writes. */
 const META = metaForPath('/events');
 
-const CATEGORIES = [
-  { id: 'all', label: 'All' },
-  { id: 'party', label: 'Parties' },
-  { id: 'food_fest', label: 'Food Fest' },
-  { id: 'workshop', label: 'Workshops' },
-  { id: 'catering', label: 'Catering' },
-];
-
 const unwrap = (res) => {
   if (Array.isArray(res)) return res;
   if (res?.data && Array.isArray(res.data)) return res.data;
@@ -36,7 +28,6 @@ export default function Events() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [showCatering, setShowCatering] = useState(false);
-  const [filter, setFilter] = useState('all');
   const [tab, setTab] = useState('discover');
   const { isAuthenticated } = useHolyGrill();
 
@@ -53,11 +44,6 @@ export default function Events() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-
-  const filtered = events.filter((e) => {
-    if (filter === 'all') return true;
-    return e.metadata?.category === filter || e.category === filter;
-  });
 
   if (loading) return <EventsSkeleton />;
 
@@ -81,25 +67,11 @@ export default function Events() {
 
       {isAuthenticated && (
         <div className="flex gap-2 items-center">
-          {/* Toggle + category chips share one row — the page's two controls
-              stop stacking into two full-width bars. */}
           <div className="flex bg-secondary/60 rounded-full p-1 shrink-0">
             <button onClick={() => setTab('discover')} className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${tab === 'discover' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}>Discover</button>
             <button onClick={() => setTab('mine')} className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${tab === 'mine' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}>My Events</button>
           </div>
-          {tab === 'discover' && (
-            <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1 py-0.5 flex-1 min-w-0">
-              {CATEGORIES.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => setFilter(c.id)}
-                  className={`shrink-0 px-3.5 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${filter === c.id ? 'bg-primary text-primary-foreground' : 'bg-card text-foreground border border-border hover:border-primary/20'}`}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
-          )}
+
         </div>
       )}
 
@@ -115,14 +87,14 @@ export default function Events() {
                 <RefreshCw className="w-3.5 h-3.5" /> Try again
               </button>
             </div>
-          ) : filtered.length === 0 ? (
+          ) : events.length === 0 ? (
             <div className="text-center py-12">
               <MascotStandee mascot="thinking" className="w-28 h-28 mx-auto mb-3" alt="No events listed" />
               <p className="text-sm font-semibold text-foreground">Nothing on yet. Check back.</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {filtered.map((event) => (
+              {events.map((event) => (
                 <EventCard key={event.id} event={event} onClick={() => navigate(`/events/${event.id}`)} />
               ))}
             </div>

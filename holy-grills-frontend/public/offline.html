@@ -222,7 +222,7 @@
       </p>
     </div>
 
-    <button class="retry-btn" id="retry-btn" onclick="retry()">
+    <button class="retry-btn" id="retry-btn">
       <span class="btn-text">Try again</span>
       <div class="spinner"></div>
     </button>
@@ -234,53 +234,6 @@
     </div>
   </div>
 
-  <script>
-    const btn = document.getElementById('retry-btn');
-    const status = document.getElementById('status');
-
-    function updateOnlineStatus() {
-      if (navigator.onLine) {
-        status.textContent = "You're back online! Redirecting…";
-        status.className = 'status online';
-        setTimeout(function() {
-          window.location.replace('/');
-        }, 800);
-      } else {
-        status.textContent = '';
-        status.className = 'status';
-      }
-    }
-
-    function retry() {
-      btn.classList.add('loading');
-      btn.disabled = true;
-      status.textContent = 'Checking connection…';
-      status.className = 'status';
-
-      // Try to fetch the root to see if we're back online
-      fetch('/', { method: 'HEAD', cache: 'no-store' })
-        .then(function() {
-          updateOnlineStatus();
-        })
-        .catch(function() {
-          btn.classList.remove('loading');
-          btn.disabled = false;
-          status.textContent = 'Still offline — please check your connection.';
-          status.className = 'status';
-        });
-    }
-
-    // Listen for online/offline events
-    window.addEventListener('online', updateOnlineStatus);
-    window.addEventListener('offline', function() {
-      status.textContent = '';
-      status.className = 'status';
-    });
-
-    // Check on load
-    if (navigator.onLine) {
-      updateOnlineStatus();
-    }
-  </script>
+  <script src="/offline-retry.js"></script>
 </body>
 </html>

@@ -211,7 +211,7 @@ export default function TopNav() {
                 )}
             </div>
           ) : (
-            <button onClick={() => navigate('/login')} className="px-4 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold shadow-glow hover:shadow-lg transition-shadow">Sign In</button>
+            <div className="flex items-center gap-2"><Link to="/events" className="px-3 py-2 rounded-full border border-border text-xs font-bold whitespace-nowrap">{msg('FE_EVENTS_NAV', 'Events')}</Link><button onClick={() => navigate('/login')} className="px-4 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold shadow-glow hover:shadow-lg transition-shadow">Sign In</button></div>
           )}
         </div>
       </div>

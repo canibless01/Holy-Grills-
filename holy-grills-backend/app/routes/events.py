@@ -117,7 +117,7 @@ def list_events():
     now = datetime.now(timezone.utc).isoformat()
     q = (
         db.table("events")
-        .select("id,title,slug,description,location,starts_at,ends_at,hp_reward,hp_promo_enabled,is_featured,campus_id,is_global,metadata")
+        .select("id,title,slug,description,location,starts_at,ends_at,hp_reward,hp_promo_enabled,is_featured,campus_id,is_global,metadata,image_url,is_paid")
         .eq("is_published", "true")
         .or_(f"ends_at.gt.{now},and(ends_at.is.null,starts_at.gte.{now})")
     )
@@ -1401,6 +1401,9 @@ def create_event():
         data["funding_source"] = "host_prepaid"
     if "funding_source" in data and data["funding_source"] not in ("hg_funded", "host_prepaid", None):
         return jsonify({"error": MSG.EVENT_REQUEST_INVALID}), 400
+    request_id = data.get("request_id")
+    if request_id is not None and not validate_uuid(request_id):
+        return jsonify({"error": MSG.EVENT_REQUEST_INVALID}), 400
     import re, uuid as _uuid
     base_slug = re.sub(r"[^a-z0-9]+", "-", data["title"].lower()).strip("-")[:54]
     data["slug"] = f"{base_slug}-{_uuid.uuid4().hex[:5]}"
@@ -1432,7 +1435,31 @@ def create_event():
     campus_id = resolve_write_campus(data.get("campus_id"))
     safe = {k: v for k, v in data.items() if k in EVENT_COLUMNS or k == "campus_id"}
     safe["campus_id"] = campus_id
-    result = db.table("events").insert(safe).execute()
+    if request_id:
+        import hashlib, json
+        # The existing event primary key serializes concurrent retries; no
+        # separate receipt table or title-based deduplication is needed.
+        fingerprint = hashlib.sha256(json.dumps(
+            {k: v for k, v in safe.items() if k != "slug"},
+            sort_keys=True, separators=(",", ":"),
+        ).encode()).hexdigest()
+        safe["id"] = request_id.lower()
+        safe["metadata"] = {"admin_create_fingerprint": fingerprint}
+        def replay():
+            row = db.table("events").select("*").eq("id", safe["id"]).single().execute()
+            if (row and row.get("organizer_id") == g.user_id
+                    and row.get("campus_id") == campus_id
+                    and (row.get("metadata") or {}).get("admin_create_fingerprint") == fingerprint):
+                return jsonify(row), 200
+            return jsonify({"error": MSG.EVENT_SAVE_CONFLICT}), 409
+        if db.table("events").select("id").eq("id", safe["id"]).single().execute():
+            return replay()
+    try:
+        result = db.table("events").insert(safe).execute()
+    except SupabaseError as exc:
+        if request_id and isinstance(exc.details, dict) and exc.details.get("code") == "23505":
+            return replay()
+        raise
     return jsonify(result[0] if isinstance(result, list) else result), 201
 
 

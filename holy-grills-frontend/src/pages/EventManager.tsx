@@ -19,8 +19,8 @@ import { Modal, Field, TextInput } from '@/components/admin/AdminShared';
 import { confirmAction } from '@/lib/confirmAction';
 
 const emptyUsers = [];
-const button = 'rounded-full bg-primary text-white px-4 py-2 text-sm font-bold disabled:opacity-50';
-const secondary = 'rounded-full bg-secondary text-foreground px-4 py-2 text-sm font-bold disabled:opacity-50';
+const button = 'inline-flex items-center justify-center gap-2 whitespace-nowrap min-h-11 rounded-full bg-primary text-white px-4 py-2 text-sm font-bold disabled:opacity-50';
+const secondary = 'inline-flex items-center justify-center gap-2 whitespace-nowrap min-h-11 rounded-full bg-secondary text-foreground px-4 py-2 text-sm font-bold disabled:opacity-50';
 const card = 'rounded-2xl bg-card border border-border p-4 space-y-3';
 const money = (value) => `₦${Number(value || 0).toLocaleString('en-NG', {minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const wat = value => value ? new Date(new Date(value).getTime()+3600000).toISOString().slice(0,16) : '';
@@ -43,7 +43,7 @@ function Workspace({admin}) {
   const refresh=()=>setRevision(value=>value+1);
   return <main className="min-h-screen bg-background text-foreground pb-12">
     <header className="sticky top-0 z-30 bg-card border-b border-border p-3 flex items-center gap-3 flex-wrap">
-      <BrandLogo size="admin" /><h1 className="font-heading font-extrabold flex-1">{msg('FE_ORG_TITLE','Event workspace')}</h1>
+      <BrandLogo size="admin" /><h1 className="font-heading font-extrabold flex-1 min-w-[140px]">{msg('FE_ORG_TITLE','Event workspace')}</h1>
       {admin && <><AdminCampusSelector /><Link className={secondary} to="/admin?section=events">{msg('FE_ORG_ADMIN','Event administration')}</Link></>}
       <InlineNotificationBell /><PanelSwitcher className={secondary} labelClassName="text-xs" />
       <button className={secondary} onClick={()=>void logout()}>{msg('FE_ORG_SIGN_OUT','Sign out')}</button>
@@ -51,7 +51,7 @@ function Workspace({admin}) {
     <div className="max-w-7xl mx-auto p-4 grid lg:grid-cols-[280px_1fr] gap-5">
       <aside className="space-y-3">
         <button className={`${button} w-full`} onClick={()=>setEditor({...blank})}>{msg('FE_ORG_CREATE','Create event draft')}</button>
-        {error && <div role="alert" className={card}><p>{error}</p><button onClick={refresh}>{msg('FE_PLATFORM_RETRY','Retry')}</button></div>}
+        {error && <div role="alert" className={card}><p>{error}</p><button className={`${button} w-full`} onClick={refresh}>{msg('FE_PLATFORM_RETRY','Retry')}</button></div>}
         {loading ? <p role="status">{msg('FE_ORG_LOADING','Loading event workspace…')}</p> : !error && events.length===0 ? <p>{msg('FE_ORG_EMPTY','No events in this workspace yet.')}</p> : events.map(event=><button key={event.id} onClick={()=>setParams({event:event.id})} className={`${card} text-left w-full ${selected===event.id?'border-primary ring-1 ring-primary':''}`}><strong className="block">{event.title}</strong><span className="text-xs text-muted-foreground">{statusLabel(event.review_status)} · {event.is_published?msg('FE_ORG_LIVE','Published'):msg('FE_ORG_HIDDEN','Not published')}</span></button>)}
         <div className="flex gap-3 justify-between"><button className={secondary} disabled={offset===0 || loading} onClick={()=>setOffset(value=>Math.max(0,value-25))}>{msg('FE_ORG_PREVIOUS','Previous')}</button><button className={secondary} disabled={!hasMore || loading} onClick={()=>setOffset(value=>value+25)}>{msg('FE_ORG_NEXT','Next')}</button></div>
       </aside>
@@ -148,7 +148,7 @@ function Attendees({id,revision,busy,onScan,onAdmit}) {
   const exportRows=async()=>{try{const result=await api.export(id);const data=result.attendees||[];if(!data.length)return;const headers=Object.keys(data[0]);const csv=[headers.join(','),...data.map(row=>headers.map(key=>`"${csvCell(row[key])}"`).join(','))].join('\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));const anchor=document.createElement('a');anchor.href=url;anchor.download=`event-${id}-attendees.csv`;anchor.click();URL.revokeObjectURL(url);}catch(e){setError(e.message);}};
   return <div className={card}><div className="flex items-center justify-between flex-wrap gap-2"><h3 className="font-heading font-extrabold">{msg('FE_ORG_ATTENDEES','Attendees and check-in')}</h3><div className="flex gap-2"><button className={secondary} disabled={busy} onClick={onScan}>{msg('FE_EVENT_SCAN_ATTENDEE','Scan attendee ticket')}</button><button className={secondary} onClick={()=>void exportRows()}>{msg('FE_ORG_EXPORT','Export attendees')}</button></div></div>
     <input aria-label={msg('FE_EVENT_FIND_ATTENDEE','Find attendee')} placeholder={msg('FE_EVENT_FIND_ATTENDEE_HELP','Name, email, phone or ticket ID')} value={query} onChange={e=>{setOffset(0);setQuery(e.target.value);}} className="rounded-xl border border-border p-3 w-full"/>
-    {error && <div role="alert" className="text-destructive"><p>{error}</p><button onClick={()=>setRetry(value=>value+1)}>{msg('FE_PLATFORM_RETRY','Retry')}</button></div>}
+    {error && <div role="alert" className="text-destructive"><p>{error}</p><button className={`${button} mt-3`} onClick={()=>setRetry(value=>value+1)}>{msg('FE_PLATFORM_RETRY','Retry')}</button></div>}
     {loading ? <p role="status">{msg('FE_EVENT_LOADING','Loading event details…')}</p> : !error && rows.length===0 ? <p>{msg('FE_ORG_NO_ATTENDEES','No attendees match this search.')}</p> : rows.map(row=><div key={row.ticket_id} className="rounded-xl bg-secondary p-3 flex flex-col sm:flex-row justify-between gap-2"><div className="min-w-0"><strong>{row.full_name||row.email}</strong><p className="text-xs break-words">{row.email} · {row.phone}</p><p className="text-xs break-all">{row.ticket_id}</p><p className="text-xs">{row.tier_name} · {row.payment_status}</p></div>{row.checked_in?<span>{msg('FE_ORG_CHECKED_IN','Checked in')}</span>:row.status==='confirmed' && ['paid','not_required'].includes(row.payment_status) && <button className={button} disabled={busy} onClick={()=>onAdmit(row.ticket_id)}>{msg('FE_EVENT_CHECK_IN_ATTENDEE','Check in attendee')}</button>}</div>)}
     <div className="flex justify-between"><button className={secondary} disabled={offset===0||loading} onClick={()=>setOffset(value=>Math.max(0,value-50))}>{msg('FE_ORG_PREVIOUS','Previous')}</button><button className={secondary} disabled={rows.length<50||loading} onClick={()=>setOffset(value=>value+50)}>{msg('FE_ORG_NEXT','Next')}</button></div>
   </div>;

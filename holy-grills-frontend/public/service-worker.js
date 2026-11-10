@@ -18,7 +18,7 @@
 try { importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js'); } catch (e) { /* no-op */ }
 
 // Bumping the version makes the activate handler purge every older cache.
-const CACHE_VERSION = 'hg-v5';
+const CACHE_VERSION = 'hg-v6';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const OFFLINE_URL = '/offline.html';
@@ -27,6 +27,7 @@ const SHELL_ASSETS = [
   '/',
   '/index.html',
   '/offline.html',
+  '/offline-retry.js',
   '/manifest.json',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
@@ -87,7 +88,13 @@ self.addEventListener('fetch', (event) => {
   // Skip cross-origin + OneSignal/SDK requests.
   if (url.origin !== self.location.origin) return;
   if (url.pathname.includes('OneSignalSDK')) return;
+  if (url.searchParams.has('reconnect')) return;
 
+  // Only the offline recovery script is an intentional cached JS asset.
+  if (url.pathname === '/offline-retry.js') {
+    event.respondWith(fetch(request).catch(() => caches.match('/offline-retry.js')));
+    return;
+  }
   // Source modules, bundles, styles, Vite internals → straight to the network.
   if (neverCache(url.pathname)) return;
 

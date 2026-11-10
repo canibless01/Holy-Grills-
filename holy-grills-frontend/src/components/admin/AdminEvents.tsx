@@ -1,3 +1,4 @@
+import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
 import { Link } from 'react-router-dom';
 import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect, useRef } from 'react';
@@ -38,6 +39,8 @@ export default function AdminEvents() {
   const eventLoad = useRef(0);
   const panelLoad = useRef(0);
   const writing = useRef(false);
+  const createIntent = useCmsCreateIntent();
+  const editOriginal = useRef<any>(null);
   const admissionLock = useRef(false);
   const [offset, setOffset] = useState(0);
   const pageSize = 25;
@@ -115,13 +118,27 @@ export default function AdminEvents() {
     if (writing.current || !modal) return;
     writing.current = true; const scope = eventScope.current;
     setBusy('save');
-    const body = { ...modal.item, hp_reward: Number(modal.item.hp_reward), hp_per_attendee: Number(modal.item.hp_reward), max_attendees: Number(modal.item.max_attendees), capacity: Number(modal.item.max_attendees), is_featured: !!modal.item.is_featured, is_paid: !!modal.item.is_paid };
+    const item = modal.item;
+    // Send editable fields only. Database rows also contain nullable financial
+    // columns, and datetime-local drops seconds from existing instants.
+    const body: Record<string, any> = {
+      title: item.title, description: item.description || '', location: item.location,
+      hp_reward: Number(item.hp_reward), hp_per_attendee: Number(item.hp_reward),
+      max_attendees: Number(item.max_attendees), capacity: Number(item.max_attendees),
+      funding_source: item.funding_source || 'hg_funded', image_url: item.image_url || '',
+      is_featured: !!item.is_featured, is_paid: !!item.is_paid, is_published: !!item.is_published,
+    };
+    for (const field of ['starts_at', 'ends_at']) {
+      if (modal.isNew || item[field] !== watInput(editOriginal.current?.[field])) {
+        if (item[field]) body[field] = item[field];
+      }
+    }
     try {
       let savedEvent = null;
-      if (modal.isNew) { savedEvent = await mockApi.admin.createEvent(body); toast({ title: msg('FE_ADMIN_EVENTS_EVENT_CREATED', '✅ Event created'), description: msg('FE_EVENT_SAVED_TITLE', '"{title}" has been saved.', { title: body.title }) }); }
+      if (modal.isNew) { savedEvent = await mockApi.admin.createEvent(createIntent.body(body)); toast({ title: msg('FE_ADMIN_EVENTS_EVENT_CREATED', '✅ Event created'), description: msg('FE_EVENT_SAVED_TITLE', '"{title}" has been saved.', { title: body.title }) }); }
       else { await mockApi.admin.updateEvent(modal.item.id, body); savedEvent = { id: modal.item.id }; toast({ title: msg('FE_ADMIN_EVENTS_EVENT_UPDATED', '✅ Event updated'), description: msg('FE_ADMIN_EVENTS_TITLE_HAS_BEEN_SAVED', '"{title}" has been saved.', { title: body.title }) }); }
       if (scope !== eventScope.current) return;
-      setModal(null); await load();
+      createIntent.clear(); setModal(null); await load();
     } catch (e) { if (scope !== eventScope.current) return; toast({ title: msg('FE_ADMIN_EVENTS_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' }); }
     finally { writing.current = false; setBusy(null); }
   };
@@ -284,7 +301,7 @@ export default function AdminEvents() {
               <button type="button" disabled={!canManage(e) || !!busy} onClick={() => viewRegs(e.id)} aria-label="Registrants" title="Registrants" className={eventActionClass}><Eye className="h-4 w-4 shrink-0 text-primary" /><span>{msg('FE_EVENTS_ATTENDEES', 'Attendees')}</span></button>
               <button type="button" disabled={!canManage(e) || !!busy} onClick={() => void openRefundHistory(e.id)} aria-label="Refund history" title="Refund history" className={eventActionClass}><RefreshCw className="h-4 w-4 shrink-0 text-primary" /><span>{msg('FE_EVENTS_REFUNDS', 'Refunds')}</span></button>
               <button type="button" disabled={!canManage(e) || !!busy} onClick={() => genQR(e.id)} aria-label="QR" title="QR" className={eventActionClass}><QrCode className="h-4 w-4 shrink-0 text-primary" /><span>{msg('FE_EVENTS_QR', 'Venue QR')}</span></button>
-              <button type="button" disabled={!canManage(e) || !!busy} onClick={() => setModal({ item: { ...e, hp_reward: e.hp_per_attendee ?? e.hp_reward ?? 0, max_attendees: e.capacity ?? e.max_attendees ?? '', starts_at: watInput(e.starts_at), ends_at: watInput(e.ends_at) }, isNew: false })} aria-label={msg('FE_EVENT_EDIT', 'Edit event')} title={msg('FE_EVENT_EDIT', 'Edit event')} className={eventActionClass}><Pencil className="h-4 w-4 shrink-0 text-primary" /><span>{msg('FE_EVENTS_EDIT', 'Edit')}</span></button>
+              <button type="button" disabled={!canManage(e) || !!busy} onClick={() => { editOriginal.current = e; setModal({ item: { ...e, hp_reward: e.hp_per_attendee ?? e.hp_reward ?? 0, max_attendees: e.capacity ?? e.max_attendees ?? '', starts_at: watInput(e.starts_at), ends_at: watInput(e.ends_at) }, isNew: false }); }} aria-label={msg('FE_EVENT_EDIT', 'Edit event')} title={msg('FE_EVENT_EDIT', 'Edit event')} className={eventActionClass}><Pencil className="h-4 w-4 shrink-0 text-primary" /><span>{msg('FE_EVENTS_EDIT', 'Edit')}</span></button>
             </div>
             {canManage(e) && <Link className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl bg-gradient-dark px-4 py-3 text-sm font-bold text-white transition hover:brightness-110" to={`/event-manager?event=${e.id}`}><span>{msg('FE_EVENTS_OPEN_WORKSPACE', 'Open event workspace')}</span><ArrowUpRight className="h-4 w-4 shrink-0 text-accent" /></Link>}
           </div>
