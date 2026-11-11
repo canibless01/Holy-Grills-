@@ -1,5 +1,7 @@
 # General-site audit continuation — 4 November 2026
 
+Current consolidated status: [reward restoration and remaining audit priorities — 11 November](REWARD_RESTORATION_AND_AUDIT_STATUS_2026_11_11.md). The lists below are chronological; later closure records supersede older “next” items.
+
 The owner assigned the launch-remaining category to a new chat and this chat the remaining full-site A/B scope. Both use current main; fetch before every push. Do not reset genuine users/orders or replay old cleanup scripts. The uploaded UI skills collection remains deferred.
 
 ## Current completed batch
@@ -107,3 +109,7 @@ Evidence and remaining verification are in [stock metadata editing](ADMIN_STOCK_
 ## Evening operational reporting — 10 November
 
 [Updated timing and evidence](EVENING_REPORT_SCHEDULE_2026_11_10.md): owner-selected 21:00 WAT daily summaries, full 24-hour windows, thirty-minute staff cart alerts with send-time activity/payment checks, and cleaner operational emails. Existing dedupe, test exclusions, recipient controls and weekly calendar reports are preserved. Targeted backend/native/build and fresh production rollback cases pass; this does not change the remaining broader reward exception audit.
+
+## Combined benefit restoration and menu-linked delivery — 11 November
+
+[Evidence and consolidated remaining list](REWARD_RESTORATION_AND_AUDIT_STATUS_2026_11_11.md): fresh production rollback matrices pass campaign side/delivery/food-HP reservations plus promo/order-lock partial refund, changed campaign settings, final cancellation and retry conservation, alongside menu-linked physical reward kitchen/rider/delivery/unclaimed/refund paths. No new application defect was found in these cases. All fixture users rolled back; 43 targeted backend contracts pass. Exceptional event recovery, further reward/interruption combinations and remaining settings/role/reporting coverage remain separate.
