@@ -248,12 +248,12 @@ const orders = {
 // ========== EVENTS ==========
 const events = {
   async list() { return apiClient.get('/events'); },
-  async get(id) { return apiClient.get(`/events/${id}`); },
+  async get(id) { return apiClient.get(`/events/${id}`, { public: '1' }); },
   async register(id, body) { return apiClient.post(`/events/${id}/register`, body); },
   async checkin(id, body) { return apiClient.post(`/events/${id}/checkin`, body); },
   async generateQR(id) { return apiClient.post(`/events/${id}/qr`); },
   async cateringRequest(body) { return apiClient.post('/events/catering-requests', body); },
-  async getTiers(id) { return unwrap(await apiClient.get(`/events/${id}/tiers`), 'tiers'); },
+  async getTiers(id) { return unwrap(await apiClient.get(`/events/${id}/tiers`, { public: '1' }), 'tiers'); },
   // GET /events/my-tickets — the authenticated user's tickets, split into
   // upcoming / past / checked_in. Replaces the old event-detail `has_ticket`
   // probe (get_event returns no per-user ticket ownership field).
@@ -271,13 +271,13 @@ const events = {
   // Ownership: for guest tickets the caller MUST pass guest_email as a query
   // param (spec §11.10). apiClient is JSON-only, so fetch the blob directly with
   // the same auth + campus headers and hand back an object URL for <a download>.
-  async ticketQr(eventId, ticketId, guestEmail) { return apiClient.post(`/events/${eventId}/tickets/${ticketId}/qr`, guestEmail ? { guest_email: guestEmail } : {}); },
-  async downloadTicketPdf(eventId, ticketId, guestEmail) {
+  async ticketQr(eventId, ticketId, guestEmail?, accessToken?) { return apiClient.post(`/events/${eventId}/tickets/${ticketId}/qr`, { ...(guestEmail ? { guest_email: guestEmail } : {}), ...(accessToken ? { access_token: accessToken } : {}) }); },
+  async downloadTicketPdf(eventId, ticketId, guestEmail, accessToken?) {
     const token = getToken();
     const guestCampusId = !token && localStorage.getItem('hg_campus_id');
     const adminCampusId = token && localStorage.getItem('hg_admin_campus_id');
     const campusHeader = adminCampusId || guestCampusId;
-    const qs = guestEmail ? `?guest_email=${encodeURIComponent(guestEmail)}` : '';
+    const qs = accessToken ? `?access_token=${encodeURIComponent(accessToken)}` : guestEmail ? `?guest_email=${encodeURIComponent(guestEmail)}` : '';
     const res = await fetch(`${API_BASE_URL}/events/${eventId}/tickets/${ticketId}/pdf${qs}`, {
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),

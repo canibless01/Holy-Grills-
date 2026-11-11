@@ -11,7 +11,7 @@
         "X-Frame-Options": "DENY",
         "Referrer-Policy": "strict-origin-when-cross-origin",
         "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
-        "Permissions-Policy": "geolocation=(self), camera=(), microphone=()"
+        "Permissions-Policy": "geolocation=(self), camera=(self), microphone=()"
       },
       "continue": true
     },

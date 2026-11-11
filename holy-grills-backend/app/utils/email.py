@@ -1195,26 +1195,22 @@ def get_user_email_and_name(user_id: str) -> tuple:
 def _prepare_qr_ticket_email(email: str, name: str, event_title: str, ticket_id: str, event_id: str, event_date: str = "", event_location: str = "") -> bool:
     """
     Send QR ticket email to guest or registered user.
-    Generates QR code payload (hg-event:{event_id}:{ticket_id}) locally as base64 PNG.
+    Uses signed first-party PNG and ticket-view links, including for guests.
     Does NOT leak ticket IDs to third-party QR generation APIs.
     """
-    qr_payload = f"hg-event:{event_id}:{ticket_id}"
-
+    from app.utils.event_ticket_access import issue_ticket_access
+    from urllib.parse import urlencode, quote
     try:
-        import qrcode
-        import io, base64
-        qr = qrcode.QRCode(version=1, box_size=10, border=2)
-        qr.add_data(qr_payload)
-        qr.make(fit=True)
-        img = qr.make_image(fill_color="black", back_color="white")
-        buffered = io.BytesIO()
-        img.save(buffered, format="PNG")
-        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-        qr_img_tag = f'<img src="data:image/png;base64,{img_str}" alt="QR Ticket Code" style="width:200px;height:200px;display:block;margin:15px auto;" />'
-    except Exception as e:
-        logger.error("send_qr_ticket_email: Failed to generate local base64 QR code for ticket %s: %s", ticket_id, e)
-        # Fail closed instead of leaking ticket_id to third-party external server
+        access = issue_ticket_access(event_id, ticket_id, email)
+    except ValueError:
+        logger.error("Ticket email signing configuration unavailable")
         return None
+    qr_url = public_api_base() + f"/events/{quote(str(event_id), safe='')}/tickets/{quote(str(ticket_id), safe='')}/qr.png?" + urlencode({'access': access})
+    frontend = (os.environ.get('FRONTEND_URL') or 'https://holygrills.online').split(',')[0].strip().rstrip('/')
+    ticket_url = frontend + f"/events/{quote(str(event_id), safe='')}#" + urlencode({'ticket':ticket_id, 'access':access})
+    qr_img_tag = f'<img src="{_html.escape(qr_url, quote=True)}" alt="Open View ticket below if your email blocks images" style="width:200px;height:200px;display:block;margin:15px auto;" />'
+    view_ticket = _html.escape(MSG.EMAIL_VIEW_EVENT_TICKET)
+    ticket_button = f'<a href="{_html.escape(ticket_url, quote=True)}" style="display:inline-block;padding:14px 24px;background:#E01616;color:#fff;border-radius:24px;text-decoration:none;font-weight:bold;">{view_ticket}</a>'
 
     safe_title = _html.escape(str(event_title or ""))
     safe_date = _html.escape(str(event_date or "TBA"))
@@ -1310,6 +1306,7 @@ Create an account to earn HP for this event!"""
                                         <div style="text-align: center; margin: 24px 0;">
                                             <p style="margin: 0 0 12px 0; font-size: 15px; color: {text_color};" class="email-text">Show this QR code at the door for check-in:</p>
                                             {qr_img_tag}
+                                            {ticket_button}
                                         </div>
                                         <div style="margin: 24px 0; padding: 20px; background-color: #FFF5F0; border-radius: 12px; border-left: 4px solid {brand_red};">
                                             <p style="margin: 0; font-size: 15px; color: {text_color};" class="email-text"><strong>Earn Rewards!</strong> Create an account with this email to earn HP for this event and unlock exclusive perks!</p>

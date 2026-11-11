@@ -46,7 +46,7 @@ export default function RegisterModal({ event, tiers, user, wallet, hpBalance, i
     ? (guest.guest_name.trim() && /\S+@\S+\.\S+/.test(guest.guest_email) && guest.guest_phone.trim())
     : true;
   const tierValid = tiers.length === 0 || !!selectedTier;
-  const fieldsValid = regFields.every((f) => !f.required || (answers[f.name] != null && String(answers[f.name]).trim() !== ''));
+  const fieldsValid = regFields.every(f => !f.required || (f.type === 'checkbox' ? answers[f.name] === true : Array.isArray(answers[f.name]) ? answers[f.name].length > 0 : answers[f.name] != null && String(answers[f.name]).trim() !== ''));
   const splitValid = paymentMethod !== 'split' || (Number(walletAmount) > 0 && Number(walletAmount) < price);
   const valid = guestValid && tierValid && fieldsValid && splitValid && (isFree || paymentMethod);
 
@@ -113,6 +113,7 @@ export default function RegisterModal({ event, tiers, user, wallet, hpBalance, i
     const label = f.label || f.name;
     const val = answers[name] ?? '';
     const base = "w-full p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary/40";
+    if (f.type === 'radio' || f.type === 'multiselect') return <fieldset key={name} className="rounded-xl border border-border p-3 space-y-2"><legend className="px-1 text-sm font-semibold">{label}{f.required ? ' *' : ''}</legend>{(f.options||[]).map(option=><label key={option} className="flex items-center gap-2 text-sm"><input type={f.type==='radio'?'radio':'checkbox'} name={name} checked={f.type==='radio'?val===option:Array.isArray(val)&&val.includes(option)} onChange={e=>setAnswer(name,f.type==='radio'?option:e.target.checked?[...(Array.isArray(val)?val:[]),option]:(Array.isArray(val)?val:[]).filter(v=>v!==option))}/>{option}</label>)}</fieldset>;
     if (f.type === 'select') {
       return (
         <select key={name} value={val} onChange={(e) => setAnswer(name, e.target.value)} className={base}>
@@ -135,7 +136,7 @@ export default function RegisterModal({ event, tiers, user, wallet, hpBalance, i
     return (
       <input
         key={name}
-        type={f.type === 'number' ? 'number' : f.type === 'email' ? 'email' : 'text'}
+        type={f.type === 'number' ? 'number' : f.type === 'email' ? 'email' : f.type === 'date' ? 'date' : 'text'}
         value={val}
         onChange={(e) => setAnswer(name, e.target.value)}
         placeholder={`${label}${f.required ? ' *' : ''}`}
@@ -187,7 +188,7 @@ export default function RegisterModal({ event, tiers, user, wallet, hpBalance, i
                         className={`p-3 rounded-2xl border-2 text-left transition-all ${selected ? 'border-primary bg-primary/5' : 'border-border'} ${soldOut ? 'opacity-50' : 'active:scale-95'}`}
                       >
                         <div className="font-bold text-sm text-foreground">{t.name}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">{formatNaira(t.price_naira ?? 0)}{t.price_hp ? ` · ${t.price_hp} HP` : ''}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{formatNaira(t.price_naira_full ?? t.price_naira ?? 0)}{t.price_hp ? ` · ${t.price_hp} HP` : ''}</div>
                         <div className={`text-[10px] font-semibold mt-1 ${remaining <= 5 ? 'text-destructive' : 'text-success'}`}>
                           {soldOut ? 'Sold out' : `${remaining} left`}
                         </div>
@@ -203,7 +204,7 @@ export default function RegisterModal({ event, tiers, user, wallet, hpBalance, i
                 <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-2">Your details</div>
                 <div className="space-y-2">
                   <input className="w-full p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary/40" placeholder="Full name *" value={guest.guest_name} onChange={setGuestField('guest_name')} />
-                  <input className="w-full p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary/40" placeholder="Email *" type="email" value={guest.guest_email} onChange={setGuestField('guest_email')} />
+                  <input className="w-full p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary/40" placeholder="Email *" aria-label={msg('FE_EVENT_GUEST_EMAIL', 'Email')} type="email" value={guest.guest_email} onChange={setGuestField('guest_email')} />
                   <input className="w-full p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary/40" placeholder="Phone *" value={guest.guest_phone} onChange={setGuestField('guest_phone')} />
                 </div>
               </div>

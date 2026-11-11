@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ChevronLeft, Calendar, MapPin, Flame, Users, Ticket, Check, QrCode, Camera, Info, Loader2, Download, ChevronRight } from 'lucide-react';
+import { ChevronLeft, Calendar, MapPin, Flame, Users, Ticket, Check, Camera, Info, Loader2, Download, ChevronRight } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { formatDateTime, formatNaira } from '@/lib/hgUtils';
@@ -16,8 +16,13 @@ export default function EventDetail() {
   const navigate = useNavigate();
   const { user, refreshHp, hpBalance, wallet, isAuthenticated } = useHolyGrill();
   const [event, setEvent] = useState(null);
+  const eventId = event?.id || id;
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [retry, setRetry] = useState(0);
   const [tiers, setTiers] = useState([]);
+  const [tiersLoading, setTiersLoading] = useState(true);
+  const [tiersError, setTiersError] = useState(false);
   const [selectedTier] = useState(null);
   const [showRegister, setShowRegister] = useState(false);
   const [ticket, setTicket] = useState(null);
@@ -31,20 +36,25 @@ export default function EventDetail() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true); setEvent(null); setTicket(null); setTiers([]);
+    setLoading(true); setLoadError(false); setEvent(null); setTicket(null); setTiers([]); setTiersLoading(true); setTiersError(false);
     liveApi.events.get(id).then(result => {
-      if (!cancelled) { setEvent(unwrap(result)); setLoading(false); }
-    }).catch(() => { if (!cancelled) setLoading(false); });
-    // Public content never waits for private ticket history or tier reads.
-    liveApi.events.getTiers(id).then(rows => { if (!cancelled) setTiers(rows); }).catch(() => {});
-    if (isAuthenticated) liveApi.events.myTickets().then(mine => {
       if (cancelled) return;
-      const all = [...(mine?.upcoming || []), ...(mine?.past || []), ...(mine?.checked_in || []), ...(mine?.tickets || [])];
-      const owned = all.find(t => t.event_id === id);
-      if (owned && ['paid', 'not_required'].includes(owned.payment_status)) setTicket({ ...owned, ticket_id: owned.ticket_id || owned.id });
-    }).catch(() => {});
+      const detail = unwrap(result); setEvent(detail); setLoading(false);
+      liveApi.events.getTiers(detail.id).then(rows => { if (!cancelled) setTiers(rows); }).catch(() => { if (!cancelled) setTiersError(true); }).finally(()=>{if(!cancelled)setTiersLoading(false);});
+      if (isAuthenticated) liveApi.events.myTickets().then(mine => {
+        if (cancelled) return;
+        const all = [...(mine?.upcoming || []), ...(mine?.past || []), ...(mine?.checked_in || []), ...(mine?.tickets || [])];
+        const owned = all.find(t => t.event_id === detail.id);
+        if (owned && ['paid','not_required'].includes(owned.payment_status)) { setTicket({...owned,ticket_id:owned.ticket_id||owned.id}); setEvent(previous=>previous?.id===detail.id?{...previous,checked_in:!!owned.checked_in}:previous); }
+      }).catch(() => {});
+    }).catch(() => { if (!cancelled) { setLoadError(true); setLoading(false); } });
+    const emailProof = new URLSearchParams(window.location.hash.slice(1));
+    const emailTicket = emailProof.get('ticket'); const accessToken = emailProof.get('access');
+    if (emailTicket && accessToken) liveApi.events.ticketQr(id, emailTicket, undefined, accessToken).then(result => {
+      if (!cancelled) setTicket({...result, access_token:accessToken});
+    }).catch(error => { if (!cancelled) toast({title:msg('FE_EVENT_TICKET_OPEN_FAILED', 'Your ticket could not be opened'), description:error.message, variant:'destructive'}); });
     return () => { cancelled = true; };
-  }, [id, isAuthenticated]);
+  }, [id, isAuthenticated, retry]);
 
   // Card payments are webhook-driven (spec §11.6). After Paystack redirects back with a
   // `reference` query param we ask the backend to verify that reference with Paystack
@@ -56,7 +66,7 @@ export default function EventDetail() {
     const params = new URLSearchParams(window.location.search);
     const reference = params.get('reference') || params.get('ref');
     const guestEmail = isAuthenticated ? null : sessionStorage.getItem('hg_event_guest_email');
-    if (!reference || (!isAuthenticated && !guestEmail)) return;
+    if (!reference || !event?.id || (!isAuthenticated && !guestEmail)) return;
     setPaystackProcessing(true);
     let cancelled = false;
     const confirmAndClean = (found) => {
@@ -72,7 +82,7 @@ export default function EventDetail() {
     const poll = async (attempt) => {
       try {
         // Idempotent: if the webhook already confirmed the ticket this returns paid.
-        const verified = await liveApi.events.verifyTicket(id, guestEmail ? { reference, guest_email: guestEmail } : { reference });
+        const verified = await liveApi.events.verifyTicket(eventId, guestEmail ? { reference, guest_email: guestEmail } : { reference });
         if (['refund_pending', 'refunded'].includes(verified?.payment_status)) {
           confirmAndClean({ ...verified, status: 'cancelled' });
           const latest = unwrap(await liveApi.events.get(id));
@@ -83,7 +93,7 @@ export default function EventDetail() {
           if (isAuthenticated) {
             const mine = await liveApi.events.myTickets();
             const all = [...(mine?.upcoming || []), ...(mine?.past || []), ...(mine?.checked_in || []), ...(mine?.tickets || [])];
-            confirmAndClean(all.find((t) => t.event_id === id) || { ticket_id: verified.ticket_id });
+            confirmAndClean(all.find((t) => t.event_id === eventId) || { ticket_id: verified.ticket_id });
           } else {
             confirmAndClean({ ticket_id: verified.ticket_id });
           }
@@ -92,7 +102,7 @@ export default function EventDetail() {
         if (isAuthenticated) {
           const mine = await liveApi.events.myTickets();
           const all = [...(mine?.upcoming || []), ...(mine?.past || []), ...(mine?.checked_in || []), ...(mine?.tickets || [])];
-          const found = all.find((t) => t.event_id === id);
+          const found = all.find((t) => t.event_id === eventId);
           // A pending reservation is not a paid ticket: my-tickets returns the row as soon
           // as checkout starts, so matching on event_id alone reported "Payment confirmed!"
           // for a registration whose card payment had not (or had failed to) settle.
@@ -110,18 +120,18 @@ export default function EventDetail() {
     };
     poll(0);
     return () => { cancelled = true; };
-  }, [id, isAuthenticated]);
+  }, [event?.id, isAuthenticated]);
 
   const price = event?.ticket_price ?? (tiers.length ? Number(tiers[0].price_naira) || 0 : 0);
   const hpReward = event?.hp_per_attendee ?? event?.hp_reward ?? 0;
-  const isFree = !event?.is_paid;
+  const isFree = tiers.length ? tiers.some(t => Number(t.price_naira_full ?? t.price_naira ?? 0) === 0) : !event?.is_paid;
   const effPrice = selectedTier ? (selectedTier.price_naira ?? 0) : price;
 
   const handleScannedToken = async (qrToken) => {
     setShowScanner(false);
     setScanning(true);
     try {
-      const result = unwrap(await liveApi.events.checkin(id, { qr_token: qrToken, ...(ticket?.ticket_id ? { ticket_id: ticket.ticket_id } : {}) }));
+      const result = unwrap(await liveApi.events.checkin(eventId, { qr_token: qrToken, ...(ticket?.ticket_id ? { ticket_id: ticket.ticket_id } : {}) }));
       const hpAdded = result?.hp_added_to_active ?? result?.hp_added_to_pending ?? result?.hp_earned ?? result?.pending_hp ?? result?.hp_awarded ?? 0;
       setCheckinResult({ ...result, hp_added_to_active: hpAdded });
       await refreshHp();
@@ -133,6 +143,7 @@ export default function EventDetail() {
   };
 
   if (loading) return <EventDetailSkeleton />;
+  if (loadError) return <div role="alert" className="mx-auto max-w-md rounded-3xl border border-border bg-card p-8 text-center space-y-4"><p>{msg('FE_EVENT_LOAD_FAILED', 'The event could not be loaded. Check your connection and try again.')}</p><button type="button" onClick={()=>setRetry(value=>value+1)} className="min-h-12 rounded-full bg-primary px-6 py-3 font-bold text-white">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;
   if (!event) return (
     <div className="text-center py-16">
       <Calendar className="w-10 h-10 text-muted-foreground/40 mx-auto mb-3" />
@@ -214,6 +225,8 @@ export default function EventDetail() {
         </div>
       </div>}
 
+      {tiersError && <div role="alert" className="rounded-2xl border border-border bg-card p-5 text-center space-y-3"><p>{msg('FE_EVENT_TIERS_FAILED','Ticket options could not be loaded. Please retry before registering.')}</p><button className="min-h-11 rounded-full bg-primary px-5 py-2 font-bold text-white" onClick={()=>setRetry(v=>v+1)}>{msg('FE_PLATFORM_RETRY','Retry')}</button></div>}
+      {tiers.some(t=>Number(t.price_naira_full??t.price_naira??0)===0) && tiers.some(t=>Number(t.price_naira_full??t.price_naira??0)>0) && <p className="rounded-xl bg-secondary p-4 text-sm">{msg('FE_EVENT_SUPPORT_HELP','Admission is free. Choose a free ticket, or select an optional paid support tier when you register.')}</p>}
       {tiers.length > 0 && event.metadata?.lifecycle_status !== 'cancelled' && (
         <div className="rounded-2xl bg-card border border-border p-4 shadow-card">
           <h3 className="font-bold text-sm text-foreground mb-3">Ticket Tiers</h3>
@@ -273,32 +286,6 @@ export default function EventDetail() {
             <div className="text-xs text-success">{msg('FE_EVENT_ATTENDANCE_RECORDED', 'Your attendance has been recorded.')}</div>
           </div>
         </div>
-      ) : isFree ? (
-        <div className="rounded-2xl bg-card border-2 border-primary/20 p-5 text-center space-y-3 shadow-card">
-          <div>{ticket ? <TicketQrImage eventId={id} ticketId={ticket.ticket_id} guestEmail={ticket.guest_email} /> : <QrCode className="w-12 h-12 text-muted-foreground mx-auto" />}</div>
-          <div>
-            <div className="font-bold text-foreground text-sm">{ticket ? "You're in. Bring a friend." : 'Ready to check in?'}</div>
-            <div className="text-xs text-muted-foreground mt-1">
-              {ticket
-                ? (isAuthenticated ? 'Point your camera at the Holy Grill QR code displayed at the event entrance to claim your HP.' : msg('FE_EVENT_GUEST_ENTRY_HELP', 'Show your ticket QR to the organizer, or scan the venue QR to record your attendance.'))
-                : "Register so we know you're coming, then scan the QR at the entrance."}
-            </div>
-          </div>
-          {!ticket ? (
-            <>
-              <button onClick={() => setShowRegister(true)} className="w-full py-3.5 rounded-2xl bg-gradient-cta text-white font-bold text-sm shadow-glow transition-all active:scale-[0.98]">
-                I'm In
-              </button>
-              <button onClick={() => setShowScanner(true)} disabled={scanning} className="w-full py-3.5 rounded-2xl border-2 border-primary/20 text-foreground font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 transition-all active:scale-[0.98]">
-                {scanning ? <><Loader2 className="w-4 h-4 animate-spin" /> Scanning…</> : <><Camera className="w-4 h-4" /> Scan QR Code to Check In</>}
-              </button>
-            </>
-          ) : (
-            <button onClick={() => setShowScanner(true)} disabled={scanning} className="w-full py-3.5 rounded-2xl bg-gradient-cta text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 transition-all active:scale-[0.98]">
-              {scanning ? <><Loader2 className="w-4 h-4 animate-spin" /> Scanning…</> : <><Camera className="w-4 h-4" /> Scan QR Code to Check In</>}
-            </button>
-          )}
-        </div>
       ) : ticket ? (
         <div className="rounded-2xl bg-card border-2 border-primary/20 p-5 space-y-4 shadow-card">
           <div className="text-center">
@@ -314,7 +301,7 @@ export default function EventDetail() {
           </div>
           {!isAuthenticated && <div className="rounded-xl bg-secondary p-4 text-center space-y-3"><p className="text-sm">{msg('FE_EVENT_SIGNUP_REWARD', 'Create an account with your ticket email to earn HP when you attend.')}</p><Link to="/signup" state={{from:`/events/${id}`}} className="inline-flex rounded-full bg-primary px-5 py-2 text-sm font-bold text-white">{msg('FE_EVENT_CREATE_ACCOUNT', 'Create an account')}</Link></div>}
           <div className="rounded-2xl border-2 border-dashed border-primary/30 p-4 text-center bg-primary/5">
-            <TicketQrImage eventId={id} ticketId={ticket.ticket_id} guestEmail={ticket.guest_email} />
+            <TicketQrImage eventId={eventId} ticketId={ticket.ticket_id} guestEmail={ticket.guest_email} accessToken={ticket.access_token} />
             <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Ticket ID</div>
             <div className="font-mono font-bold text-sm text-foreground break-all">{ticket.ticket_id}</div>
             {ticket.qr_code && <div className="font-mono text-[10px] text-muted-foreground mt-1 break-all">{ticket.qr_code}</div>}
@@ -324,7 +311,7 @@ export default function EventDetail() {
             onClick={async () => {
               try {
                 // Guest tickets require guest_email for ownership verification (spec §11.10).
-                const url = await liveApi.events.downloadTicketPdf(id, ticket.ticket_id || ticket.id, ticket.guest_email);
+                const url = await liveApi.events.downloadTicketPdf(eventId, ticket.ticket_id || ticket.id, ticket.guest_email, ticket.access_token);
                 const a = document.createElement('a');
                 a.href = url;
                 a.download = `holy-grills-ticket-${(ticket.ticket_id || '').slice(0, 8)}.pdf`;
@@ -345,9 +332,10 @@ export default function EventDetail() {
       ) : (
         <button
           onClick={() => setShowRegister(true)}
-          className="w-full py-4 rounded-2xl bg-gradient-cta text-white font-bold text-sm shadow-glow transition-all active:scale-[0.98]"
+          disabled={tiersLoading || tiersError}
+          className="w-full py-4 rounded-2xl bg-gradient-cta text-white font-bold text-sm shadow-glow transition-all active:scale-[0.98] disabled:opacity-50"
         >
-          {tiers.length > 0 ? 'Get Your Ticket' : `I'm In`}
+          {tiersLoading ? msg('FE_EVENT_OPTIONS_LOADING', 'Loading ticket options…') : tiers.length > 0 ? 'Get Your Ticket' : `I'm In`}
         </button>
       )}
 
@@ -370,7 +358,7 @@ export default function EventDetail() {
       )}
 
       {showScanner && event.metadata?.lifecycle_status !== 'cancelled' && (
-        <EventCheckInScanner eventId={id} onScan={handleScannedToken} onClose={() => setShowScanner(false)} />
+        <EventCheckInScanner eventId={eventId} onScan={handleScannedToken} onClose={() => setShowScanner(false)} />
       )}
     </div>
   );

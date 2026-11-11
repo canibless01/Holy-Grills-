@@ -164,7 +164,8 @@ def test_guest_ticket_builds_frozen_local_qr_and_transactional_email(setup_dispa
         assert outbox.dispatch_notification(TOKEN)['state']=='accepted'
     prepared=email.call_args.args[0]
     assert prepared['to_email']=='student@example.com' and prepared['transactional'] is True
-    assert 'data:image/png;base64,' in prepared['html_body']
+    assert '/qr.png?access=' in prepared['html_body'] and 'View ticket and QR' in prepared['html_body']
+    assert 'data:image/png;base64,' not in prepared['html_body']
     assert 'Grill &lt;Night&gt;' in prepared['html_body'] and '<Night>' not in prepared['html_body']
     assert 'api.qrserver' not in prepared['html_body'];prefs.assert_not_called()
     assert all(call.args[0]!='profiles' for call in db.table.call_args_list)

@@ -137,7 +137,7 @@ const PUBLIC_STOREFRONT_READS = new Set([
   '/storefront/sections', '/storefront/banners', '/storefront/early-supporters',
   '/storefront/config/public', '/storefront/feature-flags',
   '/auth/registration-options', '/campuses',
-  '/menu/categories',
+  '/menu/categories', '/events',
 ]);
 
 /**
@@ -191,7 +191,8 @@ async function request(path: string, options: RequestOptions = {}) {
   const parsedPath = new URL(path, 'https://app.invalid');
   const publicMenu = parsedPath.pathname === '/menu/items' && parsedPath.searchParams.get('available_only') === 'true'
     && parsedPath.searchParams.get('include_secret') !== '1';
-  const publicRead = (!options.method || options.method === 'GET') && (PUBLIC_STOREFRONT_READS.has(parsedPath.pathname) || publicMenu)
+  const publicEvent = /^\/events\/[a-zA-Z0-9-]+(?:\/tiers)?$/.test(parsedPath.pathname) && parsedPath.searchParams.get('public') === '1';
+  const publicRead = (!options.method || options.method === 'GET') && (PUBLIC_STOREFRONT_READS.has(parsedPath.pathname) || publicMenu || publicEvent)
     && !['1', 'true', 'yes'].includes((parsedPath.searchParams.get('include_inactive') || '').toLowerCase());
   // Published content has the same public access regardless of saved session.
   // Do not make every banner wait for Auth verification/token recovery. The

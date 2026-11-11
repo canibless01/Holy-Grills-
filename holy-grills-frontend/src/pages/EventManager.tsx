@@ -5,6 +5,7 @@ import { useCampus } from '@/lib/campusContext';
 import { isAuthenticated } from '@/lib/apiClient';
 import { eventOrganizerApi as api } from '@/lib/eventOrganizerApi';
 import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
+import { CANONICAL_ORIGIN } from '@/lib/canonicalOrigin';
 import { msg } from '@/lib/messages';
 import { csvCell } from '@/lib/csvCell';
 import PanelSwitcher from '@/components/PanelSwitcher';
@@ -13,6 +14,7 @@ import InlineNotificationBell from '@/components/InlineNotificationBell';
 import AdminCampusSelector from '@/components/admin/AdminCampusSelector';
 import AdminUserPicker from '@/components/admin/AdminUserPicker';
 import ImageUploader from '@/components/admin/ImageUploader';
+import EventQuestionsEditor, { normalizedEventQuestions } from '@/components/events/EventQuestionsEditor';
 import EventOperationControls from '@/components/events/EventOperationControls';
 import EventCheckInScanner from '@/components/EventCheckInScanner';
 import { Modal, Field, TextInput } from '@/components/admin/AdminShared';
@@ -24,7 +26,7 @@ const secondary = 'inline-flex items-center justify-center gap-2 whitespace-nowr
 const card = 'rounded-2xl bg-card border border-border p-4 space-y-3';
 const money = (value) => `₦${Number(value || 0).toLocaleString('en-NG', {minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const wat = value => value ? new Date(new Date(value).getTime()+3600000).toISOString().slice(0,16) : '';
-const blank = {title:'',description:'',location:'',starts_at:'',ends_at:'',capacity:100,image_url:''};
+const blank = {title:'',description:'',location:'',starts_at:'',ends_at:'',capacity:100,image_url:'',registration_fields:[]};
 const statusLabel = value => ({draft:msg('FE_ORG_DRAFT','Draft'),submitted:msg('FE_ORG_SUBMITTED','Awaiting review'),approved:msg('FE_ORG_APPROVED','Approved'),changes_requested:msg('FE_ORG_CHANGES','Changes requested'),pending:msg('FE_ORG_PENDING','Pending approval'),paid:msg('FE_ORG_PAID','Paid'),rejected:msg('FE_ORG_REJECTED','Rejected'),cancelled:msg('FE_ORG_CANCELLED','Cancelled')})[value] || value;
 
 export default function EventManager() {
@@ -42,11 +44,14 @@ function Workspace({admin}) {
   useEffect(()=>{const current=++version.current;setLoading(true);setError('');api.list({limit:25,offset,...(admin && adminCampusId ? {campus_id:adminCampusId}:{})}).then(result=>{if(current===version.current){setEvents(result.events||[]);setHasMore(!!result.has_more);}}).catch(e=>{if(current===version.current)setError(e.message);}).finally(()=>{if(current===version.current)setLoading(false);});return()=>{version.current++;};},[offset,revision,admin,adminCampusId]);
   const refresh=()=>setRevision(value=>value+1);
   return <main className="min-h-screen bg-background text-foreground pb-12">
-    <header className="sticky top-0 z-30 bg-card border-b border-border p-3 flex items-center gap-3 flex-wrap">
-      <BrandLogo size="admin" /><h1 className="font-heading font-extrabold flex-1 min-w-[140px]">{msg('FE_ORG_TITLE','Event workspace')}</h1>
-      {admin && <><AdminCampusSelector /><Link className={secondary} to="/admin?section=events">{msg('FE_ORG_ADMIN','Event administration')}</Link></>}
-      <InlineNotificationBell /><PanelSwitcher className={secondary} labelClassName="text-xs" />
-      <button className={secondary} onClick={()=>void logout()}>{msg('FE_ORG_SIGN_OUT','Sign out')}</button>
+    <header className="sticky top-0 z-30 border-b border-border bg-card/95 backdrop-blur">
+      <div className="mx-auto max-w-7xl space-y-3 p-3 sm:px-5">
+        <div className="flex items-center gap-3"><BrandLogo size="admin" /><h1 className="min-w-0 flex-1 font-heading text-sm font-extrabold sm:text-lg">{msg('FE_ORG_TITLE','Event workspace')}</h1><button className={`${secondary} shrink-0`} onClick={()=>void logout()}>{msg('FE_ORG_SIGN_OUT','Sign out')}</button></div>
+        <nav aria-label={msg('FE_ORG_WORKSPACE_NAV','Workspace navigation')} className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+          {admin && <><AdminCampusSelector /><Link className={secondary} to="/admin?section=events">{msg('FE_ORG_ADMIN','Event administration')}</Link></>}
+          <PanelSwitcher className={secondary} labelClassName="text-xs" /><InlineNotificationBell />
+        </nav>
+      </div>
     </header>
     <div className="max-w-7xl mx-auto p-4 grid lg:grid-cols-[280px_1fr] gap-5">
       <aside className="space-y-3">
@@ -64,7 +69,7 @@ function Workspace({admin}) {
 function DraftEditor({initial,onClose,onSaved}) {
   const [form,setForm]=useState(initial);const [busy,setBusy]=useState(false);const [error,setError]=useState('');const lock=useRef(false);const intent=useCmsCreateIntent();
   const save=async(event)=>{event.preventDefault();if(lock.current)return;lock.current=true;setBusy(true);setError('');
-    const body={title:form.title,description:form.description||'',location:form.location,starts_at:form.starts_at,ends_at:form.ends_at,capacity:Number(form.capacity),image_url:form.image_url||''};
+    const body={title:form.title,description:form.description||'',location:form.location,starts_at:form.starts_at,ends_at:form.ends_at,capacity:Number(form.capacity),image_url:form.image_url||'',registration_fields:normalizedEventQuestions(form.registration_fields||[])};
     try{const result=initial.id?await api.edit(initial.id,body):await api.create(intent.body(body));intent.clear();onSaved(result);}catch(e){setError(e.message);}finally{lock.current=false;setBusy(false);}};
   return <Modal open title={msg('FE_ORG_DRAFT_EDITOR','Event draft')} onClose={()=>{if(!busy)onClose();}}><form onSubmit={save} className="space-y-3"><fieldset disabled={busy} className="space-y-3">
     <p className="text-sm text-muted-foreground">{msg('FE_ORG_REVIEW_HELP','Submit your event for review. Holy Grills finalizes ticket prices, organizer amounts and HP rewards before publication.')}</p>
@@ -73,6 +78,7 @@ function DraftEditor({initial,onClose,onSaved}) {
     <Field label={msg('FE_ORG_LOCATION','Venue / location')}><TextInput required maxLength={500} value={form.location} onChange={e=>setForm({...form,location:e.target.value})}/></Field>
     <div className="grid sm:grid-cols-2 gap-3"><Field label={msg('FE_EVENT_START_WAT','Starts (WAT)')}><TextInput required type="datetime-local" value={form.starts_at} onChange={e=>setForm({...form,starts_at:e.target.value})}/></Field><Field label={msg('FE_EVENT_END_WAT','Ends (WAT)')}><TextInput required type="datetime-local" value={form.ends_at} onChange={e=>setForm({...form,ends_at:e.target.value})}/></Field></div>
     <Field label={msg('FE_ORG_CAPACITY','Capacity')}><TextInput required min={1} max={1000000} type="number" value={form.capacity} onChange={e=>setForm({...form,capacity:e.target.value})}/></Field>
+    <EventQuestionsEditor value={form.registration_fields||[]} onChange={registration_fields=>setForm({...form,registration_fields})} />
     <ImageUploader value={form.image_url||''} onChange={url=>setForm({...form,image_url:url})} folder="events" />
     {error && <p role="alert" className="text-destructive">{error}</p>}<button className={button} type="submit">{busy?msg('FE_ORG_SAVING','Saving…'):msg('FE_ORG_SAVE_DRAFT','Save draft')}</button>
   </fieldset></form></Modal>;
@@ -86,14 +92,14 @@ function EventAccount({id,admin,externalRevision,onEdit,onChange}) {
   useEffect(()=>{const current=++version.current;setLoading(true);setError('');api.account(id).then(result=>{if(current===version.current)setAccount(result);}).catch(e=>{if(current===version.current)setError(e.message);}).finally(()=>{if(current===version.current)setLoading(false);});return()=>{version.current++;};},[id,revision,externalRevision]);
   const run=async(task,success?)=>{if(lock.current)return;lock.current=true;setBusy(true);setError('');setMessage('');try{const result=await task();if(alive.current){setMessage(success?success(result):msg('FE_ORG_SAVED','Saved.'));reload();onChange();}}catch(e){if(alive.current)setError(e.message);}finally{lock.current=false;if(alive.current)setBusy(false);}};
   if(loading && !account)return <p role="status">{msg('FE_ORG_LOADING','Loading event workspace…')}</p>;
-  if(!account)return <div role="alert" className={card}><p>{error}</p><button onClick={reload}>{msg('FE_PLATFORM_RETRY','Retry')}</button></div>;
+  if(!account)return <div role="alert" className={card}><p>{error}</p><button className={`${button} mt-3`} onClick={reload}>{msg('FE_PLATFORM_RETRY','Retry')}</button></div>;
   const event=account.event;const canEdit=['draft','changes_requested'].includes(event.review_status) && event.metadata?.lifecycle_status !== 'cancelled';
   const admit=token=>run(()=>api.checkin(id,token),result=>result.replayed?msg('FE_EVENT_ALREADY_ADMITTED','This ticket was already checked in. No additional HP was awarded.'):msg('FE_EVENT_ADMITTED','Check-in recorded. Attendee HP: {hp}.',{hp:result.hp_added_to_active||0}));
   return <div className="space-y-4">
     <div className={card}><div className="flex justify-between items-start gap-3 flex-wrap"><div><h2 className="font-heading font-extrabold text-xl">{event.title}</h2><p className="text-sm text-muted-foreground">{event.metadata?.lifecycle_status === 'cancelled' ? msg('FE_EVENT_CANCELLED', 'Event cancelled') : event.metadata?.lifecycle_status === 'rescheduled' ? msg('FE_EVENT_RESCHEDULED', 'Event rescheduled') : statusLabel(event.review_status)}</p>{event.metadata?.change_reason && <p className="mt-2 text-sm text-muted-foreground">{event.metadata.change_reason}</p>}</div><button className={secondary} onClick={reload} disabled={busy}>{msg('FE_ORG_REFRESH','Refresh')}</button></div>
       {event.review_notes && <p className="rounded-xl bg-secondary p-3 text-sm">{event.review_notes}</p>}
-      {error && <div role="alert" className="text-destructive"><p>{error}</p><button onClick={reload}>{msg('FE_PLATFORM_RETRY','Retry')}</button></div>}{message && <p role="status">{message}</p>}
-      <div className="flex gap-2 flex-wrap">{canEdit && <><button className={secondary} disabled={busy} onClick={()=>onEdit(event)}>{msg('FE_ORG_EDIT_DRAFT','Edit draft')}</button><button className={button} disabled={busy} onClick={()=>void run(()=>api.submit(id))}>{msg('FE_ORG_SUBMIT','Submit for approval')}</button></>}{event.review_status==='approved' && event.metadata?.lifecycle_status !== 'cancelled' && <button className={secondary} disabled={busy || loading} onClick={async()=>{if(await confirmAction({title:msg('FE_EVENT_QR_ROTATE','Generate a new venue QR? Previous venue codes will stop working.'),confirmLabel:msg('FE_EVENT_GENERATE_QR','Generate QR')}))void run(async()=>{const result=await api.doorQr(id);setDoorQr(result);return result;});}}>{msg('FE_ORG_VENUE_QR','Venue QR')}</button>}{event.is_published && <Link className={secondary} to={`/events/${id}`}>{msg('FE_ORG_PUBLIC_PAGE','View event page')}</Link>}</div>
+      {error && <div role="alert" className="text-destructive"><p>{error}</p><button className={`${button} mt-3`} onClick={reload}>{msg('FE_PLATFORM_RETRY','Retry')}</button></div>}{message && <p role="status">{message}</p>}
+      <div className="flex gap-2 flex-wrap">{canEdit && <><button className={secondary} disabled={busy} onClick={()=>onEdit(event)}>{msg('FE_ORG_EDIT_DRAFT','Edit draft')}</button><button className={button} disabled={busy} onClick={()=>void run(()=>api.submit(id))}>{msg('FE_ORG_SUBMIT','Submit for approval')}</button></>}{event.review_status==='approved' && event.metadata?.lifecycle_status !== 'cancelled' && <button className={secondary} disabled={busy || loading} onClick={async()=>{if(await confirmAction({title:msg('FE_EVENT_QR_ROTATE','Generate a new venue QR? Previous venue codes will stop working.'),confirmLabel:msg('FE_EVENT_GENERATE_QR','Generate QR')}))void run(async()=>{const result=await api.doorQr(id);setDoorQr(result);return result;});}}>{msg('FE_ORG_VENUE_QR','Venue QR')}</button>}{event.is_published && <><Link className={secondary} to={`/events/${event.slug || id}`}>{msg('FE_ORG_PUBLIC_PAGE','View event page')}</Link><button className={secondary} onClick={async()=>{try{await navigator.clipboard.writeText(`${CANONICAL_ORIGIN}/events/${event.slug||id}`);setMessage(msg('FE_EVENT_LINK_COPIED','Event link copied.'));}catch{setError(msg('FE_EVENT_LINK_COPY_FAILED','Open the event page and copy its address to share it.'));}}}>{msg('FE_EVENT_COPY_LINK','Copy event link')}</button></>}</div>
     </div>
     <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">{[[msg('FE_ORG_CONFIRMED','Confirmed tickets'),account.counts?.confirmed||0],[msg('FE_ORG_CHECKED_IN','Checked in'),account.counts?.checked_in||0],[msg('FE_ORG_PENDING_TICKETS','Awaiting payment'),account.counts?.pending||0],[msg('FE_ORG_CANCELLED_TICKETS','Cancelled / refunded'),account.counts?.cancelled||0]].map(([label,value])=><div key={label} className={card}><p className="text-xs text-muted-foreground">{label}</p><strong className="text-2xl font-heading">{value}</strong></div>)}</div>
     <div className={card}><h3 className="font-heading font-extrabold">{msg('FE_ORG_EARNINGS','Organizer settlement')}</h3><p className="text-sm text-muted-foreground">{msg('FE_ORG_EARNINGS_HELP','Your agreed organizer amount is recorded per ticket. Unpaid and refunded tickets do not add to this balance. This is separate from your shopping wallet.')}</p>
@@ -106,7 +112,7 @@ function EventAccount({id,admin,externalRevision,onEdit,onChange}) {
     </div>
     {admin && <EventOperationControls key={id} event={event} disabled={busy || loading} onSaved={()=>{reload();onChange();}} />}
     {admin && event.metadata?.lifecycle_status !== 'cancelled' && <ReviewControls account={account} busy={busy || loading} run={run} />}
-    <Attendees id={id} revision={revision} busy={busy || loading || event.metadata?.lifecycle_status === 'cancelled'} onScan={()=>setScanner(true)} onAdmit={ticket=>void admit(`hg-event:${id}:${ticket}`)} />
+    <Attendees id={id} fields={event.registration_fields||[]} revision={revision} busy={busy || loading || event.metadata?.lifecycle_status === 'cancelled'} onScan={()=>setScanner(true)} onAdmit={ticket=>void admit(`hg-event:${id}:${ticket}`)} />
     {doorQr && <Modal open onClose={()=>setDoorQr(null)} title={msg('FE_ORG_VENUE_QR','Venue QR')}><div className="text-center space-y-3"><img alt={msg('FE_EVENT_VENUE_QR','Venue check-in QR code')} src={doorQr.qr_image} className="w-64 h-64 mx-auto object-contain"/><a href={doorQr.qr_image} download={`event-${id}-venue-qr.png`} className={secondary}>{msg('FE_EVENT_DOWNLOAD_QR','Download venue QR')}</a><p className="text-xs break-all">{doorQr.qr_payload}</p></div></Modal>}
     {scanner && <EventCheckInScanner mode="ticket" eventId={id} onClose={()=>setScanner(false)} onScan={token=>{setScanner(false);void admit(token);}} />}
   </div>;
@@ -142,14 +148,14 @@ function ReviewControls({account,busy,run}) {
   </div>;
 }
 
-function Attendees({id,revision,busy,onScan,onAdmit}) {
+function Attendees({id,fields,revision,busy,onScan,onAdmit}) {
   const [query,setQuery]=useState('');const [offset,setOffset]=useState(0);const [rows,setRows]=useState([]);const [error,setError]=useState('');const [loading,setLoading]=useState(true);const [retry,setRetry]=useState(0);const version=useRef(0);
   useEffect(()=>{const current=++version.current;setLoading(true);setError('');const timer=setTimeout(()=>{api.attendees(id,{q:query.trim(),limit:50,offset}).then(result=>{if(current===version.current)setRows(result.attendees||[]);}).catch(e=>{if(current===version.current){setRows([]);setError(e.message);}}).finally(()=>{if(current===version.current)setLoading(false);});},250);return()=>{clearTimeout(timer);version.current++;};},[id,query,offset,revision,retry]);
-  const exportRows=async()=>{try{const result=await api.export(id);const data=result.attendees||[];if(!data.length)return;const headers=Object.keys(data[0]);const csv=[headers.join(','),...data.map(row=>headers.map(key=>`"${csvCell(row[key])}"`).join(','))].join('\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));const anchor=document.createElement('a');anchor.href=url;anchor.download=`event-${id}-attendees.csv`;anchor.click();URL.revokeObjectURL(url);}catch(e){setError(e.message);}};
+  const exportRows=async()=>{try{const result=await api.export(id);const data=result.attendees||[];if(!data.length)return;const headers=Object.keys(data[0]);const csv=[headers.join(','),...data.map(row=>headers.map(key=>`"${csvCell(typeof row[key]==='object' ? JSON.stringify(row[key]) : row[key])}"`).join(','))].join('\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));const anchor=document.createElement('a');anchor.href=url;anchor.download=`event-${id}-attendees.csv`;anchor.click();URL.revokeObjectURL(url);}catch(e){setError(e.message);}};
   return <div className={card}><div className="flex items-center justify-between flex-wrap gap-2"><h3 className="font-heading font-extrabold">{msg('FE_ORG_ATTENDEES','Attendees and check-in')}</h3><div className="flex gap-2"><button className={secondary} disabled={busy} onClick={onScan}>{msg('FE_EVENT_SCAN_ATTENDEE','Scan attendee ticket')}</button><button className={secondary} onClick={()=>void exportRows()}>{msg('FE_ORG_EXPORT','Export attendees')}</button></div></div>
     <input aria-label={msg('FE_EVENT_FIND_ATTENDEE','Find attendee')} placeholder={msg('FE_EVENT_FIND_ATTENDEE_HELP','Name, email, phone or ticket ID')} value={query} onChange={e=>{setOffset(0);setQuery(e.target.value);}} className="rounded-xl border border-border p-3 w-full"/>
     {error && <div role="alert" className="text-destructive"><p>{error}</p><button className={`${button} mt-3`} onClick={()=>setRetry(value=>value+1)}>{msg('FE_PLATFORM_RETRY','Retry')}</button></div>}
-    {loading ? <p role="status">{msg('FE_EVENT_LOADING','Loading event details…')}</p> : !error && rows.length===0 ? <p>{msg('FE_ORG_NO_ATTENDEES','No attendees match this search.')}</p> : rows.map(row=><div key={row.ticket_id} className="rounded-xl bg-secondary p-3 flex flex-col sm:flex-row justify-between gap-2"><div className="min-w-0"><strong>{row.full_name||row.email}</strong><p className="text-xs break-words">{row.email} · {row.phone}</p><p className="text-xs break-all">{row.ticket_id}</p><p className="text-xs">{row.tier_name} · {row.payment_status}</p></div>{row.checked_in?<span>{msg('FE_ORG_CHECKED_IN','Checked in')}</span>:row.status==='confirmed' && ['paid','not_required'].includes(row.payment_status) && <button className={button} disabled={busy} onClick={()=>onAdmit(row.ticket_id)}>{msg('FE_EVENT_CHECK_IN_ATTENDEE','Check in attendee')}</button>}</div>)}
+    {loading ? <p role="status">{msg('FE_EVENT_LOADING','Loading event details…')}</p> : !error && rows.length===0 ? <p>{msg('FE_ORG_NO_ATTENDEES','No attendees match this search.')}</p> : rows.map(row=><div key={row.ticket_id} className="rounded-xl bg-secondary p-3 flex flex-col sm:flex-row justify-between gap-2"><div className="min-w-0"><strong>{row.full_name||row.email}</strong><p className="text-xs break-words">{row.email} · {row.phone}</p><p className="text-xs break-all">{row.ticket_id}</p><p className="text-xs">{row.tier_name} · {row.payment_status}</p>{Object.entries(row.registration_answers||{}).map(([key,value])=><p key={key} className="text-xs whitespace-pre-wrap break-words"><strong>{fields.find(field=>field.name===key)?.label||key}: </strong>{Array.isArray(value)?value.join(', '):String(value)}</p>)}</div>{row.checked_in?<span>{msg('FE_ORG_CHECKED_IN','Checked in')}</span>:row.status==='confirmed' && ['paid','not_required'].includes(row.payment_status) && <button className={button} disabled={busy} onClick={()=>onAdmit(row.ticket_id)}>{msg('FE_EVENT_CHECK_IN_ATTENDEE','Check in attendee')}</button>}</div>)}
     <div className="flex justify-between"><button className={secondary} disabled={offset===0||loading} onClick={()=>setOffset(value=>Math.max(0,value-50))}>{msg('FE_ORG_PREVIOUS','Previous')}</button><button className={secondary} disabled={rows.length<50||loading} onClick={()=>setOffset(value=>value+50)}>{msg('FE_ORG_NEXT','Next')}</button></div>
   </div>;
 }

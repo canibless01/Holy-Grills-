@@ -1,3 +1,4 @@
+import EventQuestionsEditor, { normalizedEventQuestions } from '@/components/events/EventQuestionsEditor';
 import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
 import { Link } from 'react-router-dom';
 import { confirmAction } from '@/lib/confirmAction';
@@ -126,7 +127,7 @@ export default function AdminEvents() {
       hp_reward: Number(item.hp_reward), hp_per_attendee: Number(item.hp_reward),
       max_attendees: Number(item.max_attendees), capacity: Number(item.max_attendees),
       funding_source: item.funding_source || 'hg_funded', image_url: item.image_url || '',
-      is_featured: !!item.is_featured, is_paid: !!item.is_paid, is_published: !!item.is_published,
+      is_featured: !!item.is_featured, is_paid: !!item.is_paid, is_published: !!item.is_published, registration_fields:normalizedEventQuestions(item.registration_fields || []),
     };
     for (const field of ['starts_at', 'ends_at']) {
       if (modal.isNew || item[field] !== watInput(editOriginal.current?.[field])) {
@@ -134,9 +135,8 @@ export default function AdminEvents() {
       }
     }
     try {
-      let savedEvent = null;
-      if (modal.isNew) { savedEvent = await mockApi.admin.createEvent(createIntent.body(body)); toast({ title: msg('FE_ADMIN_EVENTS_EVENT_CREATED', '✅ Event created'), description: msg('FE_EVENT_SAVED_TITLE', '"{title}" has been saved.', { title: body.title }) }); }
-      else { await mockApi.admin.updateEvent(modal.item.id, body); savedEvent = { id: modal.item.id }; toast({ title: msg('FE_ADMIN_EVENTS_EVENT_UPDATED', '✅ Event updated'), description: msg('FE_ADMIN_EVENTS_TITLE_HAS_BEEN_SAVED', '"{title}" has been saved.', { title: body.title }) }); }
+      if (modal.isNew) { await mockApi.admin.createEvent(createIntent.body(body)); toast({ title: msg('FE_ADMIN_EVENTS_EVENT_CREATED', '✅ Event created'), description: msg('FE_EVENT_SAVED_TITLE', '"{title}" has been saved.', { title: body.title }) }); }
+      else { await mockApi.admin.updateEvent(modal.item.id, body); toast({ title: msg('FE_ADMIN_EVENTS_EVENT_UPDATED', '✅ Event updated'), description: msg('FE_ADMIN_EVENTS_TITLE_HAS_BEEN_SAVED', '"{title}" has been saved.', { title: body.title }) }); }
       if (scope !== eventScope.current) return;
       createIntent.clear(); setModal(null); await load();
     } catch (e) { if (scope !== eventScope.current) return; toast({ title: msg('FE_ADMIN_EVENTS_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' }); }
@@ -370,6 +370,7 @@ export default function AdminEvents() {
               </select>
             </Field>
             <p className="text-xs text-muted-foreground">{msg('FE_EVENT_PRICING_TIERS', 'Set ticket prices and HP discounts in Ticket Tiers after saving the event.')}</p>
+            <EventQuestionsEditor value={modal.item.registration_fields||[]} onChange={registration_fields=>setModal({...modal,item:{...modal.item,registration_fields}})} />
             <Field label="Image"><ImageUploader value={modal.item.image_url} onChange={(url) => setModal({ item: { ...modal.item, image_url: url }, isNew: modal.isNew })} folder="events" /></Field>
             <div className="flex items-center gap-4 flex-wrap">
               <div className="flex items-center gap-2"><Toggle disabled={Boolean(modal.item.review_status && modal.item.review_status !== 'approved')} label={msg('FE_ORG_PUBLICATION', 'Event publication')} checked={!!modal.item.is_published} onChange={(value) => setModal({...modal,item:{...modal.item,is_published:value}})} /><span className="text-sm font-semibold">{msg('FE_EVENT_PUBLISHED', 'Published')}</span></div>

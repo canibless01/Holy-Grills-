@@ -53,3 +53,61 @@ def test_guest_email_is_not_optional_or_an_owner_override(body):
 def test_ineligible_ticket_never_gets_an_entry_qr(ticket,event):
  with patch('qrcode.make') as make:response,status,_=call(ticket=ticket,event=event)
  assert status==409 and 'qr_image' not in response.json;make.assert_not_called()
+
+
+def test_email_png_uses_signed_recipient_proof_and_revalidates_paid_state():
+ from app.utils.event_ticket_access import issue_ticket_access
+ app.config['SECRET_KEY']='synthetic-ticket-signing-test-only'
+ guest={**TICKET,'user_id':None,'guest_email':'guest@example.invalid'}
+ with app.app_context():token=issue_ticket_access(E,T,'guest@example.invalid')
+ db=MagicMock();q=db.table.return_value
+ for method in ('select','eq','single'):getattr(q,method).return_value=q
+ q.execute.side_effect=[guest,EVENT]
+ with app.test_request_context('/?access='+token),patch.object(events,'get_db',return_value=db):
+  response,status=events.email_ticket_qr_image.__wrapped__(E,T)
+ assert status==200 and response.mimetype=='image/png'
+ assert response.headers['Cache-Control']=='private, no-store'
+ assert Image.open(io.BytesIO(response.data)).width>=200
+
+@pytest.mark.parametrize('tamper',['wrong_ticket','wrong_recipient','bad_signature','missing'])
+def test_email_artwork_never_accepts_just_an_id_or_wrong_proof(tamper):
+ from app.utils.event_ticket_access import issue_ticket_access
+ app.config['SECRET_KEY']='synthetic-ticket-signing-test-only'
+ guest={**TICKET,'user_id':None,'guest_email':'guest@example.invalid'}
+ with app.app_context():
+  token=issue_ticket_access(E,U if tamper=='wrong_ticket' else T,'other@example.invalid' if tamper=='wrong_recipient' else 'guest@example.invalid')
+ if tamper=='bad_signature':token+='invalid'
+ if tamper=='missing':token=''
+ db=MagicMock();q=db.table.return_value
+ for method in ('select','eq','single'):getattr(q,method).return_value=q
+ q.execute.return_value=guest
+ with app.test_request_context('/?access='+token),patch.object(events,'get_db',return_value=db):
+  response,status=events.email_ticket_qr_image.__wrapped__(E,T)
+ assert status==403 and response.mimetype!='image/png'
+
+
+def test_signed_email_proof_cannot_issue_an_unpaid_ticket_qr():
+ from app.utils.event_ticket_access import issue_ticket_access
+ app.config['SECRET_KEY']='synthetic-ticket-signing-test-only'
+ guest={**TICKET,'user_id':None,'guest_email':'guest@example.invalid','payment_status':'pending'}
+ with app.app_context():token=issue_ticket_access(E,T,'guest@example.invalid')
+ response,status,_=call(ticket=guest,actor=None,body={'access_token':token})
+ assert status==409 and 'qr_image' not in response.json
+
+@pytest.mark.parametrize('payment',['paid','pending','refunded'])
+def test_signed_guest_pdf_uses_same_payment_and_ownership_boundary(payment):
+ from app.utils.event_ticket_access import issue_ticket_access
+ app.config['SECRET_KEY']='synthetic-ticket-signing-test-only'
+ guest={**TICKET,'user_id':None,'guest_email':'guest@example.invalid','payment_status':payment}
+ with app.app_context():token=issue_ticket_access(E,T,'guest@example.invalid')
+ db=MagicMock();q=db.table.return_value
+ for method in ('select','eq','single'):getattr(q,method).return_value=q
+ q.execute.side_effect=[guest,EVENT]
+ with app.test_request_context('/?access_token='+token),patch.object(events,'get_db',return_value=db):
+  g.user_id=None
+  result=events.download_ticket_pdf.__wrapped__(E,T)
+ if payment=='paid':
+  assert result.mimetype=='application/pdf' and result.headers['Cache-Control']=='private, no-store'
+  result.direct_passthrough=False
+  assert result.get_data().startswith(b'%PDF')
+ else:assert result[1]==409

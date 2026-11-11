@@ -17,6 +17,7 @@ from app.utils.campus_scope import assert_can_modify, resolve_write_campus, as_c
 from app.utils.admin_helpers import as_int, as_number, as_instant, as_text, page_args
 from datetime import datetime, timezone
 import math
+from app.utils.event_questions import validate_questions, validate_answers
 
 logger = get_logger(__name__)
 
@@ -151,24 +152,20 @@ def get_event(event_id):
         description: Not found
     """
     db = get_user_client()
-    event = db.table("events").select("*").eq("id", event_id).single().execute()
+    event = db.table("events").select("*").eq("id" if validate_uuid(event_id) else "slug", event_id).single().execute()
     if not event:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
+    if request.args.get("public") == "1" and not event.get("is_published"):
+        return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
+    event_id = event["id"]
     campus_id = _get_campus_id()
     is_event_global = event.get("campus_id") is None or event.get("is_global") in (True, "true")
     if campus_id and event.get("campus_id") != campus_id and not is_event_global:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
     try:
-        # Only the validated visible parent is counted. Attendee identifiers
-        # stay server-side; a customer's count must include other attendees.
-        stats_db = get_db()
-        tickets = stats_db.table("event_tickets").select("id").eq("event_id", event_id).execute()
-        ticket_ids = [t["id"] for t in (tickets or [])]
-        if ticket_ids:
-            checkins = stats_db.table("event_checkins").select("id").in_("ticket_id", ticket_ids).execute()
-            event["checkin_count"] = len(checkins or [])
-        else:
-            event["checkin_count"] = 0
+        # The visible parent is already authorized. Only an aggregate leaves
+        # the service query; private attendee identifiers never leave the DB.
+        event["checkin_count"] = int(get_db().rpc("hg_event_attendance_count", {"p_event":event_id}) or 0)
     except Exception:
         logger.exception("Event attendance read failed")
         return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
@@ -374,7 +371,7 @@ def update_event(event_id):
         "hp_reward", "hp_promo_enabled", "is_featured", "is_published", "capacity",
         # Phase 2 columns:
         "hp_per_attendee", "funding_source", "max_attendees",
-        "hp_required", "total_value", "is_paid", "image_url",
+        "hp_required", "total_value", "is_paid", "image_url", "registration_fields",
     }
     if data.get("funding_source") == "host_funded":
         data["funding_source"] = "host_prepaid"
@@ -387,6 +384,8 @@ def update_event(event_id):
     if "max_attendees" in safe and "capacity" not in safe:
         safe["capacity"] = safe["max_attendees"]
     try:
+        if "registration_fields" in safe:
+            safe["registration_fields"] = validate_questions(safe["registration_fields"])
         for field in ("hp_reward", "hp_per_attendee", "hp_required"):
             if field in safe:
                 safe[field] = as_int(safe[field], 0, 10000)
@@ -590,29 +589,10 @@ def register_for_event(event_id):
     if campus_id and event.get("campus_id") != campus_id and not is_event_global:
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
 
-    # ── Custom registration field validation (unchanged from original) ──
-    answers_data = data.get("registration_answers", {}) or {}
-    if not isinstance(answers_data, dict):
-        return jsonify({"error": MSG.EVENT_REQUEST_INVALID}), 400
-    reg_fields = event.get("registration_fields") or []
-    for field_def in reg_fields:
-        if not isinstance(field_def, dict):
-            continue
-        fname = field_def.get("name")
-        flabel = field_def.get("label") or fname
-        ftype = field_def.get("type", "text")
-        is_req = field_def.get("required", False)
-        ans_val = answers_data.get(fname)
-        if ans_val is None and fname in data:
-            ans_val = data.get(fname)
-        if is_req and (ans_val is None or str(ans_val).strip() == ""):
-            return jsonify({"error": MSG.REGISTRATION_FIELD_REQUIRED.format(field=flabel)}), 400
-        if ans_val is not None and str(ans_val).strip() != "":
-            if ftype == "select":
-                opts = field_def.get("options") or []
-                if opts and ans_val not in opts:
-                    return jsonify({"error": f"Invalid selection for {flabel}"}), 400
-            answers_data[fname] = ans_val
+    try:
+        answers_data = validate_answers(event.get("registration_fields") or [], data.get("registration_answers", {}) or {})
+    except (ValueError, KeyError, TypeError) as exc:
+        return jsonify({"error": MSG.EVENT_ANSWERS_INVALID.format(field=str(exc))}), 400
     metadata_payload = {"registration_answers": answers_data}
 
     # ── Tier lookup ──
@@ -838,32 +818,64 @@ def _initiate_event_card_payment(db, ticket_id, event_id, amount_naira, email, c
 @optional_auth
 @rate_limit(max_requests=120, window_seconds=60)
 def ticket_qr_image(event_id, ticket_id):
+    return _ticket_qr_response(event_id, ticket_id, request.get_json(silent=True))
+
+
+@events_bp.route("/<event_id>/tickets/<ticket_id>/qr.png", methods=["GET"])
+@rate_limit(max_requests=120, window_seconds=60)
+def email_ticket_qr_image(event_id, ticket_id):
+    # Email clients cannot display data: images. Only a signed recipient-bound
+    # bearer link can fetch the first-party PNG; UUID alone never grants access.
+    token = request.args.get('access')
+    if not token:
+        return jsonify({'error': MSG.TICKET_ACCESS_DENIED}), 403
+    return _ticket_qr_response(event_id, ticket_id, {'access_token': token}, as_png=True)
+
+
+def _entry_ticket_valid(ticket, event):
+    expired = ticket.get('qr_expires_at') or event.get('ends_at')
+    return (ticket.get('status') in ('confirmed','checked_in')
+            and ticket.get('payment_status') in ('paid','not_required')
+            and event.get('is_published') is not False
+            and (event.get('metadata') or {}).get('lifecycle_status') != 'cancelled'
+            and (not expired or datetime.fromisoformat(str(expired).replace('Z','+00:00')) > datetime.now(timezone.utc)))
+
+
+def _ticket_qr_response(event_id, ticket_id, data, as_png=False):
     """Private QR artwork; never send ticket credentials to a third party."""
     if not validate_uuid(event_id) or not validate_uuid(ticket_id):
         return jsonify({'error': MSG.TICKET_NOT_FOUND}), 404
-    data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({'error': MSG.EVENT_REQUEST_INVALID}), 400
     db = get_db()
     ticket = db.table('event_tickets').select('id,event_id,user_id,guest_email,status,payment_status,qr_expires_at').eq('id', ticket_id).eq('event_id', event_id).single().execute() or {}
     if not ticket:
         return jsonify({'error': MSG.TICKET_NOT_FOUND}), 404
-    if ticket.get('user_id'):
+    from app.utils.event_ticket_access import valid_ticket_access
+    signed_access = valid_ticket_access(data.get('access_token'), ticket, db)
+    if signed_access:
+        pass
+    elif ticket.get('user_id'):
         if str(ticket['user_id']) != str(getattr(g, 'user_id', None)):
             return jsonify({'error': MSG.TICKET_ACCESS_DENIED}), 403
     elif not isinstance(data.get('guest_email'), str) or data['guest_email'].strip().lower() != str(ticket.get('guest_email') or '').strip().lower() or not data['guest_email'].strip():
         return jsonify({'error': MSG.TICKET_ACCESS_DENIED}), 403
-    event = db.table('events').select('metadata,ends_at').eq('id', event_id).single().execute() or {}
+    event = db.table('events').select('metadata,ends_at,is_published').eq('id', event_id).single().execute() or {}
     if not event:
         return jsonify({'error': MSG.EVENT_NOT_FOUND}), 404
-    expired = ticket.get('qr_expires_at') or event.get('ends_at')
-    if ticket.get('status') not in ('confirmed','checked_in') or ticket.get('payment_status') not in ('paid','not_required') or (event.get('metadata') or {}).get('lifecycle_status') == 'cancelled' or (expired and datetime.fromisoformat(str(expired).replace('Z','+00:00')) <= datetime.now(timezone.utc)):
+    if not _entry_ticket_valid(ticket, event):
         return jsonify({'error': MSG.EVENT_TICKET_NOT_ADMISSIBLE}), 409
     import io, base64, qrcode
     payload = f'hg-event:{event_id}:{ticket_id}'
     image = io.BytesIO();qrcode.make(payload).save(image, format='PNG')
-    response = jsonify({'qr_payload': payload, 'qr_image': 'data:image/png;base64,' + base64.b64encode(image.getvalue()).decode('ascii')})
+    if as_png:
+        from flask import Response
+        response = Response(image.getvalue(), mimetype='image/png')
+    else:
+        response = jsonify({'ticket_id': ticket_id, 'status': ticket['status'], 'payment_status': ticket['payment_status'], 'qr_payload': payload, 'qr_image': 'data:image/png;base64,' + base64.b64encode(image.getvalue()).decode('ascii')})
     response.headers['Cache-Control'] = 'private, no-store'
+    response.headers['Referrer-Policy'] = 'no-referrer'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
     return response, 200
 
 
@@ -901,13 +913,16 @@ def download_ticket_pdf(event_id, ticket_id):
 
     # Guest receipts use an opaque-ID lookup and the matching email check
     # below. Public clients cannot SELECT guest tickets directly.
-    db = get_user_client() if getattr(g, "user_id", None) else get_db()
+    db = get_db() if request.args.get("access_token") or not getattr(g, "user_id", None) else get_user_client()
     ticket = db.table("event_tickets").select("*").eq("id", ticket_id).eq("event_id", event_id).single().execute()
     if not ticket:
         return jsonify({"error": MSG.TICKET_NOT_FOUND}), 404
 
     user_id = getattr(g, "user_id", None)
-    if ticket.get("user_id"):
+    from app.utils.event_ticket_access import valid_ticket_access
+    if valid_ticket_access(request.args.get('access_token'), ticket, db):
+        pass
+    elif ticket.get("user_id"):
         if not user_id or str(ticket["user_id"]) != str(user_id):
             return jsonify({"error": MSG.TICKET_ACCESS_DENIED}), 403
     else:
@@ -915,7 +930,9 @@ def download_ticket_pdf(event_id, ticket_id):
         if not provided_email or provided_email != (ticket.get("guest_email") or "").lower():
             return jsonify({"error": MSG.TICKET_ACCESS_DENIED}), 403
 
-    event = db.table("events").select("title,starts_at,ends_at,location").eq("id", event_id).single().execute() or {}
+    event = db.table("events").select("title,starts_at,ends_at,location,metadata,is_published").eq("id", event_id).single().execute() or {}
+    if not event or not _entry_ticket_valid(ticket, event):
+        return jsonify({"error": MSG.EVENT_TICKET_NOT_ADMISSIBLE}), 409
     tier = None
     if ticket.get("tier_id"):
         tier = db.table("event_ticket_tiers").select("name").eq("id", ticket["tier_id"]).single().execute()
@@ -961,10 +978,13 @@ def download_ticket_pdf(event_id, ticket_id):
     buf.seek(0)
 
     from flask import send_file
-    return send_file(
+    response = send_file(
         buf, mimetype="application/pdf", as_attachment=True,
         download_name=f"holy-grills-ticket-{ticket_id[:8]}.pdf",
     )
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
 
 
 @events_bp.route("/<event_id>/tickets/verify", methods=["POST"])
@@ -1381,6 +1401,8 @@ def create_event():
             return jsonify({"error": MSG.AUTH_FIELD_REQUIRED.format(field=f)}), 400
 
     try:
+        if "registration_fields" in data:
+            data["registration_fields"] = validate_questions(data["registration_fields"])
         data["title"] = as_text(data["title"], 200)
         data["location"] = as_text(data["location"], 500)
         data["starts_at"] = as_instant(data["starts_at"])
@@ -1427,7 +1449,7 @@ def create_event():
         "is_published", "organizer_id", "campus_id",
         # Phase 2 columns (from migration):
         "hp_per_attendee", "funding_source", "max_attendees",
-        "hp_required", "total_value", "is_paid", "image_url",
+        "hp_required", "total_value", "is_paid", "image_url", "registration_fields",
     }
     # Prefer hp_per_attendee over legacy hp_reward if provided
     if "hp_per_attendee" in data and "hp_reward" not in data:
@@ -1473,8 +1495,8 @@ def list_event_tiers(event_id):
     List ticket tiers for an event (public).
     """
     db = get_user_client()
-    event = db.table("events").select("id,title,campus_id").eq("id", event_id).single().execute()
-    if not event:
+    event = db.table("events").select("id,title,campus_id,is_published").eq("id", event_id).single().execute()
+    if not event or (request.args.get("public") == "1" and not event.get("is_published")):
         return jsonify({"error": MSG.EVENT_NOT_FOUND}), 404
 
     campus_id = _get_campus_id()
@@ -1739,7 +1761,7 @@ def _registrants_for_event(db, event_id: str, include_unpaid: bool = False) -> t
     tickets = (
         db.table("event_tickets")
         .select("id,user_id,tier_id,status,payment_status,payment_expires_at,"
-                "created_at,qr_code,guest_name,guest_email,guest_phone,wallet_amount_used,card_amount_used,hp_amount_paid")
+                "created_at,qr_code,guest_name,guest_email,guest_phone,metadata,wallet_amount_used,card_amount_used,hp_amount_paid")
         .eq("event_id", event_id)
         .order("created_at")
         .execute()
@@ -1843,6 +1865,7 @@ def list_event_registrants(event_id):
             "refund_amount": float(t.get("wallet_amount_used") or 0) + float(t.get("card_amount_used") or 0),
             "hp_paid": int(t.get("hp_amount_paid") or 0),
             "is_guest": not bool(t.get("user_id")),
+            "registration_answers": (t.get("metadata") or {}).get("registration_answers", {}),
         })
 
     fmt = request.args.get("format", "json").lower()
@@ -1851,7 +1874,7 @@ def list_event_registrants(event_id):
         si = io.StringIO()
         writer = csv.DictWriter(si, fieldnames=[
             "ticket_id", "full_name", "phone", "email", "tier_name",
-            "status", "payment_status", "registered_at", "checked_in", "checked_in_at",
+            "status", "payment_status", "registered_at", "checked_in", "checked_in_at", "registration_answers",
         ])
         writer.writeheader()
         # Spreadsheet cells from attendee input must not execute formulas.
@@ -2152,7 +2175,8 @@ def get_tier_detail(tier_id):
 @events_bp.route("/my-tickets", methods=["GET"])
 @require_auth
 def my_tickets():
-    """Show all tickets for the authenticated user."""
+    """Show tickets after reconciling only verified, unowned guest receipts."""
+    get_db().rpc("hg_link_verified_event_tickets", {"p_actor":g.user_id})
     db = get_user_client()
     tickets = (
         db.table("event_tickets")

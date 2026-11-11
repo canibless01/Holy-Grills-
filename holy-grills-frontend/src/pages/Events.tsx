@@ -95,7 +95,7 @@ export default function Events() {
           ) : (
             <div className="space-y-3">
               {events.map((event) => (
-                <EventCard key={event.id} event={event} onClick={() => navigate(`/events/${event.id}`)} />
+                <EventCard key={event.id} event={event} onClick={() => navigate(`/events/${event.slug || event.id}`)} />
               ))}
             </div>
           )}

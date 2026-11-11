@@ -88,10 +88,10 @@ export default function TopNav() {
   return (
     <>
     <header className={`sticky top-0 z-40 bg-card/80 backdrop-blur-xl border-b border-border/80 transition-transform duration-300 ease-out ${visible ? 'translate-y-0' : '-translate-y-full'}`}>
-      <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+      <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2 sm:gap-4">
         {/* Wordmark */}
         <Link to="/" className="flex items-center shrink-0 group">
-          <BrandLogo size="nav" className="transition-transform group-hover:scale-105" />
+          <BrandLogo size="h-8 w-auto max-w-[100px] sm:max-w-[170px]" className="transition-transform group-hover:scale-105" />
         </Link>
 
         {/* Centre nav — desktop */}
@@ -211,7 +211,7 @@ export default function TopNav() {
                 )}
             </div>
           ) : (
-            <div className="flex items-center gap-2"><Link to="/events" className="px-3 py-2 rounded-full border border-border text-xs font-bold whitespace-nowrap">{msg('FE_EVENTS_NAV', 'Events')}</Link><button onClick={() => navigate('/login')} className="px-4 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold shadow-glow hover:shadow-lg transition-shadow">Sign In</button></div>
+            <div className="flex items-center gap-2"><Link to="/events" className="px-2.5 sm:px-3 py-2 rounded-full border border-border text-xs font-bold whitespace-nowrap">{msg('FE_EVENTS_NAV', 'Events')}</Link><button onClick={() => navigate('/login')} className="shrink-0 whitespace-nowrap px-3 sm:px-4 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold shadow-glow hover:shadow-lg transition-shadow">Sign In</button></div>
           )}
         </div>
       </div>

@@ -1,5 +1,6 @@
 """Owned organizer drafts, attendance and separate manual bank-settlement records."""
 import uuid
+from app.utils.event_questions import validate_questions
 from flask import Blueprint,request,jsonify,g
 from app.db import get_db,SupabaseError
 from app.middleware.auth import require_role,resolve_scoped_campus_id,header_campus_id
@@ -60,9 +61,10 @@ def _uuid(value):
  return value
 
 def _draft(data):
- if set(data)-{'request_id','title','description','location','starts_at','ends_at','capacity','image_url'}:raise ValueError
+ if set(data)-{'request_id','title','description','location','starts_at','ends_at','capacity','image_url','registration_fields'}:raise ValueError
  clean={key:as_text(data.get(key),200 if key=='title' else 500) for key in ('title','location')}
  if data.get('description') is not None and not isinstance(data['description'],str):raise ValueError
+ if 'registration_fields' in data:clean['registration_fields']=validate_questions(data['registration_fields'])
  clean['description']=(data.get('description') or '').strip()[:5000]
  clean['starts_at']=as_instant(data.get('starts_at'));clean['ends_at']=as_instant(data.get('ends_at'))
  if not validate_datetime_order(clean['starts_at'],clean['ends_at'])[0]:raise ValueError
