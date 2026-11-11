@@ -1208,7 +1208,8 @@ def _prepare_qr_ticket_email(email: str, name: str, event_title: str, ticket_id:
     qr_url = public_api_base() + f"/events/{quote(str(event_id), safe='')}/tickets/{quote(str(ticket_id), safe='')}/qr.png?" + urlencode({'access': access})
     frontend = (os.environ.get('FRONTEND_URL') or 'https://holygrills.online').split(',')[0].strip().rstrip('/')
     ticket_url = frontend + f"/events/{quote(str(event_id), safe='')}#" + urlencode({'ticket':ticket_id, 'access':access})
-    qr_img_tag = f'<img src="{_html.escape(qr_url, quote=True)}" alt="Open View ticket below if your email blocks images" style="width:200px;height:200px;display:block;margin:15px auto;" />'
+    qr_alt = _html.escape(MSG.EMAIL_EVENT_QR_ALT, quote=True)
+    qr_img_tag = f'<img src="{_html.escape(qr_url, quote=True)}" alt="{qr_alt}" style="width:200px;height:200px;display:block;margin:15px auto;" />'
     view_ticket = _html.escape(MSG.EMAIL_VIEW_EVENT_TICKET)
     ticket_button = f'<a href="{_html.escape(ticket_url, quote=True)}" style="display:inline-block;padding:14px 24px;background:#E01616;color:#fff;border-radius:24px;text-decoration:none;font-weight:bold;">{view_ticket}</a>'
 

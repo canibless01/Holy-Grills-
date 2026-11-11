@@ -26,6 +26,7 @@ export default function EventDetail() {
   const [selectedTier] = useState(null);
   const [showRegister, setShowRegister] = useState(false);
   const [ticket, setTicket] = useState(null);
+  const [ticketLookup, setTicketLookup] = useState('ready');
   const [scanning, setScanning] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [checkinResult, setCheckinResult] = useState(null);
@@ -36,7 +37,7 @@ export default function EventDetail() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true); setLoadError(false); setEvent(null); setTicket(null); setTiers([]); setTiersLoading(true); setTiersError(false);
+    setLoading(true); setLoadError(false); setEvent(null); setTicket(null); setTiers([]); setTiersLoading(true); setTiersError(false); setTicketLookup(isAuthenticated ? 'loading' : 'ready');
     liveApi.events.get(id).then(result => {
       if (cancelled) return;
       const detail = unwrap(result); setEvent(detail); setLoading(false);
@@ -46,7 +47,8 @@ export default function EventDetail() {
         const all = [...(mine?.upcoming || []), ...(mine?.past || []), ...(mine?.checked_in || []), ...(mine?.tickets || [])];
         const owned = all.find(t => t.event_id === detail.id);
         if (owned && ['paid','not_required'].includes(owned.payment_status)) { setTicket({...owned,ticket_id:owned.ticket_id||owned.id}); setEvent(previous=>previous?.id===detail.id?{...previous,checked_in:!!owned.checked_in}:previous); }
-      }).catch(() => {});
+        setTicketLookup('ready');
+      }).catch(() => { if (!cancelled) setTicketLookup('error'); });
     }).catch(() => { if (!cancelled) { setLoadError(true); setLoading(false); } });
     const emailProof = new URLSearchParams(window.location.hash.slice(1));
     const emailTicket = emailProof.get('ticket'); const accessToken = emailProof.get('access');
@@ -225,6 +227,7 @@ export default function EventDetail() {
         </div>
       </div>}
 
+      {!ticket && ticketLookup==='error' && <div role="alert" className="rounded-2xl border border-border bg-card p-5 text-center space-y-3"><p>{msg('FE_EVENT_OWNED_TICKETS_FAILED','Your existing tickets could not be checked. Retry before starting another registration.')}</p><button className="min-h-11 rounded-full bg-primary px-5 py-2 font-bold text-white" onClick={()=>setRetry(v=>v+1)}>{msg('FE_PLATFORM_RETRY','Retry')}</button></div>}
       {tiersError && <div role="alert" className="rounded-2xl border border-border bg-card p-5 text-center space-y-3"><p>{msg('FE_EVENT_TIERS_FAILED','Ticket options could not be loaded. Please retry before registering.')}</p><button className="min-h-11 rounded-full bg-primary px-5 py-2 font-bold text-white" onClick={()=>setRetry(v=>v+1)}>{msg('FE_PLATFORM_RETRY','Retry')}</button></div>}
       {tiers.some(t=>Number(t.price_naira_full??t.price_naira??0)===0) && tiers.some(t=>Number(t.price_naira_full??t.price_naira??0)>0) && <p className="rounded-xl bg-secondary p-4 text-sm">{msg('FE_EVENT_SUPPORT_HELP','Admission is free. Choose a free ticket, or select an optional paid support tier when you register.')}</p>}
       {tiers.length > 0 && event.metadata?.lifecycle_status !== 'cancelled' && (
@@ -332,10 +335,10 @@ export default function EventDetail() {
       ) : (
         <button
           onClick={() => setShowRegister(true)}
-          disabled={tiersLoading || tiersError}
+          disabled={tiersLoading || tiersError || ticketLookup!=='ready'}
           className="w-full py-4 rounded-2xl bg-gradient-cta text-white font-bold text-sm shadow-glow transition-all active:scale-[0.98] disabled:opacity-50"
         >
-          {tiersLoading ? msg('FE_EVENT_OPTIONS_LOADING', 'Loading ticket options…') : tiers.length > 0 ? 'Get Your Ticket' : `I'm In`}
+          {ticketLookup==='loading' ? msg('FE_EVENT_OWNED_TICKETS_LOADING','Checking your tickets…') : tiersLoading ? msg('FE_EVENT_OPTIONS_LOADING', 'Loading ticket options…') : tiers.length > 0 ? 'Get Your Ticket' : `I'm In`}
         </button>
       )}
 

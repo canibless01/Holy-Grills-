@@ -40,3 +40,6 @@ Pending product decision: guest refund destination. Account refunds remain walle
 - Already sent/frozen outbox emails retain their original content; no blind resend was performed. A customer can still be admitted by organizer name lookup.
 - The signup prompt promises HP when an account holder attends. Retroactive HP recovery for a guest who already checked in before creating/verifying an account is not added by this batch; those tickets are deliberately excluded from automatic ownership reconciliation.
 - The larger design-reference revamp, group purchases and official ticket ownership transfer remain outside this urgent repair batch. Manual name lookup and once-only admission remain available.
+
+
+Final integration: preserved the newer evening-report, cart-recovery and menu-reward changes from main. Production client/SSR builds passed after integration; 145 targeted backend tests passed on the integrated code. A final guard also keeps registration disabled until an authenticated visitor's existing tickets have been checked, so a slow ownership/linking read cannot invite a second booking. Failed ownership reads provide an explicit Retry instead of presenting a new checkout.

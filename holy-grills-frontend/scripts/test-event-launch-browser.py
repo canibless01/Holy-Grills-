@@ -13,7 +13,7 @@ try:
  with sync_playwright() as pw:
   browser=pw.chromium.launch(executable_path='/usr/bin/chromium',args=['--no-sandbox'])
   for width in (393,1280):
-   writes=[];requests=[];qr_calls=[];errors=[];state={'saved':None,'lost':True,'guest':False,'support':False,'detail_failed':False}
+   writes=[];requests=[];qr_calls=[];held=[];errors=[];state={'saved':None,'lost':True,'guest':False,'support':False,'detail_failed':False}
    event={'id':E,'slug':'launch-night-12345678','title':'Community launch','description':'First paragraph\n\nSecond paragraph','location':'FUTA Hall','starts_at':'2027-12-01T10:00:12Z','ends_at':'2027-12-01T12:00:12Z','is_paid':False,'is_published':True,'campus_id':C,'image_url':png,'capacity':200,'hp_reward':50,'registration_fields':[{'name':'department','label':'Department','type':'select','options':['Computing','Agriculture'],'required':True},{'name':'interests','label':'Interests','type':'multiselect','options':['Music','Food'],'required':True}]}
    def api(route):
     req=route.request;path=urlparse(req.url).path;data={};requests.append((path,req.headers))
@@ -27,6 +27,10 @@ try:
      if state['lost']:state['lost']=False;route.fulfill(status=504,json={'error':'Controlled timeout after saved event'});return
      data=state['saved']
     elif path.startswith('/api/events/') and req.method=='PATCH':writes.append(req.post_data_json);state['saved'].update(req.post_data_json);data=state['saved']
+    elif path.endswith('/events/my-tickets'):
+     if state.get('hold_mine'):held.append(route);return
+     if state.get('fail_mine'):route.fulfill(status=503,json={'error':'Controlled owned-ticket read failure'});return
+     data={'upcoming':[]}
     elif path=='/api/events':data=[event]
     elif path.endswith('/tiers'):data=[{'id':T,'name':'Free admission','price_naira':0,'price_naira_full':0,'capacity':100,'sold_count':0},{'id':S,'name':'Optional support','price_naira':200,'price_naira_full':200,'capacity':100,'sold_count':0}]
     elif path.endswith('/register'):
@@ -47,6 +51,12 @@ try:
    dialog.get_by_role('button',name='Create Event',exact=True).click();expect(page.get_by_text('Controlled timeout after saved event',exact=True)).to_be_visible();dialog.get_by_role('button',name='Create Event',exact=True).click();expect(dialog).to_have_count(0)
    assert len(writes)==2 and writes[0]==writes[1] and writes[0]['request_id']==writes[1]['request_id'];assert writes[0]['registration_fields'][0]['options']==['Computing','Agriculture']
    page.get_by_role('button',name='Edit event',exact=True).click();dialog=page.get_by_role('dialog',name='Edit Event',exact=True);dialog.get_by_label('Max attendees',exact=True).fill('300');dialog.get_by_role('button',name='Save Changes',exact=True).click();expect(dialog).to_have_count(0);assert writes[-1]['capacity']==300 and 'starts_at' not in writes[-1] and 'hp_required' not in writes[-1]
+   state['hold_mine']=True;page.goto('http://127.0.0.1:5279/events/'+E);expect(page.get_by_role('heading',name='Community launch',exact=True)).to_be_visible();expect(page.get_by_role('button',name='Checking your tickets…',exact=True)).to_be_disabled();assert held
+   state['hold_mine']=False
+   for pending in held:pending.fulfill(json={'upcoming':[]})
+   expect(page.get_by_role('button',name='Get Your Ticket',exact=True)).to_be_enabled()
+   state['fail_mine']=True;page.reload();expect(page.get_by_role('alert')).to_contain_text('Your existing tickets could not be checked');expect(page.get_by_role('button',name='Get Your Ticket',exact=True)).to_be_disabled();state['fail_mine']=False;page.get_by_role('button',name='Retry',exact=True).click();expect(page.get_by_role('button',name='Get Your Ticket',exact=True)).to_be_enabled()
+   assert all('authorization' not in headers for path,headers in requests if path in ('/api/events/'+E,'/api/events/launch-night-12345678'))
    ctx.close()
    ctx=browser.new_context(viewport={'width':width,'height':1000});ctx.route('**/api/**',api);ctx.add_init_script("localStorage.setItem('hg_campus_id','"+C+"');localStorage.setItem('hg_cookie_consent',JSON.stringify({essential:true,analytics:false,date:new Date().toISOString()}));")
    page=ctx.new_page();page.on('pageerror',lambda e:errors.append(str(e)));page.goto('http://127.0.0.1:5279/events/launch-night-12345678');expect(page.get_by_role('heading',name='Community launch',exact=True)).to_be_visible();assert page.get_by_text('First paragraph\n\nSecond paragraph',exact=True).evaluate('(el)=>getComputedStyle(el).whiteSpace')=='pre-wrap'
@@ -56,6 +66,6 @@ try:
    page.goto('http://127.0.0.1:5279/events/'+E+'#ticket='+T+'&access=controlled-signed-fixture');expect(page.get_by_alt_text('Your event ticket QR code',exact=True)).to_be_visible();assert qr_calls[-1]=={'access_token':'controlled-signed-fixture'}
    state['detail_failed']=True;page.reload();expect(page.get_by_role('alert')).to_contain_text('The event could not be loaded');state['detail_failed']=False;page.get_by_role('button',name='Retry',exact=True).click();expect(page.get_by_role('heading',name='Community launch',exact=True)).to_be_visible()
    assert page.evaluate('document.documentElement.scrollWidth<=innerWidth');assert not errors,errors;page.screenshot(path=str(out/f'event-launch-{width}.png'),full_page=True);ctx.close()
-   print(f'PASS {width}: one committed create on timeout retry, capacity-only patch, question editor/answers, readable slug, paragraphs, free confirmation and paid-support gateway navigation, guest signup prompt, signed email ticket opening and visible read retry; screenshots={out}',flush=True)
+   print(f'PASS {width}: one committed create on timeout retry, capacity-only patch, question editor/answers, readable slug, paragraphs, free confirmation and paid-support gateway navigation, guest signup prompt, signed email ticket opening, delayed/failed ownership-read checkout guard and visible read retry; screenshots={out}',flush=True)
   browser.close()
 finally:os.killpg(proc.pid,signal.SIGTERM);proc.wait(timeout=10)
