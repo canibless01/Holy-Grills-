@@ -4,6 +4,7 @@ import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { sessionStore } from '@/lib/storage';
 import { formatWalletMoney as formatNaira } from '@/lib/hgUtils';
+import { msg } from '@/lib/messages';
 import { Modal } from '@/components/admin/ui/AdminKit';
 
 interface PendingTransfer {
@@ -112,6 +113,7 @@ export default function WalletTransferModal({ receiptId, onClose, onSuccess }: {
   const input = 'mt-1.5 w-full min-w-0 rounded-xl border border-border bg-background p-3 text-base outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-60';
   return <Modal open onClose={onClose} title={receipt ? 'Wallet transfer receipt' : 'Send wallet money'}>
     <div className="space-y-4" aria-busy={busy}>
+      {user?.role === 'super_admin' && <p role="note" className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm">{msg('FE_WALLET_TRANSFER_TEST_MODE', 'Super-admin test wallets can only send to other super-admin test wallets on the same campus. Use a regular member account to test member-to-member transfers.')}</p>}
       {error && <p role="alert" className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
       {receipt ? <>
         <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-success/10 text-success"><Check className="h-5 w-5" /></span><div><p className="text-xs text-muted-foreground">{receipt.direction === 'sent' ? 'Sent successfully' : 'Received successfully'}</p><p className="font-heading text-2xl font-extrabold">{formatNaira(receipt.amount)}</p></div></div>

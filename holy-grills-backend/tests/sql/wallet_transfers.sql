@@ -30,6 +30,8 @@ BEGIN
  SELECT hp_balance INTO before_hp FROM public.profiles WHERE id=a;
  result:=public.hg_wallet_transfer('lookup',a,NULL,jsonb_build_object('code',lower(replace(b::text,'-',''))));
  PERFORM pg_temp.check_transfer(result->>'id'=b::text AND NOT result ? 'email' AND NOT result ? 'balance','same-campus private lookup');
+ result:=public.hg_wallet_transfer('lookup',a,NULL,jsonb_build_object('lookup_type','email','value',' AUDIT-WALLET-'||b||'@EXAMPLE.INVALID '));
+ PERFORM pg_temp.check_transfer(result->>'id'=b::text,'exact email lookup ignores case and outside whitespace');
  PERFORM pg_temp.transfer_error(format('SELECT hg_wallet_transfer(''lookup'',%L,NULL,%L)',a,jsonb_build_object('code',replace(outsider::text,'-',''))),'recipient_unavailable');
  PERFORM pg_temp.transfer_error(format('SELECT hg_wallet_transfer(''lookup'',%L,NULL,%L)',a,jsonb_build_object('code',replace(a::text,'-',''))),'self_transfer');
  UPDATE profiles SET is_active=false WHERE id=b;
