@@ -47,8 +47,11 @@ with sync_playwright() as p:
   page.goto(BASE+target,wait_until='domcontentloaded')
   if case=='menu':
    expect(page.get_by_role('heading',name='Grill Wings',exact=True)).to_be_visible()
+   expect(page).to_have_title('Grilled Chicken, Wings & Sides at FUTA, Akure | Holy Grills')
    if page.get_by_role('button',name='Essential only').count():page.get_by_role('button',name='Essential only').click()
    before=sum(path.endswith('/menu/items') for path,q in calls)
+   # Expire the catalogue cache: category filtering still needs no HTTP.
+   page.evaluate('() => { const now = Date.now.bind(Date); Date.now = () => now() + 16000; }')
    page.get_by_role('button',name='Chicken',exact=True).click()
    expect(page.get_by_role('heading',name='Grill Wings',exact=True)).to_be_visible(timeout=500)
    expect(page.get_by_role('heading',name='Fries',exact=True)).to_have_count(0)
@@ -62,6 +65,10 @@ with sync_playwright() as p:
    image=page.get_by_role('img',name='Grill Wings',exact=True)
    assert 'f_auto,q_auto,c_limit,w_480' in image.get_attribute('src')
    assert '768w' in image.get_attribute('srcset')
+   resume_before=sum(path.endswith('/menu/items') for path,q in calls)
+   page.evaluate("() => window.dispatchEvent(new Event('online'))")
+   page.wait_for_timeout(250)
+   assert sum(path.endswith('/menu/items') for path,q in calls)==resume_before+1
   elif case=='dashboard':
    expect(page.get_by_text('Orders Today',exact=True)).to_be_visible(timeout=3000)
    assert held

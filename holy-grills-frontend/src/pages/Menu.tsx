@@ -15,6 +15,7 @@ import MenuGridCard from '@/components/MenuGridCard';
 import KitchenStatusBox from '@/components/KitchenStatusBox';
 import { staggerContainer } from '@/lib/animationPresets';
 import SEO from '@/components/SEO';
+import { ROUTE_META } from '@/seo/routeMeta';
 import MascotStandee from '@/components/mascot/MascotStandee';
 import { msg } from '@/lib/messages';
 
@@ -73,7 +74,8 @@ export default function Menu() {
     }
   }, [isAuthed, campusId]);
 
-  // Load items on filter/search change
+  // Category filters use the catalogue already in memory. Fetch on campus
+  // changes, explicit retries and genuine browser returns only.
   useResumeEffect((background) => {
     if (!campusId) return;
     let alive = true;
@@ -98,7 +100,7 @@ export default function Menu() {
     };
     load();
     return () => { alive = false; };
-  }, [retryNonce, campusId, activeCategory]);
+  }, [retryNonce, campusId]);
 
   // Known matches render immediately; remote search still discovers secret
   // items and revalidates availability without blanking the catalogue.
@@ -144,11 +146,7 @@ export default function Menu() {
 
   return (
     <div className="space-y-3 animate-fade-in">
-      <SEO
-        title="Today's Menu"
-        description="Browse the full Holy Grills menu, flame grilled chicken, wings, kebabs and crispy sides, delivered hot across FUTA."
-        path="/menu"
-      />
+      <SEO {...ROUTE_META['/menu']} />
 
       {/* Header */}
       <div>

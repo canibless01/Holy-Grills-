@@ -2,6 +2,8 @@
 
 Current consolidated status: [reward restoration and remaining audit priorities — 11 November](REWARD_RESTORATION_AND_AUDIT_STATUS_2026_11_11.md). The lists below are chronological; later closure records supersede older “next” items.
 
+Latest continuation: [menu performance, public crawling and settings checks](MENU_CRAWL_AND_SETTINGS_CHECK_2026_11_11.md). Event implementation is delegated to the other chat; the requested quick regression passed 114 event tests. Menu filtering after cache expiry no longer refetches the catalogue, and static/hydrated menu metadata agree.
+
 The owner assigned the launch-remaining category to a new chat and this chat the remaining full-site A/B scope. Both use current main; fetch before every push. Do not reset genuine users/orders or replay old cleanup scripts. The uploaded UI skills collection remains deferred.
 
 ## Current completed batch
