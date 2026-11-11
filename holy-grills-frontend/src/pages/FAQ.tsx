@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import SEO from '@/components/SEO';
 import { metaForPath } from '@/seo/routeMeta';
 import { Plus, Flame, Search } from 'lucide-react';
+import APP_CONFIG from '@/config/app.config';
 
 /** Head data for /faq — same object the pre-render writes (src/seo/routeMeta.ts). */
 const META = metaForPath('/faq');
@@ -22,7 +23,9 @@ const CATS = [
 
 const FAQS = [
   // About Holy Grills
-  { q: 'What is Holy Grills?', a: 'A student meal brand built on one idea: good food is better shared. You bring your people. We bring the fire. Holy Points make showing up count.', c: 'About Holy Grills' },
+  { q: 'What is Holy Grills?', a: APP_CONFIG.brand.introduction, c: 'About Holy Grills' },
+  { q: 'What is your mission?', a: APP_CONFIG.brand.mission, c: 'About Holy Grills' },
+  { q: 'What is your vision?', a: APP_CONFIG.brand.vision, c: 'About Holy Grills' },
   { q: 'Is Holy Grills just a food brand?', a: 'Food is where we started, and it is still the heart of it. But Holy Grills is really about bringing people together. The plate gets you to the table. What grows from there is the point ❤️‍🔥.', c: 'About Holy Grills' },
   { q: 'Why food?', a: 'Because food gets people together, every day, around the same plate.', c: 'About Holy Grills' },
   { q: 'Why chicken and chips?', a: 'Because it is easy to share and easy to eat while you are talking and laughing. The plate should join the conversation, not interrupt it.', c: 'About Holy Grills' },

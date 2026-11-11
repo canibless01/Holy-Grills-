@@ -27,6 +27,7 @@ import { AppProviders, AppShell } from '@/App';
 // Re-exported so scripts/prerender.mjs can read the same objects it renders
 // with straight out of the SSR bundle (no duplicate metadata in build tooling).
 export { ROUTE_META, PRERENDER_ROUTES, headFor, SITE_ORIGIN } from '@/seo/routeMeta';
+export { restaurantJsonLd, websiteJsonLd } from '@/lib/seoJsonLd';
 
 /**
  * React 18.3 writes its whole 2 KB encoder view to the destination whenever a

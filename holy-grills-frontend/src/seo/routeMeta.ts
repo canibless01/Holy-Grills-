@@ -54,7 +54,7 @@ export const ROUTE_META: Record<string, RouteMeta> = {
   '/faq': {
     title: 'FAQ',
     description:
-      'Answers about ordering, delivery across FUTA, Holy Points, payments, squad orders and refunds at Holy Grills.',
+      'What is Holy Grills? Learn about student connection, campus events, grilled food at FUTA, Akure, Holy Points, orders and delivery.',
     path: '/faq',
   },
   '/our-story': {
@@ -62,14 +62,14 @@ export const ROUTE_META: Record<string, RouteMeta> = {
     bareTitle: true,
     title: 'Holy Grills — Food, Friendship & Campus Connection',
     description:
-      "Born at FUTA, Holy Grills brings students together around shared plates and everyday campus moments. Our story is rooted in faith, love, energy and flavour.",
+      "Holy Grills connects students with campus life, starting with shared food at FUTA, Akure. Read our story, mission, vision and values.",
     path: '/our-story',
   },
   '/menu': {
     // verbatim from src/pages/Menu.tsx
     title: 'Grilled Chicken, Wings & Sides at FUTA, Akure',
     description:
-      'Browse the full Holy Grills menu, flame grilled chicken, wings, kebabs and crispy sides, delivered hot across FUTA.',
+      'Order flame-grilled chicken, wings, skewers, buns and sides at FUTA, Akure. Find a meal to share, with delivery to campus gates and hostels.',
     path: '/menu',
   },
   '/events': {

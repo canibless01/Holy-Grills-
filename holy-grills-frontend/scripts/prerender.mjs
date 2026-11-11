@@ -56,8 +56,8 @@ if (!template || !template.includes('<div id="root"></div>')) {
 }
 // One import: the SSR bundle carries both the renderer and the route metadata
 // (re-exported from src/seo/routeMeta.ts by src/entry-server.tsx).
-const { render, PRERENDER_ROUTES: routes, headFor, SITE_ORIGIN } = await import(pathToFileURL(ssrEntry).href);
-if (typeof render !== 'function' || !routes || typeof headFor !== 'function') {
+const { render, PRERENDER_ROUTES: routes, headFor, SITE_ORIGIN, restaurantJsonLd, websiteJsonLd } = await import(pathToFileURL(ssrEntry).href);
+if (typeof render !== 'function' || !routes || typeof headFor !== 'function' || typeof restaurantJsonLd !== 'function' || typeof websiteJsonLd !== 'function') {
   console.error('[prerender] the SSR bundle did not expose render() + route metadata.');
   process.exit(1);
 }
@@ -78,6 +78,12 @@ const buildHead = (html, route) => {
   const m = headFor(route);
   const canonical = `${SITE_ORIGIN}${m.path}`;
   let out = html;
+  // Static crawlers and hydrated pages share one business identity and copy.
+  for (const [id, data] of [['business', restaurantJsonLd()], ['website', websiteJsonLd()]]) {
+    const json = JSON.stringify(data).replace(/</g, '\\u003c');
+    out = replaceTag(out, new RegExp(`<script[^>]*data-seo-jsonld="${id}"[^>]*>[\\s\\S]*?<\\/script>`, 'i'),
+      `<script type="application/ld+json" data-seo-jsonld="${id}">${json}</script>`);
+  }
 
   out = out.replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(m.title)}</title>`);
   out = upsertMeta(out, 'name', 'description', m.description);
@@ -128,14 +134,14 @@ for (const route of routes) {
 // dist/index.html is what stops /menu from being handed the home page's markup
 // and metadata.
 const shellFile = join(distDir, 'app-shell.html');
-writeFileSync(shellFile, template);
+writeFileSync(shellFile, buildHead(template, '/'));
 console.log(`[prerender] app shell -> ${shellFile.replace(root + '/', '')} (SPA fallback for all SPA routes)`);
 
 // Unknown paths get a REAL 404 (see vercel.json's final route entry). The body is
 // the same shell so the SPA can render its own PageNotFound for the visitor, with
 // noindex on top: the URL genuinely does not exist, and a crawler must not index
 // the shell for it.
-const notFound = template
+const notFound = buildHead(template, '/')
   .replace(/<title>[\s\S]*?<\/title>/i, '<title>Page not found — Holy Grills</title>')
   .replace('</head>', '  <meta name="robots" content="noindex" />\n  </head>');
 const notFoundFile = join(distDir, '404.html');

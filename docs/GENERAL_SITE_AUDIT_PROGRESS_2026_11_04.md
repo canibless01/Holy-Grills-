@@ -4,6 +4,8 @@ Current consolidated status: [reward restoration and remaining audit priorities 
 
 Latest continuation: [menu performance, public crawling and settings checks](MENU_CRAWL_AND_SETTINGS_CHECK_2026_11_11.md). Event implementation is delegated to the other chat; the requested quick regression passed 114 event tests. Menu filtering after cache expiry no longer refetches the catalogue, and static/hydrated menu metadata agree.
 
+Owner-requested brand continuation: [public brand representation and Google identity](PUBLIC_BRAND_AND_SEARCH_2026_11_11.md). Public story/FAQ/metadata now explain connection and campus participation, with mission/vision and verified business/review links. The internal founder document and commercial details remain unpublished. This is separate from the remaining role/settings/reporting audit.
+
 The owner assigned the launch-remaining category to a new chat and this chat the remaining full-site A/B scope. Both use current main; fetch before every push. Do not reset genuine users/orders or replay old cleanup scripts. The uploaded UI skills collection remains deferred.
 
 ## Current completed batch

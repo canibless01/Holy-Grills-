@@ -9,13 +9,15 @@ import SEO from '@/components/SEO';
 import { metaForPath } from '@/seo/routeMeta';
 import { useCampus } from '@/lib/campusContext';
 import { getStorefrontSections } from '@/lib/storefrontMockData';
+import APP_CONFIG from '@/config/app.config';
+import { googleReviewUrl } from '@/lib/googleReviews';
 
 /** Head data for /our-story — same object the pre-render writes (src/seo/routeMeta.ts). */
 const META = metaForPath('/our-story');
 
 const STORY_CARDS = [
   { title: 'Done properly', body: 'Marinated deep, grilled on real flame, basted again and again. Nothing boiled first.' },
-  { title: 'Predictable windows', body: 'Kitchen Radar tells you when the grill is live and when your food lands. No guessing.' },
+  { title: 'More ways to show up', body: 'Discover campus events, gather your people and turn something you heard about into something you are part of.' },
   { title: 'Built for students', body: 'Squad Orders, Holy Points and rewards, designed around how students actually eat and gather.' },
 ];
 
@@ -94,7 +96,7 @@ export default function OurStory() {
         </span>
         <h1 className="font-heading font-extrabold text-3xl text-foreground mt-3 leading-tight">It started with one grill.</h1>
         <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
-          Holy Grills started with one grill outside a hostel and one belief: campus should feel warmer than it does. Food was how we got people together.
+          {APP_CONFIG.brand.introduction}
         </p>
       </div>
 
@@ -119,7 +121,7 @@ export default function OurStory() {
         className="rounded-3xl bg-card border border-border p-6 space-y-4 text-sm text-muted-foreground leading-relaxed max-w-2xl mx-auto mt-6"
       >
         <p>
-          Not a plan. A table, an umbrella and a grill, set up outside Adeboye Hostel every night. We carried everything out, grilled, then carried it all home.
+          A table, an umbrella and a grill outside Adeboye Hostel at FUTA, Akure. Our first physical testing began in July 2025. We carried everything out, grilled, then carried it all home. In early 2026, Holy Grills moved into its online chapter.
         </p>
         <p>
           At first we did not know what we were. A grilled meal brand, maybe. Grilled chicken one day, grilled potatoes the next, suya cut after that. We tested everything and watched what brought students back. Next session, had to do things differently. Went deep in learning the art of grilling. Everyone said the secret was in the baste, so we basted boldly. Turns out the secret was consistency. Marinated deep, grilled on real flame, basted again and again. Every single order.
@@ -134,7 +136,7 @@ export default function OurStory() {
           Chicken and chips was a choice. It is easy to share and easy to eat while the conversation keeps going. Food is how people end up at the same table, and connection at the table is dear to us.
         </p>
         <p>
-          So Holy Grills grew. Windows you can count on. Holy Points for showing up. Events, squads and more that put you closer to what is happening around you. The plate opens the door. What happens next is the point.
+          Campus can be full of people and still feel disconnected. An event you would have loved passes without you hearing about it. A business nearby has something you need, but you never find each other. We want to make those connections easier: discover something, take part, meet your people and find a reason to return. Food, events and Holy Points are ways to make that happen.
         </p>
         <p className="text-foreground font-semibold text-base font-heading">
           We are not trying to be the biggest name in town. We are trying to be the most honest one. The same care as the very first plate. And after this campus? Every campus that deserves better.
@@ -225,14 +227,24 @@ export default function OurStory() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="rounded-2xl bg-card border border-border p-5">
             <div className="font-heading font-bold text-sm text-foreground mb-1.5">Our Mission</div>
-            <p className="text-xs text-muted-foreground leading-relaxed">To strengthen student connection on campus, starting with food and growing into everything that makes campus life worth showing up for.</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">{APP_CONFIG.brand.mission}</p>
           </div>
           <div className="rounded-2xl bg-card border border-border p-5">
             <div className="font-heading font-bold text-sm text-foreground mb-1.5">Our Vision</div>
-            <p className="text-xs text-muted-foreground leading-relaxed">A campus where it is easy to find what is happening, easy to be part of it, and rewarding to show up. Food is where it starts. It is just not where it ends.</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">{APP_CONFIG.brand.vision}</p>
           </div>
         </div>
       </motion.section>
+
+      <section className="mt-9 rounded-2xl bg-card border border-border p-5 space-y-3">
+        <h2 className="font-heading font-bold text-lg">Find Holy Grills around campus</h2>
+        <p className="text-sm text-muted-foreground">We are starting at FUTA in Akure, Ondo State. Find our business on Google, read student reviews or share your own experience.</p>
+        <div className="flex flex-wrap gap-4 text-sm font-bold text-primary">
+          <a href={APP_CONFIG.seo.business.profileUrl} target="_blank" rel="noopener noreferrer">Holy Grills on Google</a>
+          <a href={googleReviewUrl(APP_CONFIG.google)} target="_blank" rel="noopener noreferrer">Leave a Google review</a>
+          <Link to="/faq">Questions about Holy Grills</Link>
+        </div>
+      </section>
 
       {/* Closing card */}
       <motion.div {...fade()} className="rounded-3xl bg-gradient-cta p-7 text-white text-center shadow-glow mt-9">

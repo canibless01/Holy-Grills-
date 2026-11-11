@@ -29,6 +29,8 @@ interface SeoBusiness {
   areaServed?: string[];
   telephone?: string;
   address?: Record<string, unknown>;
+  profileUrl?: string;
+  mapUrl?: string;
 }
 
 export const restaurantJsonLd = () => {
@@ -40,11 +42,15 @@ export const restaurantJsonLd = () => {
   return {
     '@context': 'https://schema.org',
     '@type': b.type || 'Restaurant',
+    '@id': `${APP_CONFIG.domain}/#business`,
     name: APP_CONFIG.name,
     slogan: APP_CONFIG.tagline,
-    knowsAbout: ['Student connection', 'Campus community', 'Shared meals', 'Real flame cooking'],
+    knowsAbout: ['Student connection', 'Campus participation', 'Campus events', 'Shared meals', 'Real flame cooking'],
     url: APP_CONFIG.domain,
     description: b.description || APP_CONFIG.seo.defaultDescription,
+    hasMenu: `${APP_CONFIG.domain}/menu`,
+    ...(b.profileUrl ? { sameAs: [b.profileUrl] } : {}),
+    ...(b.mapUrl ? { hasMap: b.mapUrl } : {}),
     ...(logo ? { logo } : {}),
     ...(image ? { image } : {}),
     ...(b.servesCuisine?.length ? { servesCuisine: b.servesCuisine } : {}),
@@ -54,6 +60,17 @@ export const restaurantJsonLd = () => {
     ...(b.address ? { address: { '@type': 'PostalAddress', ...b.address } } : {}),
   };
 };
+
+/** Site name and publisher point back to the same verified business identity. */
+export const websiteJsonLd = () => ({
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  '@id': `${APP_CONFIG.domain}/#website`,
+  name: APP_CONFIG.name,
+  alternateName: APP_CONFIG.shortName,
+  url: APP_CONFIG.domain,
+  publisher: { '@id': `${APP_CONFIG.domain}/#business` },
+});
 
 /** Per-item block — the only place individual menu data enters structured data. */
 export const menuItemJsonLd = (item) => {

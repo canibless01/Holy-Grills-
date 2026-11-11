@@ -13,7 +13,7 @@
  */
 import { useEffect } from 'react';
 import APP_CONFIG from '@/config/app.config';
-import { absoluteUrl, restaurantJsonLd } from '@/lib/seoJsonLd';
+import { absoluteUrl, restaurantJsonLd, websiteJsonLd } from '@/lib/seoJsonLd';
 
 const upsertMeta = (attr, key, content) => {
   if (!content) return;
@@ -97,6 +97,7 @@ export const useSEO = ({ title, bare, description, image, path, type, jsonLd }: 
 
     // Structured data — global identity on every page, plus optional page block.
     upsertJsonLd('business', restaurantJsonLd());
+    upsertJsonLd('website', websiteJsonLd());
     upsertJsonLd('page', jsonLd || null);
   }, [title, bare, description, image, path, type, jsonLdKey]);
 };

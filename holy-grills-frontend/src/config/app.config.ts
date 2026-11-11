@@ -15,6 +15,11 @@ export const APP_CONFIG = {
   name: 'Holy Grills',
   shortName: 'HolyGrills',
   tagline: "Made With More Than Flame",
+  brand: {
+    introduction: 'Holy Grills is a student ecosystem built around connection and participation in campus life. We started with flame-grilled food at FUTA in Akure, bringing students together over shared meals. Today, food, campus events and Holy Points give students more ways to discover what is happening and be part of it.',
+    mission: 'To strengthen the connections between students, each other and campus life by making it easier to discover, participate and find value in the experiences around them.',
+    vision: 'A connected campus network where students, local businesses and event organisers can find each other, share opportunities and make campus life more rewarding to be part of.',
+  },
   emoji: '🔥',
 
   // Update to your production domain before going live (used for canonical URLs + OG).
@@ -53,9 +58,9 @@ export const APP_CONFIG = {
   // routes every "enable push" action through OneSignal.
 
   seo: {
-    defaultTitle: "Holy Grills — Grilled Food & Connection in FUTA, Akure",
+    defaultTitle: "Holy Grills — Food, Events & Campus Life at FUTA, Akure",
     defaultDescription:
-      "Student-built flame grill at FUTA, Akure. Fresh open-flame wings, skewers, plates and buns, shared meals, Squad Orders and evening delivery.",
+      "Connect with campus life at FUTA, Akure. Discover flame-grilled meals, shared experiences, student events and Holy Points with Holy Grills.",
     ogType: 'website',
     twitterCard: 'summary_large_image',
     // Default social share image. App-relative is fine: useSEO runs it through
@@ -69,7 +74,9 @@ export const APP_CONFIG = {
     business: {
       type: 'Restaurant',
       description:
-        "Holy Grills is a student built flame grill serving FUTA, Akure. Marinated deep, grilled on real open flame and basted again and again, every plate is made fresh. Order during the day and we deliver in the evening to school gates and on and off campus hostels. Wings, skewers, plates, buns and shareable feasts, with sides picked your way. We started with one grill outside a hostel, and food is still the heart of it. But Holy Grills is really about bringing students together. Start a Squad Order with your people, earn Holy Points every time you show up, and find what's happening on campus. Bring your people. We bring the fire. Faith. Love. Energy. Flavor.",
+        "Holy Grills is a student ecosystem connecting students with each other and campus life, starting at the Federal University of Technology Akure (FUTA), Ondo State, Nigeria. Flame-grilled chicken, wings, skewers, plates, buns and shared meals bring people together. Campus events and Holy Points create more reasons to discover, participate and return. Food is the everyday starting point; connection is the purpose. Made With More Than Flame. Faith. Love. Energy. Flavor.",
+      profileUrl: 'https://g.page/r/CT3sD6yYtneQECA',
+      mapUrl: 'https://www.google.com/maps?cid=10409989830528199741',
       logo: '/icons/icon.svg',
       image: '',
       servesCuisine: ['Grilled Chicken', 'Fast Food', 'Nigerian'],
@@ -89,7 +96,7 @@ export const APP_CONFIG = {
   // Google's “Ask for reviews” link works without a Places API/billing setup.
   // A Place ID remains an optional alternative for existing configurations.
   google: {
-    reviewUrl: import.meta.env.VITE_GOOGLE_REVIEW_URL || '',
+    reviewUrl: import.meta.env.VITE_GOOGLE_REVIEW_URL || 'https://g.page/r/CT3sD6yYtneQECA/review',
     placeId: import.meta.env.VITE_GOOGLE_BUSINESS_PLACE_ID || '',
   },
 
