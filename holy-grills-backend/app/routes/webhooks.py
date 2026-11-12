@@ -150,7 +150,7 @@ def _confirm_event_ticket_charge(db, metadata, reference, data, provider):
     if not ticket_id:
         raise ValueError("Missing ticket_id in metadata")
     ticket = (db.table("event_tickets")
-              .select("id,event_id,user_id,card_amount_used,status,payment_status,payment_reference,campus_id")
+              .select("id,event_id,user_id,card_amount_used,status,payment_status,payment_reference,campus_id,metadata")
               .eq("id", ticket_id).single().execute())
     if not ticket:
         raise ValueError(f"Ticket {ticket_id} not found")
@@ -172,7 +172,7 @@ def _confirm_event_ticket_charge(db, metadata, reference, data, provider):
     cancelled_event = None
     if str(ticket.get("status") or "").lower() in ("cancelled", "canceled", "expired"):
         cancelled_event = db.table("events").select("metadata").eq("id", ticket.get("event_id")).single().execute() or {}
-    if str(ticket.get("status") or "").lower() in ("cancelled", "canceled", "expired") and (cancelled_event.get("metadata") or {}).get("lifecycle_status") != "cancelled":
+    if str(ticket.get("status") or "").lower() in ("cancelled", "canceled", "expired") and (cancelled_event.get("metadata") or {}).get("lifecycle_status") != "cancelled" and "expiry_receipt" not in (ticket.get("metadata") or {}):
         raise ValueError(
             f"Ticket {ticket_id} was cancelled/expired before its card payment arrived "
             f"(ref {reference}: ₦{float(breakdown.get('paid_kobo') or 0) / 100:,.2f} paid). "

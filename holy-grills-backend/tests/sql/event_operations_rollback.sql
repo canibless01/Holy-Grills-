@@ -33,7 +33,7 @@ BEGIN
  r:=hg_change_event_operation(a,e,cancel_id,'cancel',args);
  IF (r->>'refunds')::integer<>2 OR (r->>'free_cancelled')::integer<>1 OR (r->>'awaiting_payment')::integer<>2 THEN RAISE EXCEPTION 'cancellation counts wrong: %',r;END IF;
  IF (SELECT balance FROM wallets WHERE user_id=u)<>100 OR (SELECT hp_balance FROM profiles WHERE id=u)<>5 THEN RAISE EXCEPTION 'member refund not restored';END IF;
- IF (SELECT state FROM hg_internal.event_ticket_refunds WHERE ticket_id=guest)<>'queued' THEN RAISE EXCEPTION 'guest gateway refund not queued';END IF;
+ IF (SELECT state FROM hg_internal.event_ticket_refunds WHERE ticket_id=guest)<>'awaiting_account' THEN RAISE EXCEPTION 'guest wallet refund not awaiting account';END IF;
  r:=hg_change_event_operation(a,e,cancel_id,'cancel',args);IF NOT (r->>'replayed')::boolean OR (SELECT balance FROM wallets WHERE user_id=u)<>100 THEN RAISE EXCEPTION 'cancel replay duplicated refund';END IF;
  BEGIN INSERT INTO event_tickets(event_id,is_guest,guest_email,status,payment_status,campus_id) VALUES(e,true,'audit-new@example.invalid','confirmed','not_required',c);RAISE EXCEPTION 'cancelled event sold ticket';EXCEPTION WHEN raise_exception THEN IF SQLERRM<>'HG_EVENT_ALREADY_CANCELLED' THEN RAISE;END IF;END;
  BEGIN PERFORM hg_admit_event_ticket(e,free_ticket,o,NULL,c,50);RAISE EXCEPTION 'cancelled event admitted';EXCEPTION WHEN raise_exception THEN IF SQLERRM<>'Event not available' THEN RAISE;END IF;END;

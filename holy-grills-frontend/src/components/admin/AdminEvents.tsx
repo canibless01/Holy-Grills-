@@ -83,7 +83,7 @@ export default function AdminEvents() {
     try {
       const result = await apiClient.post(`/events/${refund.eventId}/tickets/${refund.ticket.ticket_id}/refund`, {request_id:refund.id,reason:refund.reason.trim()});
       if (scope !== eventScope.current) return;
-      toast({title:result.destination === 'wallet' ? 'Ticket refunded to wallet' : 'Guest refund queued',description:result.destination === 'wallet' ? 'Cash and spent HP have been returned.' : 'The refund will return to the original payment method after Paystack processes it.'});
+      toast({title:msg('FE_EVENT_REFUND_RECORDED','Ticket refund recorded'),description:result.state === 'awaiting_account' ? msg('FE_EVENT_REFUND_AWAIT_ACCOUNT','Refund approved. The guest must create and verify an account with the ticket email before the wallet can be credited.') : result.destination === 'wallet' ? msg('FE_EVENT_REFUND_WALLET_DONE','Cash and spent HP have been returned to the app wallet.') : msg('FE_EVENT_REFUND_LEGACY_PROVIDER','This previously approved provider refund remains in progress.')});
       setRefund(null); setRegs(null); await openRefundHistory(refund.eventId);
     } catch { if (scope !== eventScope.current) return; setRefundError('Refund could not be confirmed. Retry with this request or refresh the ticket status.'); }
     finally { setRefundBusy(false); }
@@ -316,7 +316,7 @@ export default function AdminEvents() {
       <Modal open={!!refund} onClose={() => {if (!refundBusy) setRefund(null);}} title="Refund entire ticket">
         {refund && <form onSubmit={requestRefund} className="space-y-4">
           <p className="text-sm">{refund.ticket.full_name || refund.ticket.email}</p>
-          <p className="text-sm">₦{Number(refund.ticket.refund_amount || 0).toLocaleString()} {refund.ticket.is_guest ? 'will return to the original payment method after processing.' : 'will return to the Holy Grills wallet.'} {Number(refund.ticket.hp_paid || 0) > 0 && `${refund.ticket.hp_paid} spent HP will also be returned.`}</p>
+          <p className="text-sm">₦{Number(refund.ticket.refund_amount || 0).toLocaleString()} {msg('FE_EVENT_REFUND_WALLET_POLICY','Admin-approved refunds stay in the Holy Grills wallet. Guests must create and verify an account with their ticket email to receive the credit.')} {Number(refund.ticket.hp_paid || 0) > 0 && `${refund.ticket.hp_paid} spent HP will also be returned.`}</p>
           <p className="text-xs text-muted-foreground">The ticket will be cancelled and cannot be used for entry. Refunds are allowed only before check-in.</p>
           <Field label="Refund reason"><textarea required minLength={10} maxLength={500} disabled={refundBusy} className="w-full rounded-xl border border-border bg-card p-3" value={refund.reason} onChange={e => setRefund({...refund,reason:e.target.value,id:crypto.randomUUID()})} /></Field>
           {refundError && <p role="alert" className="text-destructive text-sm">{refundError}</p>}
@@ -328,7 +328,7 @@ export default function AdminEvents() {
           <button type="button" disabled={refundHistory.loading} className="text-primary font-bold text-sm" onClick={() => void openRefundHistory(refundHistory.eventId)}>Refresh refunds</button>
           {refundHistory.loading ? <p>Loading refunds...</p> : refundHistory.error ? <p role="alert">Refunds could not load. Please refresh.</p> : refundHistory.rows.length === 0 ? <p>No refunds for this event.</p> : refundHistory.rows.map(row => <div key={row.id} className="border border-border rounded-xl p-3 space-y-1 break-words">
             <p className="font-bold text-sm">{row.recipient_name || row.recipient_email}</p>
-            <p className="text-sm">₦{Number(row.amount).toLocaleString()} · {row.destination === 'wallet' ? 'Holy Grills wallet' : 'Original payment method'} · {row.state}</p>
+            <p className="text-sm">₦{Number(row.amount).toLocaleString()} · {row.destination === 'wallet' ? 'Holy Grills wallet' : 'Original payment method'} · {row.state === 'awaiting_account' ? msg('FE_EVENT_REFUND_WAIT_LABEL','Waiting for verified account') : row.state}</p>
             {row.provider_refund_id && <p className="text-xs">Paystack refund ID: {row.provider_refund_id}</p>}
             {row.error && <p className="text-xs text-muted-foreground">{row.error}</p>}
             {row.destination === 'paystack' && ['uncertain','failed'].includes(row.state) && <button type="button" className="text-primary font-bold text-xs" onClick={() => {setRefundError('');setRefundReview({eventId:refundHistory.eventId,row,id:crypto.randomUUID(),outcome:'lookup',providerId:row.provider_refund_id || '',evidence:''});}}>Review gateway result</button>}

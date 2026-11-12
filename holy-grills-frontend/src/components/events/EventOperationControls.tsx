@@ -21,7 +21,7 @@ export default function EventOperationControls({ event, onSaved, disabled = fals
   const intent = useCmsCreateIntent();
   const pendingVersion = useRef<{ id: string; version: string } | null>(null);
   const cancelled = event.metadata?.lifecycle_status === 'cancelled';
-  const policy = msg('FE_EVENT_CANCEL_POLICY', 'Unused paid tickets receive a refund of the ticket amount paid; separately charged payment-provider fees are excluded. Account purchases return to the Holy Grills wallet with spent HP restored; guest card refunds return through the payment provider. Provider confirmation can take time. Checked-in tickets are excluded. Payments confirmed after cancellation are refunded too.');
+  const policy = msg('FE_EVENT_CANCEL_POLICY', 'Unused paid tickets receive a refund of the ticket amount paid; separately charged payment-provider fees are excluded. Account purchases return to the Holy Grills wallet with spent HP restored; guest credits wait for a verified account linked to the ticket email. Checked-in tickets are excluded. Payments confirmed after cancellation are refunded too.');
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();

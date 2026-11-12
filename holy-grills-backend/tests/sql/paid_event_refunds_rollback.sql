@@ -44,9 +44,11 @@ BEGIN
  r:=public.hg_register_guest_event_with_delivery(e,'guest-refund@example.invalid','Guest','08012345678',tier,NULL,'{}');guest:=(r->>'ticket_id')::uuid;
  PERFORM public.hg_pay_event_with_delivery(guest,'paystack','AUDIT-GUEST-'||guest,1000,'{}');
  r:=public.hg_request_event_ticket_refund(admin,e,guest,guest_req,'Guest requests refund');
- IF r->>'destination'<>'paystack' OR r->>'state'<>'queued' OR (SELECT payment_status FROM public.event_tickets WHERE id=guest)<>'refund_pending'
+ IF r->>'destination'<>'wallet' OR r->>'state'<>'awaiting_account' OR (SELECT payment_status FROM public.event_tickets WHERE id=guest)<>'refund_pending'
  OR EXISTS(SELECT 1 FROM public.notification_deliveries WHERE id=guest_req) THEN RAISE EXCEPTION 'guest refund falsely complete or mailed early';END IF;
  BEGIN PERFORM public.hg_admit_event_ticket(e,guest,admin,NULL,c,0);RAISE EXCEPTION 'TEST refund-pending guest admitted';EXCEPTION WHEN raise_exception THEN IF SQLERRM LIKE 'TEST%' THEN RAISE;END IF;END;
+ -- Retain coverage for provider refunds approved before the wallet-only policy.
+ UPDATE hg_internal.event_ticket_refunds SET destination='paystack',state='queued' WHERE id=guest_req;
  claim:=public.hg_claim_event_refund(guest_req);token:=(claim->>'token')::uuid;
  IF claim->>'state'<>'claimed' OR public.hg_claim_event_refund(guest_req)->>'state'<>'busy' THEN RAISE EXCEPTION 'guest claim not exclusive';END IF;
  IF public.hg_begin_event_refund(guest_req,gen_random_uuid()) THEN RAISE EXCEPTION 'stale refund token began handoff';END IF;
@@ -82,6 +84,7 @@ BEGIN
  r:=public.hg_register_guest_event_with_delivery(e,'second-guest-refund@example.invalid','Second guest','08012345678',tier,NULL,'{}');t:=(r->>'ticket_id')::uuid;
  PERFORM public.hg_pay_event_with_delivery(t,'paystack','AUDIT-SECOND-'||t,1000,'{}');
  r:=public.hg_request_event_ticket_refund(admin,e,t,gen_random_uuid(),'Guest cancellation before entry');req:=(r->>'id')::uuid;
+ UPDATE hg_internal.event_ticket_refunds SET destination='paystack',state='queued' WHERE id=req;
  claim:=public.hg_claim_event_refund(req);token:=(claim->>'token')::uuid;
  UPDATE hg_internal.event_ticket_refunds SET lease_until=now()-interval '1 minute' WHERE id=req;
  again:=public.hg_claim_event_refund(req);

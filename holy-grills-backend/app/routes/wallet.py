@@ -25,6 +25,7 @@ def get_balance():
       200:
         description: Wallet details
     """
+    get_db().rpc("hg_claim_guest_event_refunds", {"p_actor":g.user_id})
     wallet = get_wallet(g.user_id)
     if not wallet:
         return jsonify({"error": MSG.WALLET_NOT_FOUND}), 404

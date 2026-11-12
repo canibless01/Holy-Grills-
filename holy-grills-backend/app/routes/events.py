@@ -1053,7 +1053,7 @@ def verify_event_ticket_payment(event_id):
         return jsonify({"payment_status": ticket["payment_status"], "ticket_id": ticket_id}), 200
     if str(ticket.get("status") or "").lower() in TICKET_EXCLUDED_STATUSES:
         changed_event = db.table("events").select("metadata").eq("id", event_id).single().execute() or {}
-        if (changed_event.get("metadata") or {}).get("lifecycle_status") != "cancelled" or not (ticket.get("metadata") or {}).get("expiry_receipt"):
+        if "expiry_receipt" not in (ticket.get("metadata") or {}):
             return jsonify({"error": MSG.EVENT_CARD_NOT_PENDING, "payment_status": ticket.get("payment_status")}), 409
     if not current_app.config.get("PAYSTACK_SECRET_KEY"):
         return jsonify({"error": MSG.EVENT_CARD_UNAVAILABLE}), 503
@@ -1111,7 +1111,7 @@ def confirm_event_ticket_payment(ticket_id: str, payment_reference: str, provide
             "p_provider": "paystack",
             "p_provider_reference": payment_reference,
             "p_amount": ticket.get("card_amount_used"),
-            "p_metadata": provider_response or {},
+            "p_metadata": {**(provider_response or {}), "_recovery_reason":MSG.EVENT_EXPIRED_PAYMENT_REFUND_REASON},
         })
     except Exception as exc:
         raise ValueError(f"Failed to confirm ticket payment: {exc}")
@@ -2177,6 +2177,7 @@ def get_tier_detail(tier_id):
 def my_tickets():
     """Show tickets after reconciling only verified, unowned guest receipts."""
     get_db().rpc("hg_link_verified_event_tickets", {"p_actor":g.user_id})
+    get_db().rpc("hg_claim_guest_event_refunds", {"p_actor":g.user_id})
     db = get_user_client()
     tickets = (
         db.table("event_tickets")

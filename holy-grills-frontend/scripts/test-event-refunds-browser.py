@@ -27,7 +27,7 @@ with sync_playwright() as p:
    data={'id':ID,'state':'completed','destination':'wallet','amount':600,'hp_returned':50}
   elif path.endswith('/review') and request.method=='POST':
    reviews.append(request.post_data_json);guest['state']='processing';guest['provider_refund_id']='123';data={'state':'processing'}
-  elif path.endswith('/refunds'):data={'refunds':[member,guest]}
+  elif path.endswith('/refunds'):data={'refunds':[member,guest,{'id':CHECKED,'recipient_name':'Awaiting guest','amount':500,'destination':'wallet','state':'awaiting_account'}]}
   elif 'events' in path:data={'events':[event]}
   elif '/notifications' in path:data={'notifications':[],'unread_count':0}
   elif any(x in path for x in ('tiers','saved','menu','feature-flags')):data=[]
@@ -51,6 +51,7 @@ with sync_playwright() as p:
  allow_success[0]=True
  form.get_by_role('button',name='Confirm full refund',exact=True).click()
  history=page.get_by_role('dialog',name='Ticket refunds',exact=True)
+ expect(history.get_by_text('Waiting for verified account',exact=False)).to_be_visible()
  expect(history.get_by_text('Member audit',exact=True)).to_be_visible()
  assert len(writes)==2 and writes[0]['request_id']==writes[1]['request_id']
  assert 'amount' not in writes[0]

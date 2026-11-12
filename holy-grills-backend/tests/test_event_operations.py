@@ -64,3 +64,12 @@ def test_expired_charge_for_uncancelled_event_does_not_reissue_ticket():
  with patch.object(webhooks,'validate_charge_amount',return_value={'paid_kobo':10000}),patch('app.routes.events.confirm_event_ticket_payment') as confirm,pytest.raises(ValueError):
   webhooks._confirm_event_ticket_charge(db,{'ticket_id':T},'original',{},'paystack')
  confirm.assert_not_called()
+
+
+def test_expired_receipt_for_uncancelled_event_reaches_atomic_wallet_recovery():
+ db=MagicMock();q=db.table.return_value
+ for method in ('select','eq','single'):getattr(q,method).return_value=q
+ q.execute.side_effect=[{'id':T,'event_id':E,'status':'cancelled','payment_status':'expired','card_amount_used':100,'payment_reference':'original','campus_id':A,'metadata':{'expiry_receipt':{}}},{'metadata':{}}]
+ with patch.object(webhooks,'validate_charge_amount',return_value={'paid_kobo':10000}),patch('app.routes.events.confirm_event_ticket_payment') as confirm:
+  assert webhooks._confirm_event_ticket_charge(db,{'ticket_id':T},'original',{},'paystack')==A
+ confirm.assert_called_once()
