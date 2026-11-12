@@ -43,3 +43,9 @@ Pending product decision: guest refund destination. Account refunds remain walle
 
 
 Final integration: preserved the newer evening-report, cart-recovery and menu-reward changes from main. Production client/SSR builds passed after integration; 145 targeted backend tests passed on the integrated code. A final guard also keeps registration disabled until an authenticated visitor's existing tickets have been checked, so a slow ownership/linking read cannot invite a second booking. Failed ownership reads provide an explicit Retry instead of presenting a new checkout.
+
+## Tier availability follow-up — 12 November 2026
+
+The registration modal treated a null tier capacity as zero, marking all Ladies Hangout tiers sold out despite available overall event capacity. Fixed the UI to show Available for a tier without its own cap, retain remaining-place counts for finite tiers and disable genuinely full/inactive tiers. The backend continues enforcing the shared event limit. Native Chromium at 393px and 1280px now tests the null-capacity case alongside full, finite and inactive tiers, free registration and support-payment navigation; TypeScript and targeted ESLint pass.
+
+The owner subsequently set each Ladies Hangout tier to 300. Verified those values without changing them; the free tier had one sale and the support tiers zero at verification. Trimmed the live description to remove repeated title, date, venue and support-price details, while retaining the theme, invitation and WhatsApp community link. No booking or capacity was reset.

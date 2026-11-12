@@ -177,8 +177,11 @@ export default function RegisterModal({ event, tiers, user, wallet, hpBalance, i
                 <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-2">Select a tier</div>
                 <div className="grid grid-cols-2 gap-2">
                   {tiers.map((t) => {
-                    const remaining = (t.capacity ?? 0) - (t.sold_count ?? 0);
-                    const soldOut = remaining <= 0;
+                    // A null tier cap shares the event's overall limit; it
+                    // does not mean zero seats. The backend enforces that limit.
+                    const capacity = t.capacity ?? t.quantity_available ?? null;
+                    const remaining = capacity == null ? null : Math.max(0, Number(capacity) - Number(t.sold_count ?? t.quantity_sold ?? 0));
+                    const soldOut = t.is_active === false || (remaining != null && remaining <= 0);
                     const selected = selectedTier?.id === t.id;
                     return (
                       <button
@@ -189,8 +192,8 @@ export default function RegisterModal({ event, tiers, user, wallet, hpBalance, i
                       >
                         <div className="font-bold text-sm text-foreground">{t.name}</div>
                         <div className="text-xs text-muted-foreground mt-0.5">{formatNaira(t.price_naira_full ?? t.price_naira ?? 0)}{t.price_hp ? ` · ${t.price_hp} HP` : ''}</div>
-                        <div className={`text-[10px] font-semibold mt-1 ${remaining <= 5 ? 'text-destructive' : 'text-success'}`}>
-                          {soldOut ? 'Sold out' : `${remaining} left`}
+                        <div className={`text-[10px] font-semibold mt-1 ${soldOut || (remaining != null && remaining <= 5) ? 'text-destructive' : 'text-success'}`}>
+                          {t.is_active === false ? msg('FE_EVENT_TIER_INACTIVE', 'Not available') : soldOut ? msg('FE_EVENT_TIER_SOLD_OUT', 'Sold out') : remaining == null ? msg('FE_EVENT_TIER_AVAILABLE', 'Available') : msg('FE_EVENT_TIER_PLACES_LEFT', '{count} left', {count:remaining})}
                         </div>
                       </button>
                     );
