@@ -536,12 +536,11 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         linked_delivery_window_id = None
         scheduled_for = payload.get("scheduled_for") if is_scheduled else None
 
-        # scheduled_orders is a global switch (feature_flags rows carry no campus_id in this project),
-        # so one check covers both ways an order can end up scheduled: an explicit request, and the
-        # automatic next-available-slot fallback below.
+        # Resolve the ordering campus for both explicit scheduling and the
+        # next-available-slot fallback, including calls outside an HTTP request.
         if is_scheduled or payload.get("accept_next_available_date"):
             from app.services.feature_flags import is_feature_enabled
-            if not is_feature_enabled("scheduled_orders"):
+            if not is_feature_enabled("scheduled_orders", campus_id):
                 raise ValueError("Scheduled ordering is not available right now")
 
         if is_scheduled:

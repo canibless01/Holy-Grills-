@@ -273,3 +273,41 @@ def test_queued_ticket_email_uses_current_rescheduled_date(setup_dispatch):
     with patch('app.utils.email._prepare_qr_ticket_email',return_value={'to_email':'student@example.com'}) as qr:
         assert outbox.dispatch_notification(TOKEN)['state']=='accepted'
     assert qr.call_args.args[2]=='Updated event' and qr.call_args.args[5]=='2027-12-01T10:00:00Z' and qr.call_args.args[6]=='New hall'
+
+
+@pytest.mark.parametrize('kind,meta,validator',[
+ ('low_stock_ingredient',{},'hg_stock_low_notice_valid'),
+ ('prize_fulfilment_update',{'prize_status':'box_prepared'},'hg_prize_notice_valid')])
+def test_superseded_operational_notice_stops_before_any_provider(setup_dispatch,kind,meta,validator):
+    db,claim,calls,email,push=setup_dispatch
+    claim['channel']='push';claim['payload']['notification'].update(type=kind,metadata=meta)
+    original=db.rpc.side_effect
+    db.rpc.side_effect=lambda name,params: False if name==validator else original(name,params)
+    assert outbox.dispatch_notification(ID)['state']=='skipped'
+    email.assert_not_called();push.assert_not_called()
+    assert calls[-1][0]=='hg_finish_notification_dispatch'
+
+
+def test_failed_stock_validation_does_not_send_or_claim_delivery(setup_dispatch):
+    db,claim,calls,email,push=setup_dispatch
+    claim['channel']='push';claim['payload']['notification']['type']='low_stock_ingredient'
+    original=db.rpc.side_effect
+    def rpc(name,params):
+        if name=='hg_stock_low_notice_valid':raise RuntimeError('controlled missing state')
+        return original(name,params)
+    db.rpc.side_effect=rpc
+    assert outbox.dispatch_notification(ID)['state']=='retry'
+    email.assert_not_called();push.assert_not_called()
+
+
+
+def test_postcommit_wake_only_dispatches_saved_rows_without_creating_notifications():
+    db=MagicMock();q=db.table.return_value
+    for name in ('select','eq','order','limit'):getattr(q,name).return_value=q
+    q.execute.return_value=[{'id':ID}]
+    class ImmediateThread:
+        def __init__(self,target,daemon):self.target=target
+        def start(self):self.target()
+    with app.app_context(),patch.object(outbox,'get_db',return_value=db),patch.object(outbox,'dispatch_notification') as dispatch,patch('threading.Thread',ImmediateThread):
+        assert outbox.start_reference_dispatch('low_stock_ingredient',ID) is True
+    dispatch.assert_called_once_with(ID);q.insert.assert_not_called();q.update.assert_not_called();db.rpc.assert_not_called()

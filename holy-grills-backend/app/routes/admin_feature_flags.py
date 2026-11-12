@@ -343,21 +343,10 @@ def _fulfil(table, record_id, allowed, not_found_msg, done_msg, label_fn):
         return jsonify({'error': MSG.PRIZE_ALREADY_CLOSED}), 409
     updated = result[0] if isinstance(result, list) else result
 
-    changed_status = "status" in patch and patch["status"] != record.get("status")
-    _audit_admin(table, record_id, "prize_" + (patch["status"] if changed_status else "notes_updated"),
-                 before={"status": record.get("status"), "notes": record.get("notes")}, after=patch,
-                 campus_id=record.get("campus_id"))
-    if changed_status and patch["status"] in _STATUS_WORDS and record.get("user_id"):
-        try:
-            from app.services.notification_service import send_notification
-            send_notification(
-                user_id=record["user_id"],
-                notif_type="prize_fulfilment_update",
-                template_data={"prize": label_fn(record), "status": _STATUS_WORDS[patch["status"]]},
-                campus_id=record.get("campus_id"),
-            )
-        except Exception as e:
-            logger.warning("prize update: notification failed for %s: %s", record.get("user_id"), e)
+    # The private database trigger commits status/audit/inbox/push intent together.
+    # A response-loss retry must not manufacture a second notification here.
+    from app.services.notification_outbox import start_reference_dispatch
+    start_reference_dispatch('prize_fulfilment_update', record_id)
     msg = done_msg if patch.get("status") == "fulfilled" else MSG.PRIZE_UPDATED
     return jsonify({"message": msg, "record": updated}), 200
 

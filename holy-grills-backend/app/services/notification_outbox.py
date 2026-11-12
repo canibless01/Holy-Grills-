@@ -45,6 +45,12 @@ def dispatch_notification(notification_id):
             prefs=effective_preferences(db,snapshot['user_id'],profile)
             if channel not in permitted_channels(snapshot['type'],[channel],prefs):
                 return finish({'state':'skipped','error':'recipient_opted_out'})
+        if snapshot.get('type') == 'low_stock_ingredient':
+            if db.rpc('hg_stock_low_notice_valid', {'p_notice': notification_id}) is not True:
+                return finish({'state':'skipped','error':'stock_no_longer_low_or_episode_changed'})
+        if snapshot.get('type') == 'prize_fulfilment_update' and (snapshot.get('metadata') or {}).get('prize_status'):
+            if db.rpc('hg_prize_notice_valid', {'p_notice': notification_id}) is not True:
+                return finish({'state':'skipped','error':'prize_status_superseded'})
         if snapshot.get('type') == 'abandoned_cart':
             from app.services.cart_recovery import notification_still_valid
             if not notification_still_valid(db, snapshot):
@@ -158,4 +164,34 @@ def start_ticket_email_dispatch(ticket_id):
         return True
     except Exception as exc:
         logger.warning('Ticket email immediate wake failed: %s',type(exc).__name__)
+        return False
+
+
+def start_reference_dispatch(kind, reference_id):
+    """Wake existing transactional receipts without adding sends to the HTTP path.
+
+    If the process exits, the existing periodic recovery still finds these rows.
+    This function never creates a notification or changes a business record.
+    """
+    import threading
+    from flask import current_app
+    if kind not in ('low_stock_ingredient', 'prize_fulfilment_update'):
+        return False
+    try:
+        app = current_app._get_current_object()
+        def wake():
+            try:
+                with app.app_context():
+                    rows = (get_db().table('notification_deliveries').select('id,notice:notifications!inner(type,reference_id)')
+                            .eq('status', 'queued').eq('channel', 'push').eq('notice.type', kind)
+                            .eq('notice.reference_id', reference_id)
+                            .order('created_at', ascending=False).limit(10).execute()) or []
+                    for row in rows:
+                        dispatch_notification(row['id'])
+            except Exception as exc:
+                logger.warning('Saved %s notification wake deferred: %s', kind, type(exc).__name__)
+        threading.Thread(target=wake, daemon=True).start()
+        return True
+    except Exception as exc:
+        logger.warning('Notification wake deferred: %s', type(exc).__name__)
         return False

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { Boxes, Plus, Minus, AlertTriangle, History, PackagePlus, PackageMinus } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { toast } from '@/components/ui/use-toast';
@@ -18,6 +18,8 @@ import {
   Pill,
 } from './ui/AdminKit';
 
+const AdminStockReport = lazy(() => import('./AdminStockReport'));
+
 const USAGE_TYPES = [
   { id: 'usage', label: msg('FE_STOCK_USAGE', "Usage") },
   { id: 'waste', label: msg('FE_STOCK_WASTE', "Waste") },
@@ -28,11 +30,13 @@ export default function AdminStore() {
   const { adminCampusId } = useCampus();
   const { user } = useHolyGrill();
   const campusId = user?.role === 'super_admin' ? adminCampusId : user?.campus_id || user?.profile?.campus_id;
+  if (!campusId && user?.role === 'super_admin') return <div className="space-y-4"><p className="text-sm text-muted-foreground">{msg('FE_STOCK_SELECT_CAMPUS', 'Select a campus to manage its ingredient stock.')}</p><Suspense fallback={<p role="status">Loading stock report…</p>}><AdminStockReport campusId={null} /></Suspense></div>;
   if (!campusId) return <p className="p-6 text-sm text-muted-foreground">{msg('FE_STOCK_SELECT_CAMPUS', 'Select a campus to manage its ingredient stock.')}</p>;
   return <StockWorkspace key={campusId} campusId={campusId} />;
 }
 
 function StockWorkspace({ campusId }) {
+  const [showReport, setShowReport] = useState(false);
   const [items, setItems] = useState([]);
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -88,6 +92,8 @@ function StockWorkspace({ campusId }) {
 
   return (
     <div className="space-y-4">
+      <button onClick={() => setShowReport(value => !value)} className="rounded-full border border-border px-4 py-2 text-sm font-bold">{showReport ? msg('FE_STOCK_REPORT_HIDE', 'Hide stock report') : msg('FE_STOCK_REPORT_SHOW', 'Stock report & CSV')}</button>
+      {showReport && <Suspense fallback={<p role="status">Loading stock report…</p>}><AdminStockReport campusId={campusId} /></Suspense>}
       {/* Summary */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatTile icon={Boxes} label={msg('FE_STOCK_TRACKED', "Tracked Items")} value={activeItems.length} iconClass="text-primary" iconBg="bg-primary/10" />

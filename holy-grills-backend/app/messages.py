@@ -3771,6 +3771,22 @@ class MSG:
     ORDER_PROMO_SIGN_IN = "Sign in to use promo codes. Your guest cart will be kept."
     FE_PROMO_SIGN_IN = "Sign in to use promo codes"
 
+    FE_STOCK_REPORT_TITLE = "Stock reconciliation & report"
+    FE_STOCK_REPORT_HELP = "Opening + purchases − usage − waste + corrections = period closing. Current balance is checked against the full ledger. Quantities use each ingredient’s usage unit."
+    FE_STOCK_REPORT_FROM = "From"
+    FE_STOCK_REPORT_TO = "To"
+    FE_STOCK_REPORT_REFRESH = "Refresh report"
+    FE_STOCK_REPORT_EXPORT = "Export stock CSV"
+    FE_STOCK_REPORT_LOADING = "Loading stock report…"
+    FE_STOCK_REPORT_INGREDIENTS = "ingredients"
+    FE_STOCK_REPORT_MISMATCHES = "reconciliation issues"
+    FE_STOCK_REPORT_COST = "Recorded purchase cost"
+    FE_STOCK_REPORT_UNKNOWN_COSTS = "Some purchases have no cost recorded. The cost total includes known amounts only."
+    FE_STOCK_REPORT_EMPTY = "No ingredients in this campus scope."
+    FE_STOCK_REPORT_READ_ONLY = "Archived ingredients remain in this report. Reconciliation is read-only; it never changes a balance or creates a correction."
+    FE_STOCK_REPORT_HIDE = "Hide stock report"
+    FE_STOCK_REPORT_SHOW = "Stock report & CSV"
+
 M = MSG
 
 

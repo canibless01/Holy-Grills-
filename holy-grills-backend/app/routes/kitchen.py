@@ -134,35 +134,6 @@ def _today_start_iso():
     return (wat_midnight_naive - WAT_OFFSET).replace(tzinfo=timezone.utc).isoformat()
 
 
-def _alert_admin_low_stock(stock_item: dict, new_balance: float):
-    """Trigger low stock alert notification to all admin profiles for the item's campus."""
-    try:
-        from app.services.notification_service import send_notification
-        db = get_user_client()
-        campus_id = stock_item.get("campus_id")
-        admins_q = db.table("profiles").select("id,campus_id").in_("role", list(ADMIN_ROLES)).eq("is_active", True)
-        if campus_id:
-            admins_q = admins_q.eq("campus_id", campus_id)
-        admins = admins_q.execute() or []
-
-        item_name = stock_item.get("name", "Stock Item")
-        threshold = stock_item.get("low_stock_threshold", 0)
-
-        for admin in admins:
-            send_notification(
-                user_id=admin["id"],
-                notif_type="low_stock_ingredient",
-                title="Low Stock Alert",
-                body=f"Low stock alert: '{item_name}' balance ({new_balance}) is below threshold ({threshold}).",
-                template_data={"name": item_name, "balance": new_balance, "threshold": threshold},
-                reference_id=stock_item.get("id"),
-                reference_type="stock_item",
-                campus_id=campus_id,
-            )
-    except Exception as e:
-        logger.warning("_alert_admin_low_stock failed: %s", e)
-
-
 @units_bp.route("", methods=["GET"])
 @require_auth
 def list_measurement_units():
@@ -468,6 +439,9 @@ def log_stock_purchase(stock_item_id):
     }, data.get("request_id"))
     if error: return error
     row = result[0] if isinstance(result, list) else result
+    if row.get('is_low_stock'):
+        from app.services.notification_outbox import start_reference_dispatch
+        start_reference_dispatch('low_stock_ingredient', stock_item_id)
 
     return jsonify({
         "message": MSG.STOCK_PURCHASE_LOGGED,
@@ -534,8 +508,9 @@ def log_stock_usage(stock_item_id):
     }, data.get("request_id"))
     if error: return error
     row = result[0] if isinstance(result, list) else result
-    if row["is_low_stock"]:
-        _alert_admin_low_stock(item, row["new_balance"])
+    if row.get('is_low_stock'):
+        from app.services.notification_outbox import start_reference_dispatch
+        start_reference_dispatch('low_stock_ingredient', stock_item_id)
 
     return jsonify({
         "message": MSG.STOCK_USAGE_LOGGED,
@@ -543,6 +518,27 @@ def log_stock_usage(stock_item_id):
         "current_balance": row["new_balance"],
         "is_low_stock": row["is_low_stock"],
     }), 200
+
+
+@stock_bp.route("/report", methods=["GET"])
+@require_role("admin")
+def stock_report():
+    try:
+        start = date.fromisoformat(request.args.get('from_date', (today_wat()-timedelta(days=29)).isoformat()))
+        end = date.fromisoformat(request.args.get('to_date', today_wat().isoformat()))
+        if start>end or (end-start).days>366 or end>today_wat():
+            raise ValueError()
+        campus = resolve_scoped_campus_id(request.args.get('campus_id'))
+        if campus and not validate_uuid(campus):
+            raise ValueError()
+    except (ValueError, TypeError):
+        return jsonify(error=MSG.ANALYTICS_INVALID_DATE),400
+    try:
+        result = get_db().rpc('hg_stock_report', {'p_actor':g.user_id,'p_campus':campus,'p_from':start.isoformat(),'p_to':end.isoformat()})
+    except SupabaseError as exc:
+        code=str((exc.details or {}).get('code',''))
+        return jsonify(error=MSG.RESOURCE_ACCESS_DENIED if code=='42501' else MSG.SERVICE_UNAVAILABLE),403 if code=='42501' else 503
+    return jsonify(result),200
 
 
 @stock_bp.route("/<stock_item_id>/ledger", methods=["GET"])
