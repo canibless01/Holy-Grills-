@@ -1,3 +1,4 @@
+import ModifierCushions from './ModifierCushions';
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, Save } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
@@ -97,6 +98,7 @@ export default function MenuItemModifiers({ itemId }) {
           <Field label="Options (one per line)" hint="Format: OptionName:PriceDelta — the delta is added to the item price. e.g. Chicken:0, Beef:200, Fish:150">
             <textarea value={g.optionsText} onChange={(e) => setVarGroups((gs) => gs.map((x, i) => i === gi ? { ...x, optionsText: e.target.value } : x))} placeholder={'Chicken:0\nBeef:200\nFish:150'} rows={3} className="w-full mt-1 p-2 rounded-lg border border-border text-xs font-mono" />
           </Field>
+                <ModifierCushions group={g} kind="variation" onChange={next => setVarGroups(gs => gs.map((x, i) => i === gi ? next : x))} />
         </div>
       ))}
 
@@ -124,6 +126,7 @@ export default function MenuItemModifiers({ itemId }) {
           <Field label="Add-on options (one per line)" hint="Format: AddonName:Price — flat ₦ price for that add-on. e.g. Extra Cheese:200, Bacon:400, Coleslaw:150">
             <textarea value={g.addonsText} onChange={(e) => setAddonGroups((gs) => gs.map((x, i) => i === gi ? { ...x, addonsText: e.target.value } : x))} placeholder={'Extra Cheese:200\nBacon:400\nColeslaw:150'} rows={3} className="w-full mt-1 p-2 rounded-lg border border-border text-xs font-mono" />
           </Field>
+                <ModifierCushions group={g} kind="addon" onChange={next => setAddonGroups(gs => gs.map((x, i) => i === gi ? next : x))} />
         </div>
       ))}
 

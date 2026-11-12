@@ -244,7 +244,7 @@ export default function AdminOrders() {
                   </div>
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground capitalize">{o.payment_status} · {o.delivery_type?.replace(/_/g, ' ')}{o.is_squad_order && ' · 👥 squad'}{o.delivery_window?.label ? ` · ${o.delivery_window.label}` : ''}</span>
-                    <span className="font-bold text-foreground">{formatNaira(o.total_amount)}</span>
+                    <span className="text-right"><span className="block font-bold text-foreground">{formatNaira(o.total_amount)}</span><span className="text-muted-foreground">Delivery: {formatNaira(o.delivery_fee ?? 0)}</span></span>
                   </div>
                 </button>
 

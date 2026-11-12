@@ -991,6 +991,7 @@ const admin = {
         const payload = {
           name: opt.name,
           price_delta: Number(opt.price_delta) || 0,
+          cushion_amount: Number(opt.cushion_amount ?? 0),
           is_available: opt.is_available !== false,
           sort_order: opt.sort_order ?? i,
         };
@@ -1030,6 +1031,7 @@ const admin = {
         const payload = {
           name: addon.name,
           price: Number(addon.price) || 0,
+          cushion_amount: Number(addon.cushion_amount ?? 0),
           group_id: groupId,
           is_available: addon.is_available !== false,
           sort_order: addon.sort_order ?? i,

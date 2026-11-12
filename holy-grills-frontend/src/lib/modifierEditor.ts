@@ -16,6 +16,20 @@ export function parseModifierOptions(text: string) {
   });
 }
 
+export function modifierCushion(group, name, kind) {
+  const source = kind === 'variation' ? (group.options || group.variations || []) : (group.addons || []);
+  return group.cushionAmounts?.[name] ?? source.find(option => option.name === name)?.cushion_amount ?? 0;
+}
+
+function cushion(group, option, kind) {
+  const raw = modifierCushion(group, option.name, kind);
+  const amount = Number(raw);
+  if (raw === '' || !Number.isFinite(amount) || amount < 0 || amount > option.price_delta || Math.abs(amount * 100 - Math.round(amount * 100)) > 0.00001) {
+    throw new Error(`Cushion for ${option.name} must be included in its price and use at most two decimal places.`);
+  }
+  return amount;
+}
+
 export function modifierEditorPayload(varGroups, addonGroups) {
   const requireName = group => {
     const name = group.name.trim();
@@ -25,7 +39,7 @@ export function modifierEditorPayload(varGroups, addonGroups) {
   const variation_groups = varGroups.map(group => {
     const options = parseModifierOptions(group.optionsText);
     if (!options.length) throw new Error(msg('FE_MODIFIER_EDITOR_EVERY_VARIATION_GROUP_NEEDS_AT_LEAST', 'Every variation group needs at least one option.'));
-    return { id: group.id, name: requireName(group), is_required: !!group.is_required, options };
+    return { id: group.id, name: requireName(group), is_required: !!group.is_required, options: options.map(option => ({ ...option, cushion_amount: cushion(group, option, 'variation') })) };
   });
   const addon_groups = addonGroups.map(group => {
     const options = parseModifierOptions(group.addonsText);
@@ -34,7 +48,7 @@ export function modifierEditorPayload(varGroups, addonGroups) {
       throw new Error(msg('FE_MODIFIER_EDITOR_ADD_ON_SELECTION_LIMITS_MUST_BE_WHOLE', 'Add-on selection limits must be whole numbers: minimum 0 or more, maximum 1 or more, and no greater than the number of options.'));
     }
     return { id: group.id, name: requireName(group), is_required: min > 0, min_select: min, max_select: max,
-      addons: options.map(option => ({ name: option.name, price: option.price_delta })) };
+      addons: options.map(option => ({ name: option.name, price: option.price_delta, cushion_amount: cushion(group, option, 'addon') })) };
   });
   return { variation_groups, addon_groups };
 }

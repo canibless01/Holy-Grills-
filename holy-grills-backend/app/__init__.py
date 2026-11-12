@@ -85,6 +85,7 @@ def create_app(config_class=Config, *, background=False):
     from app.routes.webhooks import webhooks_bp
     from app.routes.storefront import storefront_bp
     from app.routes.analytics import analytics_bp
+    from app.routes.delivery_costs import delivery_costs_bp
     from app.routes.cart import cart_bp
     from app.routes.saved_for_later import saved_bp
     from app.routes.order_locks import order_locks_bp
@@ -198,6 +199,7 @@ def create_app(config_class=Config, *, background=False):
     else:
         app.logger.info("API docs disabled (set API_DOCS_ENABLED=true to expose /api/docs/)")
 
+    app.register_blueprint(delivery_costs_bp, url_prefix="/api/admin/delivery-costs")
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(users_bp, url_prefix="/api/users")
     app.register_blueprint(menu_bp, url_prefix="/api/menu")

@@ -1,3 +1,4 @@
+import ModifierCushions from './ModifierCushions';
 import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, Save, Pencil } from 'lucide-react';
@@ -40,12 +41,12 @@ export default function AdminAddons() {
   useEffect(() => { load(); }, [itemId]);
 
   const reloadGlobal = async () => { try { setConfig(await mockApi.admin.getAddonsConfig()); } catch { /* ignore */ } };
-  const addGlobal = () => setEditing({ name: '', price: 0 });
+  const addGlobal = () => setEditing({ name: '', price: 0, cushion_amount: 0 });
   const saveGlobal = async () => {
     if (!editing.name) { toast({ title: msg('FE_ADMIN_ADDONS_NAME_REQUIRED', 'Name required'), variant: 'destructive' }); return; }
     try {
-      if (editing.id) await mockApi.admin.updateGlobalAddon(editing.id, { name: editing.name, price: Number(editing.price) || 0 });
-      else await mockApi.admin.createGlobalAddon({ name: editing.name, price: Number(editing.price) || 0, group_id: null });
+      if (editing.id) await mockApi.admin.updateGlobalAddon(editing.id, { name: editing.name, price: Number(editing.price), cushion_amount: Number(editing.cushion_amount) });
+      else await mockApi.admin.createGlobalAddon({ name: editing.name, price: Number(editing.price), cushion_amount: Number(editing.cushion_amount), group_id: null });
       toast({ title: msg('FE_ADMIN_ADDONS_GLOBAL_ADDON_SAVED', '✅ Global addon saved') });
       setEditing(null);
       await reloadGlobal();
@@ -85,7 +86,7 @@ export default function AdminAddons() {
           {config.global_addons.map((a) => (
             <div key={a.id} className="rounded-xl bg-card border border-border p-3 flex items-center gap-3">
               <div className="flex-1"><div className="font-bold text-sm text-foreground">{a.name}</div><div className="text-xs text-muted-foreground">{formatNaira(a.price)}</div></div>
-              <button onClick={() => setEditing({ id: a.id, name: a.name, price: a.price })} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
+              <button onClick={() => setEditing({ id: a.id, name: a.name, price: a.price, cushion_amount: a.cushion_amount ?? 0 })} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
               <button onClick={() => delGlobal(a.id)} className="p-2 rounded-lg hover:tone-error"><Trash2 className="w-4 h-4 text-destructive" /></button>
             </div>
           ))}
@@ -97,6 +98,7 @@ export default function AdminAddons() {
             <div className="grid grid-cols-2 gap-2">
               <Field label="Name"><TextInput value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} placeholder="e.g. Extra sauce" /></Field>
               <Field label="Price (₦)"><TextInput type="number" value={editing.price} onChange={(e) => setEditing({ ...editing, price: e.target.value })} /></Field>
+              <Field label="Delivery cushion included (₦)" hint="Part of the selling price, not an extra charge."><TextInput type="number" min="0" max={editing.price} step="0.01" value={editing.cushion_amount} onChange={e => setEditing({ ...editing, cushion_amount: e.target.value })} /></Field>
             </div>
             <div className="flex gap-2">
               <button onClick={saveGlobal} className="flex-1 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold">Save</button>
@@ -126,6 +128,7 @@ export default function AdminAddons() {
                 <Field label="Options (one per line)" hint="Format: OptionName:PriceDelta — delta adds to the item price. e.g. Chicken:0, Beef:200, Fish:150">
                   <textarea value={g.optionsText} onChange={(e) => setVarGroups((gs) => gs.map((x, i) => i === gi ? { ...x, optionsText: e.target.value } : x))} placeholder={'Chicken:0\nBeef:200\nFish:150'} rows={3} className="w-full mt-1 p-2 rounded-lg border border-border text-xs font-mono" />
                 </Field>
+                <ModifierCushions group={g} kind="variation" onChange={next => setVarGroups(gs => gs.map((x, i) => i === gi ? next : x))} />
                 <button aria-label={`Remove variation group ${g.name || gi + 1}`} onClick={() => setVarGroups(gs => gs.filter((_, i) => i !== gi))} className="text-xs text-destructive">{msg('FE_ADMIN_ADDONS_REMOVE_GROUP', "Remove group")}</button>
               </div>
             </Card>
@@ -143,6 +146,7 @@ export default function AdminAddons() {
                 <Field label="Add-on options (one per line)" hint="Format: AddonName:Price — flat ₦ price. e.g. Extra Cheese:200, Bacon:400, Coleslaw:150">
                   <textarea value={g.addonsText} onChange={(e) => setAddonGroups((gs) => gs.map((x, i) => i === gi ? { ...x, addonsText: e.target.value } : x))} placeholder={'Extra Cheese:200\nBacon:400\nColeslaw:150'} rows={3} className="w-full mt-1 p-2 rounded-lg border border-border text-xs font-mono" />
                 </Field>
+                <ModifierCushions group={g} kind="addon" onChange={next => setAddonGroups(gs => gs.map((x, i) => i === gi ? next : x))} />
                 <button aria-label={`Remove add-on group ${g.name || gi + 1}`} onClick={() => setAddonGroups(gs => gs.filter((_, i) => i !== gi))} className="text-xs text-destructive">{msg('FE_ADMIN_ADDONS_REMOVE_GROUP', "Remove group")}</button>
               </div>
             </Card>

@@ -15,7 +15,7 @@ import { useIsSuperAdmin } from './SuperAdminGate';
 import { useCampus } from '@/lib/campusContext';
 import { apiClient } from '@/lib/apiClient';
 
-const BLANK = { name: '', price: '', category_id: '', daily_limit: 50, hp_earn_value: 10, hp_multiplier: 1, description: '', image_url: '', is_featured: false, is_available: true, is_secret: false };
+const BLANK = { name: '', price: '', cushion_amount: 0, category_id: '', daily_limit: 50, hp_earn_value: 10, hp_multiplier: 1, description: '', image_url: '', is_featured: false, is_available: true, is_secret: false };
 
 export default function AdminMenu() {
   useMessages();
@@ -69,7 +69,7 @@ export default function AdminMenu() {
   const save = async () => {
     if (saveInFlight.current) return;
     saveInFlight.current = true; setSaving(true);
-    const body = { ...modal.item, price: Number(modal.item.price), hp_multiplier: Number(modal.item.hp_multiplier) || 1, is_featured: !!modal.item.is_featured, is_available: modal.item.is_available !== false, is_secret: !!modal.item.is_secret };
+    const body = { ...modal.item, price: Number(modal.item.price), cushion_amount: Number(modal.item.cushion_amount ?? 0), hp_multiplier: Number(modal.item.hp_multiplier) || 1, is_featured: !!modal.item.is_featured, is_available: modal.item.is_available !== false, is_secret: !!modal.item.is_secret };
     try {
       if (modal.isNew) { await mockApi.admin.createMenuItem(body); toast({ title: msg('FE_ADMIN_MENU_MENU_ITEM_CREATED', '✅ Menu item created'), description: msg('FE_ADMIN_MENU_NAME_IS_NOW_LIVE', '"{name}" is now live.', { name: body.name }) }); }
       else { await mockApi.admin.updateMenuItem(modal.item.id, body); toast({ title: msg('FE_ADMIN_MENU_MENU_ITEM_UPDATED', '✅ Menu item updated'), description: msg('FE_ADMIN_MENU_NAME_SAVED', '"{name}" saved.', { name: body.name }) }); }
@@ -223,6 +223,7 @@ export default function AdminMenu() {
             <Field label="Name"><TextInput value={modal.item.name} onChange={(e) => setModal({ item: { ...modal.item, name: e.target.value }, isNew: modal.isNew })} /></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Price (₦)"><TextInput type="number" value={modal.item.price} onChange={(e) => setModal({ item: { ...modal.item, price: e.target.value }, isNew: modal.isNew })} /></Field>
+              <Field label="Delivery cushion included (₦)" hint="Internal portion of the selling price. Customer price stays unchanged."><TextInput type="number" min="0" max={modal.item.price} step="0.01" value={modal.item.cushion_amount ?? 0} onChange={e => setModal({ ...modal, item: { ...modal.item, cushion_amount: e.target.value } })} /></Field>
               <Field label="Category">
                 <select value={modal.item.category_id} onChange={(e) => setModal({ item: { ...modal.item, category_id: e.target.value }, isNew: modal.isNew })} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">
                   {categories.map((c) => <option key={c.id || c.category_id} value={c.id || c.category_id}>{c.name || c.category_name}</option>)}
