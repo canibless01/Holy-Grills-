@@ -220,6 +220,25 @@ class CombinedMealDiscountTests(unittest.TestCase):
         self.assertEqual(quote['meal_discount']['amount'],0)
         self.assertEqual(self.db.rows['ambassador_meal_discounts'][0]['uses_remaining'],1)
 
+    def test_squad_promo_lock_meal_and_delivery_benefits_conserve_the_real_quote(self):
+        from app.services import ambassador_service
+        self.app.config['SQUAD_ORDER_ENABLED']=True
+        self.db.rows['system_settings']=[{'key':key,'value':value,'campus_id':None} for key,value in {
+          'squad_order_min_items':1,'squad_order_max_items':20,'squad_delivery_discount_enabled':True,
+          'squad_delivery_discount_pct':50,'squad_order_discount_enabled':True,'squad_order_discount_pct':10}.items()]
+        discount='55555555-5555-4555-8555-555555555555'
+        self.db.rows['ambassador_meal_discounts']=[{'id':discount,'ambassador_id':'student','status':'active','max_meal_value':1000,'uses_remaining':1,'expires_at':'2099-01-01T00:00:00Z'}]
+        self.db.rows['profiles'][0]['next_order_free_delivery_cap']=100
+        for promo, expected, meal_used in ((300,365,1000),(9999,25,0)):
+            with self.subTest(promo=promo),patch.object(service,'_apply_promo',return_value={'discount':promo,'promo_code_id':'promo'}),patch.object(ambassador_service,'sweep_expired_discounts',return_value=0):
+                quote=self.calculate(payload={**self.payload,'promo_code':'PROMO','meal_discount_id':discount})
+            self.assertTrue(quote['is_squad_order'])
+            self.assertEqual((quote['delivery_fee'],quote['total_amount']),(25,expected))
+            self.assertEqual(quote['subtotal']-quote['discount_amount']+quote['delivery_fee'],quote['total_amount'])
+            self.assertEqual(quote['meal_discount']['amount'],meal_used)
+            self.assertEqual(self.db.rows['ambassador_meal_discounts'][0]['uses_remaining'],1)
+            self.assertEqual(self.db.rows['profiles'][0]['next_order_free_delivery_cap'],100)
+
 class ScopedPromoTests(unittest.TestCase):
     def apply(self,promo,lines):
         from unittest.mock import MagicMock

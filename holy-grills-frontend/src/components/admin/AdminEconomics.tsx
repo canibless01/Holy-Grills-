@@ -135,7 +135,7 @@ function EconomicsWorkspace({ campusId }) {
       </Card>) : <>
       {/* 1. Programme Overview */}
       <Card className="p-5">
-        <SectionTitle icon={Coins} title="Programme Overview" sub={`${fromDate} → ${toDate} · GET /admin/economics/overview`} />
+        <SectionTitle icon={Coins} title="Programme Overview" sub={`${fromDate} → ${toDate} · Delivered food revenue after discounts and refunds; delivery fees excluded.`} />
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
           {metrics.map((m, i) => (
             <motion.div key={m.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04, duration: 0.3 }}>

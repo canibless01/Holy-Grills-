@@ -27,3 +27,7 @@ These are remaining coverage or feature gaps, not a claim that every item is bro
 5. **Other administration and presentation:** remaining newsletter/preferences, ambassador measurement/share/report exceptions, review/public-rating presentation and storefront editing/sorting variants not covered by existing evidence. Disabled marketplace/subscription and broader catering variants remain separate from enabled launch flows; automatic wallet funding is already implemented and is not that deferred subscription scope.
 
 Real device installation/push/GPS and the ordinary customer ordering loop have owner confirmation. Do not reopen those as outstanding solely because older documents predate that confirmation. Inbox report receipt and any actual provider/bank settlement remain operational observations, separate from SQL rollback proof.
+
+## 12 November follow-up
+
+The [squad/recovery/reporting batch](REWARD_COMBINATIONS_AND_REFUND_REPORTING_2026_11_12.md) now closes the specified squad/earned physical reward/promo/lock/campaign combination and isolated delivery-financial recovery checks. Retained-revenue defects in the wider reports are fixed, including card-to-wallet refund attribution. The [delivery cushion pool](DELIVERY_CUSHION_POOL_2026_11_12.md) is also fully implemented and live. These later records supersede those particular open entries above; broader legacy interruption, stock/reporting and settings/permission coverage remains open.

@@ -3,6 +3,7 @@ Economics Dashboard Service — aggregation queries for admin economics reportin
 """
 
 from app.services.economics_service import _get_econ_setting, get_hp_value
+from app.services.reporting_money import ORDER_MONEY_COLUMNS, retained_food_amount
 
 # What counts as "HP issued": food-order earning, the FIFO unlock of pending HP, and (per the tier
 # rewards spec) each tier's flat monthly HP perk -- it's real liability the moment it's credited,
@@ -13,7 +14,7 @@ _HP_ISSUED_SOURCES = ("food_order", "order_earn", "unlock", "tier_monthly_hp", "
 
 
 def get_economics_overview(db, start_date: str = None, end_date: str = None, campus_id: str = None) -> dict:
-    orders_q = db.table("orders").select("subtotal").eq("status", "delivered")
+    orders_q = db.table("orders").select(ORDER_MONEY_COLUMNS).eq("status", "delivered")
     if start_date:
         orders_q = orders_q.gte("created_at", start_date)
     if end_date:
@@ -21,7 +22,7 @@ def get_economics_overview(db, start_date: str = None, end_date: str = None, cam
     if campus_id:
         orders_q = orders_q.eq("campus_id", campus_id)
     orders = orders_q.execute() or []
-    food_revenue = sum(float(o["subtotal"] or 0) for o in orders)
+    food_revenue = float(sum(retained_food_amount(o) for o in orders))
 
     hp_tx_q = db.table("hp_transactions").select("amount,type,source")
     if start_date:
@@ -103,7 +104,7 @@ def get_tier_breakdown(db, start_date: str = None, end_date: str = None, campus_
             continue
 
         def _orders(chunk):
-            q = db.table("orders").select("subtotal").eq("status", "delivered").in_("user_id", chunk)
+            q = db.table("orders").select(ORDER_MONEY_COLUMNS).eq("status", "delivered").in_("user_id", chunk)
             if start_date:
                 q = q.gte("created_at", start_date)
             if end_date:
@@ -111,7 +112,7 @@ def get_tier_breakdown(db, start_date: str = None, end_date: str = None, campus_
             if campus_id:
                 q = q.eq("campus_id", campus_id)
             return q
-        revenue = sum(float(o["subtotal"] or 0) for o in _in_chunks(_orders, user_ids))
+        revenue = float(sum(retained_food_amount(o) for o in _in_chunks(_orders, user_ids)))
 
         def _hp(chunk):
             q = db.table("hp_transactions").select("amount,type,source").in_("user_id", chunk)

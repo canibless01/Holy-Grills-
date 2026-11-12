@@ -269,7 +269,7 @@ export default function AdminAnalytics() {
       </Card>
 
       <Card className="p-5">
-        <SectionTitle icon={DollarSign} title="Item Performance" sub="Revenue per item in range" />
+        <SectionTitle icon={DollarSign} title="Item Performance" sub="Food revenue after discounts and proportionately allocated refunds; delivery fees excluded." />
         {items.length === 0 ? (
           <EmptyState icon={DollarSign} title="No item sales in this range" />
         ) : (

@@ -663,7 +663,7 @@ export function AcademicCalendarDashboard() {
       </div>
       {periods.length > 0 ? (
         <Card className="p-5">
-          <SectionTitle icon={CalendarDays} title="Orders by Academic Period" />
+          <SectionTitle icon={CalendarDays} title="Orders by Academic Period" sub="Revenue counts delivered, paid orders after refunds. Order counts show non-cancelled demand." />
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[480px]">
               <thead>
@@ -711,7 +711,7 @@ export function OrderSourcesDashboard() {
       <StatTile icon={Radio} label="Total Orders" value={total} iconClass="text-primary" iconBg="bg-primary/10" />
       {pieData.length > 0 ? (
         <Card className="p-5">
-          <SectionTitle icon={Radio} title="Orders by Channel" />
+          <SectionTitle icon={Radio} title="Orders by Channel" sub="Revenue counts delivered, paid orders after refunds. Order counts show non-cancelled demand." />
           <SimplePie data={pieData} />
         </Card>
       ) : (

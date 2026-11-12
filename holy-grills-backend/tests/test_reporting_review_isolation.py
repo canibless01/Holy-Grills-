@@ -19,9 +19,9 @@ class Query:
  def execute(self):return self.rows
 class DB:
  def __init__(self):
-  base={'user_id':'u','campus_id':A,'created_at':'2026-11-05T12:00:00+00:00'}
+  base={'user_id':'u','campus_id':A,'created_at':'2026-11-05T12:00:00+00:00','payment_status':'paid','delivery_fee':0}
   self.data={'hp_tiers':[{'id':'gold','name':'Gold','sort_order':1}], 'profiles':[{'id':'u','campus_id':A,'current_tier_id':'gold','hp_balance':70}],
-   'orders':[{**base,'status':'delivered','subtotal':1000},{**base,'campus_id':B,'status':'delivered','subtotal':9000},{**base,'status':'cancelled','subtotal':99999}],
+   'orders':[{**base,'status':'delivered','subtotal':1000,'total_amount':1000},{**base,'campus_id':B,'status':'delivered','subtotal':9000,'total_amount':9000},{**base,'status':'cancelled','subtotal':99999}],
    'hp_transactions':[{**base,'amount':100,'type':'earn','source':'food_order','status':'confirmed'},{**base,'amount':20,'type':'earn','source':'tier_monthly_hp','status':'confirmed'},{**base,'amount':30,'type':'spend','source':'reward_redemption'},{**base,'amount':25,'type':'earn','source':'hp_transfer_received'},{**base,'amount':10,'type':'spend','source':'hp_transfer_sent'},{**base,'amount':7,'type':'earn','source':'other_bonus','status':'pending'},{**base,'campus_id':B,'amount':1000,'type':'earn','source':'food_order'}],
    'redemption_cost_log':[{**base,'actual_cost':15.5,'reward_type':'food','hp_spent':20},{**base,'actual_cost':4.5,'reward_type':'merch','hp_spent':10},{**base,'campus_id':B,'actual_cost':100,'reward_type':'food','hp_spent':100}]}
  def table(self,name):return Query(self.data[name])
@@ -44,7 +44,7 @@ def test_tier_report_scopes_activity_even_when_same_student_has_foreign_campus_h
 
 def test_tier_report_processes_more_than_one_user_chunk():
  db=DB();db.data['profiles']=[{'id':str(i),'campus_id':A,'current_tier_id':'gold'} for i in range(205)]
- db.data['orders']=[{'user_id':str(i),'campus_id':A,'status':'delivered','subtotal':1} for i in range(205)]
+ db.data['orders']=[{'user_id':str(i),'campus_id':A,'status':'delivered','subtotal':1,'total_amount':1,'delivery_fee':0,'payment_status':'paid'} for i in range(205)]
  db.data['hp_transactions']=[];db.data['redemption_cost_log']=[]
  assert econ.get_tier_breakdown(db,campus_id=A)[0]['revenue']==205
 
