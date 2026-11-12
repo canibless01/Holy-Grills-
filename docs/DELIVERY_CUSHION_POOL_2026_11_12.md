@@ -16,11 +16,20 @@ Existing snapshots remain zero. Later catalogue edits do not rewrite them. Brows
 
 The migration/diff was shown before applying and is saved under its actual production history version. Both local and production rollback matrices pass inclusive-price preservation, trusted snapshots, combo/bundle/add-on quantities, reward-zero handling, snapshot immutability and private-column permissions. The production fixture was corrected to supply the required guest identity before its final successful run; no fixture data remained. Actual anonymous REST checks returned 200 for ordinary item names/prices and denied private-column/wildcard reads; the public menu API still returned 200 with 15 items and no cushion fields.
 
+## Stage 2 — applied and verified
+
+Migration `20261112133732_delivery_subsidy_ledger.sql` creates the private one-row-per-order ledger and append-only movement history. It creates separate bookkeeping rows for existing real paid orders without updating those orders; historical cushion remains zero and rider cost remains unknown. Test orders are excluded. New wallet-paid checkouts are captured by a deferred trigger after their order lines exist, avoiding an empty snapshot when the order itself is inserted first.
+
+Original contribution/fee amounts freeze at first capture. Discounts reduce cushion proportionately to actual food revenue. Recognized collections require paid/partially-refunded delivered orders. Partial refunds proportionately reduce those collections; full refunds/cancellations reverse them. Actual rider expense remains, including failed/unclaimed deliveries, so the pool may go negative. Unknown rider cost leaves net effect unreconciled rather than assuming the rider was free. Original customer delivery charges remain available separately from the recognized pool components.
+
+Movement history records changes to reconciled net amounts, so a refund or later cost correction produces a delta instead of silently losing its reversal. Current ledger net and accumulated movement deltas conserve the same pool balance. The private trigger-only definer supports legitimate kitchen/rider status transitions without giving those roles access to accounting data.
+
+Local and production BEGIN/ROLLBACK matrices pass deferred capture, authenticated kitchen preparation, valid ready/out-for-delivery/delivered transitions, untouched order totals, unknown-cost distinction, contribution/fee/rider arithmetic, discounted food, partial/full refund reversal, retained failed-delivery expense, hostel gate mapping, private permissions and movement conservation. No test order or actual rider payment was retained.
+
 ## Next stages
 
-2. Derived ledger and reversal/movement history; existing paid order data may be copied into separate bookkeeping rows with historical cushion zero and unknown rider cost. Original orders remain untouched.
 3. Admin-only cost/trip entry and menu cushion controls, with scoped authorization, precise split arithmetic, editing history and retry safety.
 4. Pool totals, per-gate breakdown, balance trend and CSV.
 5. A private configurable per-campus floor and an admin warning. Negative pool balances are permitted.
 
-This record is updated as each stage is verified. Stage 1 alone is not a completed pool dashboard or cost-entry workflow.
+This record is updated as each stage is verified. The completed storage stages are not yet a completed pool dashboard or cost-entry workflow.
