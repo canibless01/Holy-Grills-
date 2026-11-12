@@ -22,6 +22,8 @@ _INSECURE_DEFAULT_SECRET = "change-me-in-production"
 def create_app(config_class=Config, *, background=False):
     app = Flask(__name__)
     app.config.from_object(config_class)
+    from app.services.cushion_privacy import install_response_privacy
+    install_response_privacy(app)
 
     # H-03: refuse to boot outside DEBUG/TESTING (i.e. ProductionConfig) if SECRET_KEY or JWT_SECRET is still the
     # public fallback. Newsletter unsubscribe tokens are signed with SECRET_KEY; running the default in production
