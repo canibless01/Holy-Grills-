@@ -59,7 +59,8 @@ def deadline(cart, calendar):
 
 
 def capture_cart(db, cart, schedule, limits):
-    result = db.rpc('hg_capture_cart_recovery_step', {
+    rpc = 'hg_capture_cart_recovery_step' if cart.get('user_id') else 'hg_capture_guest_cart_recovery_step'
+    result = db.rpc(rpc, {
         'p_cart': cart['id'], 'p_step': cart['recovery_step'],
         'p_deadline': deadline(cart, schedule), **limits})
     if result and result.get('saved'):
@@ -80,6 +81,8 @@ def scan(db=None):
         if not is_feature_enabled('abandoned_cart_nudge', campus['id']): continue
         limits = timing(db, campus['id'])
         carts = db.rpc('hg_due_cart_recovery', {'p_campus': campus['id'], **limits}) or []
+        guests = db.rpc('hg_due_guest_cart_recovery', {'p_campus': campus['id'], **limits}) or []
+        carts += guests
         if carts and calendar is None: calendar = CalendarSnapshot(db)
         for cart in carts:
             receipt = capture_cart(db, cart, calendar, limits)
@@ -93,12 +96,16 @@ def scan(db=None):
 def nudge(cart):
     db = get_db()
     limits = timing(db, cart['campus_id'])
+    if not cart.get('user_id'):
+        limits['p_initial'] = max(30, limits['p_initial'])
     now = datetime.now(timezone.utc)
     active = datetime.fromisoformat(str(cart['last_active_at']).replace('Z', '+00:00'))
     step = int(((now-active).total_seconds()/60-limits['p_initial']) // limits['p_repeat'])
     pending = (cart.get('cart_payload') or {}).get('pending_order_id')
     if pending:
-        order = db.table('orders').select('scheduled_for,is_scheduled').eq('id', pending).eq('user_id', cart['user_id']).eq('campus_id', cart['campus_id']).single().execute() or {}
+        query = db.table('orders').select('scheduled_for,is_scheduled').eq('id', pending).eq('campus_id', cart['campus_id'])
+        query = query.eq('user_id', cart['user_id']) if cart.get('user_id') else query.is_('user_id', 'null').eq('guest_email', cart.get('guest_email'))
+        order = query.single().execute() or {}
         if order.get('is_scheduled'): cart = {**cart, 'recovery_scheduled_for': order.get('scheduled_for')}
     return capture_cart(db, {**cart, 'recovery_step': step}, CalendarSnapshot(db), limits)
 

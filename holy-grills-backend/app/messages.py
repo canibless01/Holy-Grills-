@@ -880,7 +880,7 @@ class MSG:
     ADMIN_WINDOW_CLOSED          = "Window closed"
     ADMIN_WINDOW_ALREADY_OPEN    = "Window is already open"
     ADMIN_WINDOW_REOPENED        = "Window reopened"
-    ADMIN_RECOVERY_NUDGE_SENT    = "Recovery nudge sent"
+    ADMIN_RECOVERY_NUDGE_SENT    = "Recovery reminder queued"
     ADMIN_NUDGE_TITLE            = "You left something behind!"
     ADMIN_NUDGE_BODY             = "Your cart is still waiting \u2014 and so is your {currency}. Complete your order today."
     ADMIN_JOB_RUNNING            = "Running in background \u2014 check server logs for result"
@@ -2258,7 +2258,7 @@ class MSG:
     # this file and nothing needs to be rebuilt by hand.
     # ------------------------------------------------------------------
     FE_ADMIN_ABANDONED_CARTS_NUDGE_FAILED                               = "Nudge failed"
-    FE_ADMIN_ABANDONED_CARTS_RECOVERY_NUDGE_SENT                        = "🔔 Recovery nudge sent"
+    FE_ADMIN_ABANDONED_CARTS_RECOVERY_NUDGE_SENT                        = "🔔 Reminder queued"
     FE_ADMIN_ACADEMIC_CALENDAR_ACADEMIC_YEAR_REQUIRED                   = "Academic year required"
     FE_ADMIN_ACADEMIC_CALENDAR_COULDN_T_LOAD_ACADEMIC_CALENDAR          = "Couldn't load academic calendar"
     FE_ADMIN_ACADEMIC_CALENDAR_FAILED_TO_SAVE                           = "Failed to save"

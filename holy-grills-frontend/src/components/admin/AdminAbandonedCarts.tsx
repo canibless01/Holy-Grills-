@@ -18,7 +18,7 @@ const STATUS_TONE = {
 /**
  * AdminAbandonedCarts — retention panel for carts left at checkout. Lists
  * every cart the cron job flagged, lets admins search/filter by status, see
- * the snapshot of items, and manually fire a recovery nudge (push + in-app).
+ * the snapshot of items, and queue a due member reminder or guest checkout email.
  * Rider/kitchen have no part in this flow — admin + system only.
  *
  * Backend: GET /admin/abandoned-carts, POST /admin/abandoned-carts/:id/nudge.
@@ -43,14 +43,14 @@ export default function AdminAbandonedCarts() {
 
   const filtered = carts.filter((c) => {
     const okStatus = statusFilter === 'all' || (c.is_recovered ? 'recovered' : 'pending') === statusFilter;
-    const name = (c.profiles?.full_name || c.user?.name || c.user?.email || c.user_name || c.user_email || '').toLowerCase();
+    const name = [c.profiles?.full_name, c.profiles?.email, c.user?.name, c.user?.email, c.user_name, c.user_email, c.guest_email, c.guest_phone].filter(Boolean).join(' ').toLowerCase();
     const okQ = !q || name.includes(q.toLowerCase());
     return okStatus && okQ;
   });
 
   const nudge = async (id) => {
     setBusy(id);
-    try { await liveApi.admin.nudgeAbandonedCart(id); toast({ title: msg('FE_ADMIN_ABANDONED_CARTS_RECOVERY_NUDGE_SENT', '🔔 Recovery nudge sent') }); await load(); }
+    try { await liveApi.admin.nudgeAbandonedCart(id); toast({ title: msg('FE_ADMIN_ABANDONED_CARTS_RECOVERY_NUDGE_SENT', '🔔 Reminder queued') }); await load(); }
     catch (e) { toast({ title: msg('FE_ADMIN_ABANDONED_CARTS_NUDGE_FAILED', 'Nudge failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };
@@ -116,10 +116,10 @@ export default function AdminAbandonedCarts() {
                     ))}
                   </div>
                 )}
-                {(!c.is_recovered && c.user_id) && (
+                {(!c.is_recovered && (c.user_id || c.guest_email)) && (
                   <div className="mt-3 flex gap-2">
                     <button onClick={() => nudge(c.id)} disabled={busy === c.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary text-white text-xs font-bold disabled:opacity-50">
-                      <Bell className="w-3.5 h-3.5" /> {busy === c.id ? 'Sending…' : 'Send nudge'}
+                      <Bell className="w-3.5 h-3.5" /> {busy === c.id ? 'Queuing…' : 'Queue reminder'}
                     </button>
                   </div>
                 )}

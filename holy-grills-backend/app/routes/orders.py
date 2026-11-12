@@ -14,6 +14,28 @@ orders_bp = Blueprint("orders", __name__)
 ORDER_STATUS_VALUES = set(order_service.VALID_TRANSITIONS)
 
 
+@orders_bp.route('/guest-reminders/unsubscribe', methods=['GET', 'POST'])
+@rate_limit(max_requests=60, window_seconds=60)
+def guest_reminders_unsubscribe():
+    from flask import Response
+    from app.services.guest_cart_email import read_token
+    data = request.get_json(silent=True)
+    token = request.args.get('token') or request.form.get('token') or (data.get('token') if isinstance(data, dict) else None)
+    delivery_id = read_token(token) if isinstance(token, str) and len(token) <= 1000 else None
+    if not delivery_id:
+        return jsonify({'error': 'This reminder link is invalid.'}), 400
+    if request.method == 'POST':
+        if get_db().rpc('hg_unsubscribe_guest_cart_email', {'p_id': delivery_id}) is not True:
+            return jsonify({'error': 'This reminder link is unavailable.'}), 400
+        content = '<h1>Checkout reminders stopped.</h1><p>You will no longer receive guest checkout reminders for this campus. Payment receipts and order updates are unaffected.</p>'
+    else:
+        # Email security scanners may visit a link. Only an explicit POST opts out.
+        content = '<h1>Stop checkout reminders?</h1><p>This stops guest checkout reminders for this campus. You will still receive payment receipts and order updates.</p><form method="post"><button type="submit">Stop checkout reminders</button></form>'
+    response = Response('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Holy Grills checkout reminders</title></head><body style="font-family:system-ui;background:#fff5f0;color:#3a1600;padding:24px;max-width:600px;margin:auto"><p><strong>Holy Grills</strong></p>' + content + '</body></html>', mimetype='text/html')
+    response.headers.update({'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer', 'X-Robots-Tag': 'noindex'})
+    return response
+
+
 def _assigned_rider_contact(db, order: dict) -> dict | None:
     """Resolve the assigned rider from the order's delivery batch.
 

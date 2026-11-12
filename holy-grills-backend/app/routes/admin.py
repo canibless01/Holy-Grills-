@@ -1663,8 +1663,6 @@ def nudge_cart(cart_id):
     if cart.get("is_recovered"):
         return jsonify({"error": MSG.ADMIN_CART_ALREADY_RECOVERED}), 409
     user_id = cart.get("user_id")
-    if not user_id:
-        return jsonify({"error": MSG.ADMIN_CART_GUEST_NO_NUDGE}), 409
     try:
         from app.services.cart_recovery import nudge
         result = nudge(cart)

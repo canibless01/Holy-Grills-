@@ -22,7 +22,13 @@ def dispatch_notification(notification_id):
         refund_email=claim['payload'].get('kind')=='event_refund_email'
         status_email=claim['payload'].get('kind')=='event_status_email'
         ticket_email=status_email or refund_email or claim['payload'].get('kind')=='event_ticket_email'
-        if ticket_email:
+        guest_cart=claim['payload'].get('kind')=='guest_cart_recovery_email'
+        if guest_cart:
+            from app.services import guest_cart_email
+            if channel != 'email' or snapshot.get('user_id') is not None or not guest_cart_email.eligible(db, claim['payload']):
+                return finish({'state':'cancelled','error':'guest_checkout_no_longer_eligible'})
+            profile={'email':snapshot.get('email')}
+        elif ticket_email:
             ticket=db.table('event_tickets').select('event_id,user_id,guest_email,status,payment_status').eq('id',claim['payload']['ticket_id']).single().execute() or {}
             valid_ticket_state=status_email or ((ticket.get('status')=='cancelled' and ticket.get('payment_status')=='refunded') if refund_email else (ticket.get('status') in ('confirmed','checked_in') and ticket.get('payment_status') in ('paid','not_required')))
             if (not valid_ticket_state
@@ -67,7 +73,9 @@ def dispatch_notification(notification_id):
             if str(profile.get('email') or '').strip().lower()!=str(snapshot.get('email') or '').strip().lower():
                 return finish({'state':'skipped','error':'recipient_email_changed'})
             if prepared is None:
-                if ticket_email and not refund_email and not status_email:
+                if guest_cart:
+                    prepared=guest_cart_email.prepare(db,notification_id,claim['payload'])
+                elif ticket_email and not refund_email and not status_email:
                     event=db.table('events').select('title,starts_at,location,metadata').eq('id',claim['payload']['event_id']).single().execute() or {}
                     if (event.get('metadata') or {}).get('lifecycle_status')=='cancelled':
                         return finish({'state':'cancelled','error':'event_cancelled'})
@@ -93,7 +101,7 @@ def dispatch_notification(notification_id):
                     snapshot.get('action_url'),meta.get('urgency'),meta.get('push_image'),claim['key'])
         else:
             return finish({'state':'failed','error':'unsupported_channel'})
-        began=db.rpc('hg_begin_notification_dispatch',{'p_id':notification_id,'p_token':claim['token'],'p_prepared':prepared})
+        began=db.rpc('hg_begin_guest_cart_dispatch' if guest_cart else 'hg_begin_notification_dispatch',{'p_id':notification_id,'p_token':claim['token'],'p_prepared':prepared})
         if began is not True:
             return {'state':'lease_lost'}
         started=True

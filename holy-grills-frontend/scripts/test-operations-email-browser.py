@@ -7,13 +7,15 @@ C='11111111-1111-4111-8111-111111111111';U='22222222-2222-4222-8222-222222222222
 config={'recipients':['ops@example.invalid'],'paid_order_alerts':True,'abandoned_cart_alerts':True,'daily_report':True,'weekly_report':True,'abandoned_minutes':30,'daily_report_time':'21:00'}
 with sync_playwright() as p:
  browser=p.chromium.launch(executable_path='/usr/bin/chromium',args=['--no-sandbox'])
- for case in ('settings_mobile','settings_desktop','cart_contact','status_error','cart_error'):
+ for case in ('settings_mobile','settings_desktop','cart_contact','guest_cart','status_error','cart_error'):
   ctx=browser.new_context(viewport={'width':393 if case!='settings_desktop' else 1280,'height':960})
   ctx.add_init_script(f"localStorage.setItem('hg_access_token','controlled');localStorage.setItem('hg_user_role','admin');localStorage.setItem('hg_campus_id','{C}');localStorage.setItem('hg_user_campus_id','{C}');localStorage.setItem('hg_admin_campus_id','{C}');localStorage.setItem('hg_cookie_consent',JSON.stringify({{essential:true,analytics:false,date:new Date().toISOString()}}));")
   writes=[];setting={**config}
   def api(route):
    path=urlparse(route.request.url).path;data={}
    if route.request.method!='GET':
+    if path.endswith('/admin/abandoned-carts/cart/nudge'):
+     writes.append({'kind':'guest_reminder'});route.fulfill(json={'message':'Recovery reminder queued'});return
     if not path.endswith('/admin/settings/campus_operations_email'):
      assert '/wallet' not in path and '/orders' not in path,'Unexpected money mutation: '+path
      route.fulfill(json={});return
@@ -27,13 +29,14 @@ with sync_playwright() as p:
    elif path.endswith('/admin/abandoned-carts'):
     if case=='cart_error':route.fulfill(status=503,json={'error':'Cart service unavailable'});return
     data=[{'id':'cart','user_id':U,'is_recovered':False,'profiles':{'full_name':'Student A','email':'student@example.invalid','phone':'08012345678'},'cart_payload':{'items':[{'name':'Wings','quantity':2}]},'last_active_at':'2026-11-10T10:00:00Z','recovery_attempts':27,'saved_nudges':1,'email_accepted':1,'push_accepted':0,'delivery_pending':0,'delivery_issues':0}]
+    if case=='guest_cart':data=[{**data[0],'user_id':None,'profiles':None,'guest_email':'guest@example.invalid','guest_phone':'08012345678','email_accepted':0,'saved_nudges':len(writes)}]
    elif path.endswith('/feature-flags') or path.endswith('/system-settings'):data=[]
    elif path.endswith('/notifications'):data={'notifications':[],'unread_count':0}
    elif path.endswith('/cart'):data={'items':[]}
    elif 'storefront' in path:data=[] if 'banner' in path or 'hours' in path else {}
    route.fulfill(status=200,json=data)
   ctx.route('**/api/**',api);page=ctx.new_page();page.set_default_timeout(12000)
-  page.goto(BASE+'/admin?section='+('abandoned' if case.startswith('cart') else 'settings'))
+  page.goto(BASE+'/admin?section='+('abandoned' if case.startswith('cart') or case=='guest_cart' else 'settings'),wait_until='domcontentloaded')
   if case.startswith('settings'):
    expect(page.get_by_role('button',name='Save operations email')).to_be_visible()
    page.get_by_label('Report and alert recipients').fill('one@example.invalid, two@example.invalid')
@@ -50,6 +53,13 @@ with sync_playwright() as p:
    expect(page.get_by_text('Email accepted: 1 · Push accepted: 0',exact=True)).to_be_visible()
    assert page.get_by_text('27 nudges',exact=True).count()==0
    expect(page.get_by_text('2× Wings',exact=True)).to_be_visible()
+  elif case=='guest_cart':
+   expect(page.get_by_text('guest@example.invalid',exact=True)).to_be_visible()
+   page.get_by_role('textbox').fill('guest@example.invalid')
+   page.get_by_role('button',name='Queue reminder',exact=True).click()
+   expect(page.get_by_text('1 reminder saved',exact=True)).to_be_visible()
+   expect(page.get_by_text('Email accepted: 0 · Push accepted: 0',exact=True)).to_be_visible()
+   assert writes==[{'kind':'guest_reminder'}]
   elif case=='status_error':expect(page.get_by_role('alert').filter(has_text='Delivery status unavailable')).to_be_visible()
   else:
    expect(page.get_by_role('alert').filter(has_text='Cart service unavailable')).to_be_visible()

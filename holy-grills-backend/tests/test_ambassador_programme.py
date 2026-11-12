@@ -27,6 +27,7 @@ import unittest
 import uuid
 from contextlib import ExitStack
 from decimal import Decimal
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -877,7 +878,7 @@ class MealDiscountCheckoutTests(AmbassadorTestBase):
             'id': 'disc-1', 'ambassador_id': AMB, 'code': 'MEAL-1',
             'status': 'active', 'max_meal_value': 3000,
             'uses_total': 2, 'uses_remaining': 2,
-            'expires_at': '2026-11-10T23:59:59+00:00',
+            'expires_at': (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
         }
         row.update(over)
         return row
