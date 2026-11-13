@@ -34,10 +34,10 @@ def quote_delivery_benefit(user_id, campus_id, delivery_fee, is_squad_order, *, 
     if monthly_enabled:
         used = db.table('tier_monthly_perk_usage').select('id').eq('user_id', user_id).eq('month', month).eq('perk_key', 'monthly_free_delivery').limit(1).execute()
         if not used:
-            choices.append({'id':'monthly','name':MSG.CHECKOUT_MONTHLY_DELIVERY_NAME,'source':'monthly','discount':float(fee),'month':month,'tier_id':profile.get('current_tier_id')})
+            choices.append({'id':'monthly','name':MSG.CHECKOUT_MONTHLY_DELIVERY_NAME,'source':'monthly','percentage':100,'discount':float(fee),'month':month,'tier_id':profile.get('current_tier_id')})
     legacy_cap = _money(profile.get('next_order_free_delivery_cap'))
     if legacy_cap > 0:
-        choices.append({'id':'legacy','name':MSG.CHECKOUT_LEGACY_DELIVERY_NAME,'source':'legacy_spin','cap':float(legacy_cap),'discount':float(min(fee,legacy_cap))})
+        choices.append({'id':'legacy','name':MSG.CHECKOUT_LEGACY_DELIVERY_NAME,'source':'legacy_spin','percentage':100,'cap':float(legacy_cap),'discount':float(min(fee,legacy_cap))})
     rows = (db.table('exclusive_spin_fulfillments').select('id,prize_name,result_snapshot')
             .eq('user_id', user_id).eq('campus_id', campus_id).eq('status', 'pending')
             .eq('result_snapshot->>prize_type', 'free_delivery').is_('applied_order_id', 'null')
@@ -52,10 +52,10 @@ def quote_delivery_benefit(user_id, campus_id, delivery_fee, is_squad_order, *, 
         if cap <= 0:
             raise ValueError(MSG.ORDER_PRICE_UNVERIFIED)
         choices.append({'id':receipt['id'],'name':receipt.get('prize_name') or MSG.CHECKOUT_DELIVERY_REWARD_NAME,
-                        'source':'spin','receipt_id':receipt['id'],'cap':float(cap),'discount':float(min(_money(fee * ratio),cap))})
+                        'source':'spin','receipt_id':receipt['id'],'percentage':float(ratio*100),'cap':float(cap),'discount':float(min(_money(fee * ratio),cap))})
     selected=choices[0] if choice=='auto' and choices else next((r for r in choices if r['id']==choice),None)
     if choice not in ('none','auto') and not selected:
         raise ValueError(MSG.CHECKOUT_REWARD_UNAVAILABLE)
     if not selected or fee==0:
         return {**plan,'choices':choices,'selected_id':choice if selected else 'none'}
-    return {**plan,**{k:v for k,v in selected.items() if k not in ('id','name')},'choices':choices,'selected_id':selected['id']}
+    return {**plan,**{k:v for k,v in selected.items() if k not in ('id','name','percentage')},'choices':choices,'selected_id':selected['id']}

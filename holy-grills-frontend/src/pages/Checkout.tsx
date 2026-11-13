@@ -86,7 +86,8 @@ export default function Checkout() {
   const abandonment = useRef(false);
   const [abandoning, setAbandoning] = useState(false);
   const [pendingCheckout, setPendingCheckout] = useState<any>(null);
-  const [rewardOptions, setRewardOptions] = useState<{ hp: any[]; delivery: any[] }>({ hp: [], delivery: [] });
+  const [rewardPreview, setRewardPreview] = useState<{ key: string; data?: { hp: any[]; delivery: any[] }; error?: string } | null>(null);
+  const [rewardOptionsRetry, setRewardOptionsRetry] = useState(0);
   useEffect(() => {
     attemptNonce.current = pendingKey ? localStore.getItem(pendingKey + ':attempt') : null;
     let saved;
@@ -306,9 +307,25 @@ export default function Checkout() {
   const [quoteRetry, setQuoteRetry] = useState(0);
   const quoteKey = JSON.stringify({ user: user?.id, campus: campus?.id, items: cart?.items, redemptionId, deliveryType, hostelId, gateId, deliveryPin, selectedAddressId, promo: promoResult?.code, squadSelection, selectedGlobalAddonIds, freeSideSelections, freeSidesReleased, hpRewardId, deliveryRewardId, rewardChoicesReady, mealDiscount: selectedMealDiscountId });
   const quote = quoteState?.key === quoteKey ? quoteState.data : null;
+  const rewardPreviewKey = `${user?.id || ''}:${campus?.id || ''}:${!!squadSelection?.squad_id}`;
+  const ownedRewards = rewardPreview?.key === rewardPreviewKey ? rewardPreview : null;
+  const rewardOptions = quote ? { hp: quote.available_hp_rewards || [], delivery: quote.available_delivery_rewards || [] } : ownedRewards?.data || { hp: [], delivery: [] };
+  const rewardOptionsReady = !!quote || !!ownedRewards?.data;
+  const rewardOptionsError = !quote ? ownedRewards?.error : null;
   useEffect(() => {
-    if (quote) setRewardOptions({ hp: quote.available_hp_rewards || [], delivery: quote.available_delivery_rewards || [] });
-  }, [quote]);
+    if (!isAuthenticated || !user?.id || !campus?.id) return;
+    let live = true;
+    const key = rewardPreviewKey;
+    setRewardPreview({ key });
+    void mockApi.orders.rewardOptions({ squad: squadSelection?.squad_id ? 'true' : 'false' })
+      .then(data => { if (live) setRewardPreview({ key, data: { hp: data.hp || [], delivery: data.delivery || [] } }); })
+      .catch(error => { if (live) setRewardPreview({ key, error: error.message || 'Your rewards could not be loaded. Please retry.' }); });
+    return () => { live = false; };
+  }, [isAuthenticated, rewardPreviewKey, rewardOptionsRetry]);
+  const deliveryRewardLabel = (reward) => {
+    const terms = reward.percentage != null ? `${reward.percentage}% off delivery${reward.cap ? `, up to ${formatNaira(reward.cap)}` : ''}` : 'Delivery reward';
+    return `${reward.name} · ${terms}${quote ? ` · ${formatNaira(reward.discount)} off this order` : ''}`;
+  };
   const quoteReady = !!quote;
   const quoteError = quoteState?.key === quoteKey ? quoteState.error : null;
   const subtotal = quote?.subtotal ?? (rewardOnly ? 0 : (cart?.subtotal != null ? cart.subtotal : (passed.subtotal || 0)));
@@ -344,7 +361,7 @@ export default function Checkout() {
     if (feeTimer.current) clearTimeout(feeTimer.current);
     pinRef.current = null; gateRef.current = null;
     setHostelId(null); setGateId(null); setDeliveryPin(null); setFeePreview(null);
-    setSelectedAddressId(null); setRewardOptions({ hp: [], delivery: [] });
+    setSelectedAddressId(null);
     return () => { feeRequestId.current += 1; if (feeTimer.current) clearTimeout(feeTimer.current); };
   }, [campus?.id]);
 
@@ -877,7 +894,7 @@ export default function Checkout() {
           <button type="button" aria-haspopup="dialog" onClick={() => setRewardPanel('rewards')}
             className="flex min-w-0 flex-col items-start gap-2 rounded-2xl border border-orange-300/60 bg-orange-50 p-3 text-left text-orange-950 transition hover:border-orange-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:bg-orange-950/30 dark:text-orange-100">
             <Flame className="h-5 w-5 text-orange-700 dark:text-orange-300" aria-hidden="true" /><span className="text-xs font-bold sm:text-sm">Rewards</span>
-            <span className="text-[11px] leading-relaxed">{hpRewardId !== 'none' || deliveryRewardId !== 'none' ? `${Number(hpRewardId !== 'none') + Number(deliveryRewardId !== 'none')} selected ✓` : !quote ? 'Check your rewards' : `${rewardOptions.hp.length + rewardOptions.delivery.length} available`}</span>
+            <span className="text-[11px] leading-relaxed">{hpRewardId !== 'none' || deliveryRewardId !== 'none' ? `${Number(hpRewardId !== 'none') + Number(deliveryRewardId !== 'none')} selected ✓` : rewardOptionsError ? 'Retry loading' : !rewardOptionsReady ? 'Checking…' : `${rewardOptions.hp.length + rewardOptions.delivery.length} available`}</span>
             <span className="text-[10px] leading-relaxed">Delivery savings & extra food HP</span>
             <span className="flex items-center gap-1 text-[10px] font-semibold">View rewards <ArrowUpRight className="h-3 w-3" aria-hidden="true" /></span>
           </button>
@@ -893,8 +910,10 @@ export default function Checkout() {
               : <p>{freeSideSelections.length ? 'Your free sides are already added to this checkout. You can remove them below the reward boxes.' : freeSideCredits.count ? `You have ${freeSideCredits.count} free side credits.` : 'No free side credits yet. Earn them through rewards and challenges, then come back here to choose your side.'}</p>}
             {!freeSideLoading && !freeSideLoadError && freeSideCredits.count > 0 && freeSideSelections.length <= 1 && <button type="button" onClick={() => { setRewardPanel(null); setShowFreeSide(true); }} className="rounded-xl bg-primary px-4 py-2 font-bold text-primary-foreground">Choose a free side</button>}
           </div> : <div className="space-y-3">
-            {!quote ? <p className="rounded-xl bg-muted p-3 text-sm">Choose a delivery location below to load rewards for this checkout. Your location determines the delivery fee and the exact saving. You can still clear a previously selected reward.</p>
-              : rewardOptions.delivery.length + rewardOptions.hp.length === 0 && <p className="rounded-xl bg-muted p-3 text-sm">No eligible rewards for this order yet. You can continue checkout and use future rewards on another order.</p>}
+            {rewardOptionsError ? <div role="alert" className="rounded-xl bg-muted p-3 text-sm">{rewardOptionsError} <button type="button" onClick={() => setRewardOptionsRetry(value => value + 1)} className="font-bold text-primary underline">Retry rewards</button></div>
+              : !rewardOptionsReady ? <p role="status" className="rounded-xl bg-muted p-3 text-sm">Checking your rewards…</p>
+              : rewardOptions.delivery.length + rewardOptions.hp.length === 0 && <p className="rounded-xl bg-muted p-3 text-sm">No available rewards yet. You can continue checkout and use future rewards on another order.</p>}
+            {!quote && <p className="text-xs text-muted-foreground">Choose a reward now. We’ll apply it automatically when you choose your delivery location and show the exact saving with your total.</p>}
             <div className="space-y-2 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 dark:border-emerald-900 dark:bg-emerald-950/20">
               <p className="text-sm font-bold">Delivery savings</p>
               <p className="text-xs text-muted-foreground">Reduces the money you pay for delivery. A percentage reward recalculates automatically when you change location, subject to its limit.</p>
@@ -902,7 +921,7 @@ export default function Checkout() {
           <select aria-label={msg('FE_CHECKOUT_DELIVERY_REWARD', 'Delivery reward')} disabled={!!pendingCheckout || placing || scheduling || !rewardChoicesReady} value={deliveryRewardId} onChange={e => chooseReward('delivery', e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-background p-3 font-normal">
             <option value="none">{msg('FE_CHECKOUT_REWARD_SAVE', 'Save rewards for later')}</option>
             {deliveryRewardId !== 'none' && !rewardOptions.delivery.some(r => r.id === deliveryRewardId) && <option disabled value={deliveryRewardId}>{msg('FE_CHECKOUT_REWARD_REVIEW', 'Review your selected reward')}</option>}
-            {rewardOptions.delivery.map(r => <option key={r.id} value={r.id} disabled={!quote}>{r.name} · {formatNaira(r.discount)} {msg('FE_CHECKOUT_REWARD_OFF', 'off delivery')}</option>)}
+            {rewardOptions.delivery.map(r => <option key={r.id} value={r.id} disabled={!rewardOptionsReady}>{deliveryRewardLabel(r)}</option>)}
           </select>
         </label>
             </div>
@@ -913,7 +932,7 @@ export default function Checkout() {
           <select aria-label={msg('FE_CHECKOUT_HP_REWARD', 'Food HP reward')} disabled={!!pendingCheckout || placing || scheduling || !rewardChoicesReady} value={hpRewardId} onChange={e => chooseReward('hp', e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-background p-3 font-normal">
             <option value="none">{msg('FE_CHECKOUT_REWARD_SAVE', 'Save rewards for later')}</option>
             {hpRewardId !== 'none' && !rewardOptions.hp.some(r => r.id === hpRewardId) && <option disabled value={hpRewardId}>{msg('FE_CHECKOUT_REWARD_REVIEW', 'Review your selected reward')}</option>}
-            {rewardOptions.hp.map(r => <option key={r.id} value={r.id} disabled={!quote}>{r.name} · {r.multiplier}× HP</option>)}
+            {rewardOptions.hp.map(r => <option key={r.id} value={r.id} disabled={!rewardOptionsReady}>{r.name} · {r.multiplier}× HP</option>)}
           </select>
         </label>
             </div>

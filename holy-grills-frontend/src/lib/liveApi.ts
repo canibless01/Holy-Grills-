@@ -152,6 +152,7 @@ const orders = {
   async walk(id, body) { return apiClient.post(`/orders/${id}/walk`, body); },
   async cancel(id, body) { return apiClient.post(`/orders/${id}/cancel`, body); },
   async review(id, body) { return apiClient.post(`/orders/${id}/review`, body); },
+  async rewardOptions(params = {}) { return apiClient.get('/orders/reward-options', params); },
   async quote(body, options?: { signal?: AbortSignal }) {
     // Quotes are read-only; order creation/payment keep their existing policy.
     try { return await apiClient.post('/orders/quote', body, { ...options, timeoutMs: 30000 }); }

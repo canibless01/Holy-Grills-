@@ -9,8 +9,8 @@ now=datetime.now(timezone.utc).isoformat()
 item={'id':'cart-row','campus_id':C,'quantity':1,'menu_item_id':'meal','menu_items':{'id':'meal','name':'Fixture wings','price':500,'is_available':True}}
 with sync_playwright() as p:
  browser=p.chromium.launch(executable_path='/usr/bin/chromium',args=['--no-sandbox']); expect.set_options(timeout=15000)
- for case in ('empty_mobile','available_mobile','gate_guest','saved_pin_desktop','free_side_retry','expired_reward'):
-  member=case!='gate_guest'; available=case=='available_mobile'; free_error=[case=='free_side_retry']; quotes=[]; selection=[]
+ for case in ('empty_mobile','available_mobile','gate_guest','saved_pin_desktop','free_side_retry','expired_reward','reward_options_retry'):
+  member=case!='gate_guest'; available=case=='available_mobile'; free_error=[case=='free_side_retry']; reward_error=[case=='reward_options_retry']; reward_reads=[]; quotes=[]; selection=[]
   ctx=browser.new_context(viewport={'width':1280 if case=='saved_pin_desktop' else 393,'height':900},geolocation={'latitude':7.3,'longitude':5.14},permissions=['geolocation'])
   values={'hg_campus_id':C,'hg_user_campus_id':C,'hg_guest_cart':json.dumps([item]),'hg_cookie_consent':json.dumps({'essential':True,'analytics':False,'date':now})}
   if member: values.update({'hg_access_token':'controlled','hg_user_role':'student'})
@@ -33,10 +33,18 @@ with sync_playwright() as p:
    elif path.endswith('/delivery/gates'):data=[{'id':G,'name':'West Gate','base_fee':500,'is_active':True}]
    elif path.endswith('/delivery/hostels'):data=[{'id':'hostel','name':'Fixture hostel','delivery_fee':300}]
    elif path.endswith('/delivery/calculate-fee'):data={'delivery_fee':500,'fee':500,'gate':{'id':G,'name':'West Gate'}}
+   elif path.endswith('/orders/reward-options'):
+    reward_reads.append(route.request.url)
+    if reward_error[0]:route.fulfill(status=503,json={'error':'Controlled rewards retry'});return
+    data={'hp':[{'id':'hp-one','name':'Double food HP','multiplier':2}] if available else [],'delivery':[{'id':'delivery-one','name':'Delivery treat','percentage':30,'cap':200}] if available else []}
    elif path.endswith('/orders/quote'):
     quotes.append(route.request.post_data_json)
     if case=='expired_reward' and quotes[-1].get('hp_reward_id')=='expired':route.fulfill(status=409,json={'error':'Selected reward expired'});return
-    data={'subtotal':500,'delivery_fee':500,'total_amount':1000,'available_hp_rewards':[{'id':'hp-one','name':'Double food HP','multiplier':2}] if available else [],'available_delivery_rewards':[{'id':'delivery-one','name':'Delivery treat','discount':200}] if available else []}
+    fee=300 if quotes[-1].get('delivery_location_id')=='hostel' else 500
+    discount=min(fee*0.3,200)
+    applied=discount if quotes[-1].get('delivery_reward_id')=='delivery-one' else 0
+    data={'subtotal':500,'delivery_fee':fee-applied,'total_amount':500+fee-applied,'available_hp_rewards':[{'id':'hp-one','name':'Double food HP','multiplier':2}] if available else [],'available_delivery_rewards':[{'id':'delivery-one','name':'Delivery treat','percentage':30,'cap':200,'discount':discount}] if available else []}
+
    elif path.endswith('/notifications'):data={'notifications':[],'unread_count':0}
    elif 'window-status' in path or 'capacity' in path:data={'is_open':True,'remaining':50}
    elif method!='GET':
@@ -70,22 +78,41 @@ with sync_playwright() as p:
    else:
     perks.get_by_role('button',name=re.compile('Free sides')).click()
     dialog=page.get_by_role('dialog');expect(dialog.get_by_text(re.compile('No free side credits yet'))).to_be_visible();dialog.get_by_role('button',name='Done',exact=True).click()
+   if case=='reward_options_retry':
+    perks.get_by_role('button',name=re.compile('^Rewards')).click();dialog=page.get_by_role('dialog')
+    expect(dialog.get_by_role('alert')).to_contain_text('Controlled rewards retry')
+    reward_error[0]=False;dialog.get_by_role('button',name='Retry rewards',exact=True).click()
+    expect(dialog.get_by_text(re.compile('No available rewards'))).to_be_visible();dialog.get_by_role('button',name='Done',exact=True).click()
+   if available:
+    expect(perks.get_by_role('button',name=re.compile('^Rewards'))).to_contain_text('2 available')
+    perks.get_by_role('button',name=re.compile('^Rewards')).click();dialog=page.get_by_role('dialog')
+    expect(dialog.get_by_role('combobox',name='Delivery reward',exact=True)).to_contain_text('30% off delivery, up to ₦200')
+    dialog.get_by_role('combobox',name='Delivery reward',exact=True).select_option('delivery-one')
+    dialog.get_by_role('combobox',name='Food HP reward',exact=True).select_option('hp-one')
+    dialog.get_by_role('button',name='Done',exact=True).click()
+    assert not quotes,'Reward selection before location unexpectedly quoted/reserved an order'
    page.get_by_role('button',name=re.compile('Saved home')).click()
    expect(page.get_by_text(re.compile('Home delivery to your selected pin'))).to_be_visible()
    expect(page.get_by_role('dialog')).to_have_count(0)
    if case=='expired_reward':
     perks.get_by_role('button',name=re.compile('^Rewards')).click();dialog=page.get_by_role('dialog')
     dialog.get_by_role('combobox',name='Food HP reward',exact=True).select_option('none');dialog.get_by_role('button',name='Done',exact=True).click()
-   expect(perks.get_by_role('button',name=re.compile('^Rewards'))).to_contain_text('2 available' if available else '0 available')
+   expect(perks.get_by_role('button',name=re.compile('^Rewards'))).to_contain_text('2 selected ✓' if available else '0 available')
    for label, select, option in [('Delivery rewards','Delivery reward','delivery-one'),('Food HP','Food HP reward','hp-one')]:
     perks.get_by_role('button',name=re.compile('^Rewards')).click();dialog=page.get_by_role('dialog')
     if available:dialog.get_by_role('combobox',name=select,exact=True).select_option(option)
-    else:expect(dialog.get_by_text(re.compile('No eligible'))).to_be_visible()
+    else:expect(dialog.get_by_text(re.compile('No (eligible|available)'))).to_be_visible()
     dialog.get_by_role('button',name='Done',exact=True).click()
    if available:
     expect(perks.get_by_role('button',name=re.compile('^Rewards'))).to_contain_text('2 selected ✓')
     page.wait_for_timeout(700)
     assert any(q.get('hp_reward_id')=='hp-one' and q.get('delivery_reward_id')=='delivery-one' for q in quotes), quotes
+    page.get_by_role('button',name=re.compile('On Campus')).click()
+    page.get_by_role('button',name=re.compile('Fixture hostel')).click()
+    expect(page.get_by_role('button',name=re.compile('Place Order.*₦710'))).to_be_visible()
+    assert any(q.get('delivery_location_id')=='hostel' and q.get('hp_reward_id')=='hp-one' and q.get('delivery_reward_id')=='delivery-one' for q in quotes),quotes
+    assert len(reward_reads)==1,'Location change repeated the owned-reward discovery request'
+
    expect(perks.get_by_role('button',name=re.compile('Free sides'))).to_be_visible()
    boxes=perks.get_by_role('button').evaluate_all('(buttons)=>buttons.map(b=>b.getBoundingClientRect().top)')
    assert len(set(boxes))==1,boxes

@@ -193,6 +193,30 @@ def create_order():
         return jsonify({"error": MSG.ORDER_CREATE_FAILED}), 500
 
 
+@orders_bp.route('/reward-options', methods=['GET'])
+@require_auth
+def checkout_reward_options():
+    """List owned checkout entitlements without a delivery address or reservation."""
+    squad = request.args.get('squad', 'false')
+    if squad not in ('true', 'false'):
+        return jsonify({'error': 'Invalid squad option'}), 400
+    if not g.campus_id:
+        return jsonify({'error': 'Choose your campus to see rewards.'}), 400
+    try:
+        from app.services.delivery_benefits import quote_delivery_benefit
+        from app.services.food_hp_multiplier import choose_food_hp_reward
+        db = get_db()
+        delivery = quote_delivery_benefit(g.user_id, g.campus_id, 0, squad == 'true', db=db, choice='none')['choices']
+        _, hp = choose_food_hp_reward(db, g.user_id, g.campus_id, 'none')
+        # A zero-fee lookup discovers terms, not a promise of a zero saving.
+        response = jsonify({'delivery': [{key:value for key,value in row.items() if key != 'discount'} for row in delivery], 'hp': hp})
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response, 200
+    except Exception:
+        logger.exception('Checkout reward options unavailable')
+        return jsonify({'error': 'Your rewards could not be loaded. Please retry.'}), 503
+
+
 @orders_bp.route('/quote', methods=['POST'])
 @optional_auth
 def quote_order():
