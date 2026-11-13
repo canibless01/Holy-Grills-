@@ -9,11 +9,12 @@ now=datetime.now(timezone.utc).isoformat()
 item={'id':'cart-row','campus_id':C,'quantity':1,'menu_item_id':'meal','menu_items':{'id':'meal','name':'Fixture wings','price':500,'is_available':True}}
 with sync_playwright() as p:
  browser=p.chromium.launch(executable_path='/usr/bin/chromium',args=['--no-sandbox']); expect.set_options(timeout=15000)
- for case in ('empty_mobile','available_mobile','gate_guest','saved_pin_desktop','free_side_retry'):
+ for case in ('empty_mobile','available_mobile','gate_guest','saved_pin_desktop','free_side_retry','expired_reward'):
   member=case!='gate_guest'; available=case=='available_mobile'; free_error=[case=='free_side_retry']; quotes=[]; selection=[]
   ctx=browser.new_context(viewport={'width':1280 if case=='saved_pin_desktop' else 393,'height':900},geolocation={'latitude':7.3,'longitude':5.14},permissions=['geolocation'])
   values={'hg_campus_id':C,'hg_user_campus_id':C,'hg_guest_cart':json.dumps([item]),'hg_cookie_consent':json.dumps({'essential':True,'analytics':False,'date':now})}
   if member: values.update({'hg_access_token':'controlled','hg_user_role':'student'})
+  if case=='expired_reward':values[f'hg_checkout_rewards:{U}:{C}']=json.dumps({'hp':'expired','delivery':'none'})
   ctx.add_init_script('for(const[k,v]of Object.entries('+json.dumps(values)+'))localStorage.setItem(k,v);')
   def api(route):
    path=urlparse(route.request.url).path; method=route.request.method; data=[]
@@ -34,6 +35,7 @@ with sync_playwright() as p:
    elif path.endswith('/delivery/calculate-fee'):data={'delivery_fee':500,'fee':500,'gate':{'id':G,'name':'West Gate'}}
    elif path.endswith('/orders/quote'):
     quotes.append(route.request.post_data_json)
+    if case=='expired_reward' and quotes[-1].get('hp_reward_id')=='expired':route.fulfill(status=409,json={'error':'Selected reward expired'});return
     data={'subtotal':500,'delivery_fee':500,'total_amount':1000,'available_hp_rewards':[{'id':'hp-one','name':'Double food HP','multiplier':2}] if available else [],'available_delivery_rewards':[{'id':'delivery-one','name':'Delivery treat','discount':200}] if available else []}
    elif path.endswith('/notifications'):data={'notifications':[],'unread_count':0}
    elif 'window-status' in path or 'capacity' in path:data={'is_open':True,'remaining':50}
@@ -71,14 +73,17 @@ with sync_playwright() as p:
    page.get_by_role('button',name=re.compile('Saved home')).click()
    expect(page.get_by_text(re.compile('Home delivery to your selected pin'))).to_be_visible()
    expect(page.get_by_role('dialog')).to_have_count(0)
-   expect(perks.get_by_role('button',name=re.compile('Delivery rewards'))).to_contain_text('1 available' if available else '0 available')
+   if case=='expired_reward':
+    perks.get_by_role('button',name=re.compile('^Rewards')).click();dialog=page.get_by_role('dialog')
+    dialog.get_by_role('combobox',name='Food HP reward',exact=True).select_option('none');dialog.get_by_role('button',name='Done',exact=True).click()
+   expect(perks.get_by_role('button',name=re.compile('^Rewards'))).to_contain_text('2 available' if available else '0 available')
    for label, select, option in [('Delivery rewards','Delivery reward','delivery-one'),('Food HP','Food HP reward','hp-one')]:
-    perks.get_by_role('button',name=re.compile(label)).click();dialog=page.get_by_role('dialog')
+    perks.get_by_role('button',name=re.compile('^Rewards')).click();dialog=page.get_by_role('dialog')
     if available:dialog.get_by_role('combobox',name=select,exact=True).select_option(option)
     else:expect(dialog.get_by_text(re.compile('No eligible'))).to_be_visible()
     dialog.get_by_role('button',name='Done',exact=True).click()
    if available:
-    expect(perks.get_by_role('button',name=re.compile('Food HP'))).to_contain_text('Selected ✓')
+    expect(perks.get_by_role('button',name=re.compile('^Rewards'))).to_contain_text('2 selected ✓')
     page.wait_for_timeout(700)
     assert any(q.get('hp_reward_id')=='hp-one' and q.get('delivery_reward_id')=='delivery-one' for q in quotes), quotes
    expect(perks.get_by_role('button',name=re.compile('Free sides'))).to_be_visible()
@@ -90,6 +95,7 @@ with sync_playwright() as p:
    expect(page.get_by_role('dialog').get_by_role('heading',name='Pick up at West Gate')).to_be_visible()
    page.get_by_role('dialog').get_by_role('button',name='Choose home delivery instead',exact=True).click()
    expect(page.get_by_text('Gate pickup · West Gate',exact=True)).to_have_count(0)
+  expect(page.get_by_role('button',name='View delivery zones & fees',exact=True)).to_have_count(0)
   assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'),'Horizontal overflow'
   print('PASS',case,flush=True);ctx.close()
  browser.close()

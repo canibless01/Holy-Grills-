@@ -1,7 +1,7 @@
 BEGIN;
 SET LOCAL request.jwt.claims='{"role":"service_role"}';
 DO $$
-DECLARE c uuid:=gen_random_uuid();other_c uuid:=gen_random_uuid();u uuid:=gen_random_uuid();base uuid:=gen_random_uuid();mid uuid:=gen_random_uuid();top uuid:=gen_random_uuid();foreign_tier uuid:=gen_random_uuid();r jsonb;history_count integer;notice_count integer;v_balance integer;
+DECLARE c uuid:=gen_random_uuid();other_c uuid:=gen_random_uuid();u uuid:=gen_random_uuid();base uuid:=gen_random_uuid();mid uuid:=gen_random_uuid();top uuid:=gen_random_uuid();foreign_tier uuid:=gen_random_uuid();r jsonb;history_count integer;notice_count integer;v_balance integer;grace_notice uuid;lease jsonb;began boolean;
 BEGIN
  INSERT INTO campuses(id,name,slug) VALUES(c,'[AUDIT rollback] Tiers','audit-tier-'||c),(other_c,'[AUDIT rollback] Other','audit-tier-'||other_c);
  INSERT INTO hp_tiers(id,name,slug,min_points,maintenance_points,sort_order,campus_id,is_active) VALUES
@@ -23,8 +23,13 @@ BEGIN
  IF r->>'event'<>'grace' OR (SELECT tier_grace_ends_at FROM profiles WHERE id=u)<>now()+interval '7 days' THEN RAISE EXCEPTION 'grace not started';END IF;
  r:=hg_recalculate_tier_atomic(u,'grace',7);
  IF r->>'event'<>'grace_pending' OR (SELECT count(*) FROM user_tiers WHERE user_id=u AND event='grace')<>1 THEN RAISE EXCEPTION 'grace replay';END IF;
+ SELECT id INTO grace_notice FROM notifications WHERE user_id=u AND type='tier_grace_period' AND channel='push' ORDER BY created_at DESC LIMIT 1;
+ IF NOT hg_tier_notice_valid(grace_notice) THEN RAISE EXCEPTION 'current grace receipt invalid';END IF;
  UPDATE profiles SET hp_earned_120day=70 WHERE id=u;r:=hg_recalculate_tier_atomic(u,'grace',7);
  IF r->>'event'<>'maintained' OR (SELECT tier_grace_ends_at FROM profiles WHERE id=u) IS NOT NULL THEN RAISE EXCEPTION 'maintenance equality failed';END IF;
+ IF hg_tier_notice_valid(grace_notice) THEN RAISE EXCEPTION 'recovered grace still valid';END IF;
+ lease:=hg_claim_notification_dispatch_v2(grace_notice);began:=hg_begin_notification_dispatch(grace_notice,(lease->>'token')::uuid,'{}');
+ IF began OR (SELECT status FROM notification_deliveries WHERE id=grace_notice)<>'skipped' THEN RAISE EXCEPTION 'stale grace reached provider';END IF;
  UPDATE profiles SET hp_earned_120day=60 WHERE id=u;r:=hg_recalculate_tier_atomic(u,'grace',7);
  UPDATE profiles SET tier_grace_ends_at=now()-interval '1 second' WHERE id=u;r:=hg_recalculate_tier_atomic(u,'grace',7);
  IF r->>'event'<>'downgrade' OR (SELECT current_tier_id FROM profiles WHERE id=u)<>base OR (SELECT tier_grace_ends_at FROM profiles WHERE id=u) IS NOT NULL THEN RAISE EXCEPTION 'expired grace did not downgrade';END IF;

@@ -160,3 +160,9 @@ Corrected rejected history event names, cross-campus tier selection and balance-
 ### 13 November — challenge/milestone and promotion verification
 
 Closed the milestone completion-versus-notification interruption gap with receipt-backed SQL capture and post-commit wake only; pending cap periods now use WAT consistently. Fresh active/social milestone and combined/squad promotion-restoration SQL matrices pass, including idempotent grants and refunds after changed settings. Full merged backend suite **1,709 passed**. See `CHALLENGE_MILESTONE_PROMO_VERIFICATION_2026_11_13.md` for exact coverage and operational limits.
+
+### 13 November — two checkout perk boxes and superseded tier notices
+
+Combined delivery savings and food-HP selection under one Rewards tile beside Free sides, added clear cash-saving versus HP-multiplier explanations, and removed the empty delivery-zone info dropdown. Preserved exact location-based quotation and the ability to clear an expired reward when its quote fails. All six current perk/pickup cases and seven existing checkout/handoff cases pass; typecheck and full build pass. A final tier-notice guard skips recovered/superseded transitions before external handoff, verified in the production rollback matrix and dispatcher tests.
+
+Final merged verification for this request: **1,736 full backend tests passed**, 13 checkout/handoff browser cases passed, native challenge progression and campaign editor/customer checks passed, typecheck/full production build passed, and fresh tier/milestone/promotion database rollback matrices passed. Current completed versus remaining scope is consolidated in `CURRENT_AUDIT_STATUS_2026_11_13.md`.

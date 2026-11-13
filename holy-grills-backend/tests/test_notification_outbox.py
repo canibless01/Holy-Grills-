@@ -311,3 +311,14 @@ def test_postcommit_wake_only_dispatches_saved_rows_without_creating_notificatio
     with app.app_context(),patch.object(outbox,'get_db',return_value=db),patch.object(outbox,'dispatch_notification') as dispatch,patch('threading.Thread',ImmediateThread):
         assert outbox.start_reference_dispatch('low_stock_ingredient',ID) is True
     dispatch.assert_called_once_with(ID);q.insert.assert_not_called();q.update.assert_not_called();db.rpc.assert_not_called()
+
+
+def test_superseded_tier_notice_never_reaches_provider(setup_dispatch):
+    db,claim,calls,_,_=setup_dispatch
+    claim['payload']['notification']['type']='tier_grace_period'
+    claim['payload']['notification']['metadata']={'reference_type':'tier_transition'}
+    old_rpc=db.rpc.side_effect
+    db.rpc.side_effect=lambda name,args:False if name=='hg_tier_notice_valid' else old_rpc(name,args)
+    with app.app_context(),patch.object(outbox,'get_db',return_value=db),patch.object(service,'_deliver_email_attempt') as send:
+        assert outbox.dispatch_notification(ID)['state']=='skipped'
+    send.assert_not_called()

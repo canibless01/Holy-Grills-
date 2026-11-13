@@ -7,3 +7,7 @@ Off-campus gate selection without a pin opens a gate-pickup notice and leaves a 
 Verification is recorded in the corresponding progress entry. Controlled browser fixtures never create an actual order, payment or production record.
 
 Verified: TypeScript and full client/SSR/prerender production build passed. Five built-app browser cases passed: mobile empty rewards; available rewards/free-side selection with reward IDs retained in quote requests; guest gate selection and GPS switch to home delivery; desktop saved pin, explicit gate-pickup switch and return to home selection; and failed free-side reads with Retry. The three tiles occupy one row without page overflow. The existing seven-case checkout-recovery/rider/kitchen/admin-address browser suite also passed. HTTP fixtures isolate all writes; no real customer/order/payment data was changed.
+
+## Owner follow-up: two boxes
+
+The checkout now has **Free sides** and one **Rewards** box. The Rewards dialog contains both delivery savings and Food HP explanations/choices together. The empty delivery-zones/fees information dropdown is removed from checkout; actual hostel/gate selectors and fee quotation remain. A stale/expired saved reward can be cleared even when its old selection prevents a successful quote; choosing a new unavailable option remains blocked until a valid quote. Six current mobile/desktop browser cases pass, including that expired-selection escape, plus the existing seven checkout/handoff regressions. Typecheck and full production build pass.

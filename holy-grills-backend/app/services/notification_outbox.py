@@ -54,6 +54,9 @@ def dispatch_notification(notification_id):
             prefs=effective_preferences(db,snapshot['user_id'],profile)
             if channel not in permitted_channels(snapshot['type'],[channel],prefs):
                 return finish({'state':'skipped','error':'recipient_opted_out'})
+        if (snapshot.get('metadata') or {}).get('reference_type') == 'tier_transition':
+            if db.rpc('hg_tier_notice_valid', {'p_notice': notification_id}) is not True:
+                return finish({'state':'skipped','error':'tier_notice_superseded'})
         if snapshot.get('type') == 'low_stock_ingredient':
             if db.rpc('hg_stock_low_notice_valid', {'p_notice': notification_id}) is not True:
                 return finish({'state':'skipped','error':'stock_no_longer_low_or_episode_changed'})
