@@ -245,215 +245,51 @@ def reset_monthly_leaderboard(self):
         db.rpc("release_cron_lock", {"p_job_name": "reset_monthly_leaderboard"})
 
 
-@celery_app.task(name="app.tasks.scheduled.recalculate_120day_hp", bind=True, max_retries=3)
+def _run_tier_maintenance(mode):
+    """Bounded DB batches avoid per-user ledger HTTP reads and 1,000-row truncation."""
+    from flask import current_app
+    db = get_db()
+    job = "recalculate_120day_hp" if mode == "refresh" else "tier_grace_period_check"
+    if not db.rpc("try_acquire_cron_lock", {"p_job_name": job}):
+        return {"skipped": "Lock not acquired"}
+    try:
+        results = {}
+        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        for campus in campuses:
+            cursor = None; summary = {"updated": 0, "errors": 0, "started_grace": 0, "dropped_tier": 0}
+            while True:
+                result = db.rpc("hg_tier_maintenance_batch", {"p_campus": campus["id"], "p_mode": mode,
+                    "p_after": cursor, "p_limit": 200, "p_grace_days": int(current_app.config.get("TIER_GRACE_PERIOD_DAYS", 7))})
+                if not isinstance(result, dict) or "checked" not in result:
+                    raise RuntimeError("Tier maintenance returned no receipt")
+                summary["updated"] += int(result["checked"]) - int(result.get("errors") or 0)
+                for key in ("errors", "started_grace", "dropped_tier"):
+                    summary[key] += int(result.get(key) or 0)
+                if not result.get("has_more"):
+                    break
+                if not result.get("next_after") or result["next_after"] == cursor:
+                    raise RuntimeError("Tier maintenance cursor did not advance")
+                cursor = result["next_after"]
+            results[campus["id"]] = summary
+        if any(result["errors"] for result in results.values()):
+            raise RuntimeError("Some tier transitions need retry or configuration review")
+        return results
+    finally:
+        db.rpc("release_cron_lock", {"p_job_name": job})
+
+
+@celery_app.task(name="app.tasks.scheduled.recalculate_120day_hp", bind=True, max_retries=3, autoretry_for=(Exception,), retry_backoff=60)
 @with_cron_logging("recalculate-120day-hp")
 def recalculate_120day_hp(self):
-    """
-    Runs: Daily at 02:00 WAT.
-    Recalculates hp_earned_120day for all active users from hp_transactions
-    where created_at >= now() - 120 days and type='earn' and status='active'.
-    Persists the result to profiles.hp_earned_120day and triggers tier recalculation.
-    """
-    db = get_db()
-    try:
-        lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "recalculate_120day_hp"})
-    except Exception as e:
-        logger.error("recalculate_120day_hp: lock RPC failed, skipping run to be safe: %s", e)
-        lock_acquired = False
-    if not lock_acquired:
-        return {"skipped": "Lock not acquired"}
-
-    try:
-        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
-        results = {}
-        from app.services.hp_service import recalculate_tier
-        EARN_TYPES = ["earn_order", "earn_first_order", "earn_referral", "earn_event_checkin",
-                      "earn_review", "earn_birthday", "earn_challenge", "earn_admin_grant",
-                      "earn_squad_bonus", "earn_streak", "earn"]
-
-        for campus in (campuses if isinstance(campuses, list) else []):
-            campus_id = campus["id"]
-            cutoff = (datetime.now(timezone.utc) - timedelta(days=120)).isoformat()
-            profiles = db.table("profiles").select("id").eq("is_active", "true").eq("campus_id", campus_id).execute()
-            updated = 0
-
-            for profile in (profiles or []):
-                user_id = profile["id"]
-                try:
-                    txns = (
-                        db.table("hp_transactions")
-                        .select("amount")
-                        .eq("user_id", user_id)
-                        .eq("campus_id", campus_id)
-                        .in_("type", EARN_TYPES)
-                        .eq("status", "active")
-                        .gte("created_at", cutoff)
-                        .execute()
-                    )
-                    earned_120 = sum(t["amount"] for t in (txns or []) if t.get("amount", 0) > 0)
-
-                    try:
-                        db.table("profiles").eq("id", user_id).update({
-                            "hp_earned_120day": earned_120,
-                        })
-                    except Exception as e:
-                        logger.warning("recalculate_120day_hp: profile update failed for user %s: %s", user_id, e)
-
-                    try:
-                        recalculate_tier(user_id)
-                    except Exception as e:
-                        logger.warning("recalculate_120day_hp: tier recalc failed for user %s: %s", user_id, e)
-
-                    updated += 1
-                except Exception as e:
-                    logger.error("recalculate_120day_hp: failed for user %s: %s", user_id, e)
-
-            results[campus_id] = {"updated": updated}
-
-        return results
-    finally:
-        try:
-            db.rpc("release_cron_lock", {"p_job_name": "recalculate_120day_hp"})
-        except Exception as exc:
-            # The job stays locked, so its next scheduled run may skip itself.
-            logger.warning("cron: could not release the job lock after this "
-                           "run (%s) — the job may be skipped next time", exc)
+    """Existing 02:00 WAT rolling-earned refresh and upgrade job."""
+    return _run_tier_maintenance("refresh")
 
 
-@celery_app.task(name="app.tasks.scheduled.tier_grace_period_check", bind=True, max_retries=3)
+@celery_app.task(name="app.tasks.scheduled.tier_grace_period_check", bind=True, max_retries=3, autoretry_for=(Exception,), retry_backoff=60)
 @with_cron_logging("tier-grace-period-check")
 def tier_grace_period_check(self):
-    """
-    Runs: Daily at 03:00 WAT.
-    1. Find users whose hp_earned_120day is below their current tier threshold
-    2. Start 7-day grace period if not already in one
-    3. Drop tier if grace period has elapsed
-    """
-    db = get_db()
-    try:
-        lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "tier_grace_period_check"})
-    except Exception as e:
-        logger.error("tier_grace_period_check: lock RPC failed, skipping run to be safe: %s", e)
-        lock_acquired = False
-    if not lock_acquired:
-        return {"skipped": "Lock not acquired"}
-
-    try:
-        from flask import current_app
-        from app.services.notification_service import send_notification
-        now = datetime.now(timezone.utc)
-        grace_days = current_app.config.get("TIER_GRACE_PERIOD_DAYS", 7)
-
-        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
-        results = {}
-
-        for campus in (campuses if isinstance(campuses, list) else []):
-            campus_id = campus["id"]
-            tiers = db.table("hp_tiers").select("*").eq("campus_id", campus_id).order("sort_order").execute() or []
-            if not tiers:
-                # Intentional global-tier fallback: if a campus has no campus-specific hp_tiers
-                # configured, fall back to global hp_tiers so grace period checks can proceed.
-                tiers = db.table("hp_tiers").select("*").order("sort_order").execute() or []
-            base_tier = tiers[0] if tiers else None
-            tier_map = {t["id"]: t for t in tiers}
-
-            profiles_in_tier = (
-                db.table("profiles")
-                .select("id,hp_earned_120day,current_tier_id,tier_grace_ends_at,tier_grace_started_at")
-                .eq("is_active", "true")
-                .eq("role", "student")
-                .eq("campus_id", campus_id)
-                .not_.is_("current_tier_id", "null")
-                .execute()
-            )
-
-            started_grace = 0
-            dropped_tier = 0
-
-            for profile in (profiles_in_tier or []):
-                user_id = profile["id"]
-                try:
-                    current_tier_id = profile.get("current_tier_id")
-                    tier = tier_map.get(current_tier_id, {})
-                    maintenance = tier.get("maintenance_points", 0)
-                    if maintenance == 0:
-                        continue
-
-                    hp_earned_120day = profile.get("hp_earned_120day", 0) or 0
-                    grace_ends = profile.get("tier_grace_ends_at")
-
-                    if hp_earned_120day >= maintenance:
-                        if grace_ends:
-                            db.table("profiles").eq("id", user_id).update({
-                                "tier_grace_started_at": None,
-                                "tier_grace_ends_at": None,
-                            })
-                        continue
-
-                    if grace_ends:
-                        if grace_ends < now.isoformat():
-                            new_tier = base_tier
-                            for t in reversed(tiers):
-                                if hp_earned_120day >= t.get("min_points", 0):
-                                    new_tier = t
-                                    break
-
-                            new_tier_id = new_tier["id"] if new_tier else None
-                            db.table("profiles").eq("id", user_id).update({
-                                "current_tier_id": new_tier_id,
-                                "tier_grace_started_at": None,
-                                "tier_grace_ends_at": None,
-                            })
-
-                            if new_tier_id:
-                                db.table("user_tiers").insert({
-                                    "user_id": user_id,
-                                    "tier_id": new_tier_id,
-                                    "previous_tier_id": current_tier_id,
-                                    "event": "downgrade",
-                                    "hp_at_event": hp_earned_120day,
-                                    "campus_id": campus_id,
-                                })
-
-                            send_notification(
-                                user_id=user_id,
-                                notif_type="tier_downgrade",
-                                template_data={
-                                    "from_tier": tier.get("name", "tier"),
-                                    "to_tier": new_tier.get("name", "") if new_tier else "Base",
-                                },
-                            )
-                            dropped_tier += 1
-                    else:
-                        grace_start = now.isoformat()
-                        grace_end = (now + timedelta(days=grace_days)).isoformat()
-                        db.table("profiles").eq("id", user_id).update({
-                            "tier_grace_started_at": grace_start,
-                            "tier_grace_ends_at": grace_end,
-                        })
-
-                        send_notification(
-                            user_id=user_id,
-                            notif_type="tier_grace_period",
-                            template_data={
-                                "grace_days": grace_days,
-                                "tier_name": tier.get("name", "your tier"),
-                            },
-                        )
-                        started_grace += 1
-                except Exception as e:
-                    logger.error("tier_grace_period_check: failed for user %s: %s", user_id, e)
-
-            results[campus_id] = {"started_grace": started_grace, "dropped_tier": dropped_tier}
-
-        return results
-    finally:
-        try:
-            db.rpc("release_cron_lock", {"p_job_name": "tier_grace_period_check"})
-        except Exception as exc:
-            # The job stays locked, so its next scheduled run may skip itself.
-            logger.warning("cron: could not release the job lock after this "
-                           "run (%s) — the job may be skipped next time", exc)
+    """Existing 03:00 WAT grace start/recovery/expiry job."""
+    return _run_tier_maintenance("grace")
 
 
 @celery_app.task(name="app.tasks.scheduled.birthday_hp_awards", bind=True, max_retries=3)

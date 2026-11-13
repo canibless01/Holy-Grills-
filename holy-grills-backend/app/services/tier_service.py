@@ -18,17 +18,10 @@ def ensure_initial_student_tier(profile, db=None):
     if not profile or profile.get('role') != 'student' or profile.get('current_tier_id') or profile.get('is_active') is False:
         return profile
     db = db or get_db()
-    tiers = db.table('hp_tiers').select('id,min_points,sort_order').eq('is_active', 'true').order('min_points', ascending=False).execute() or []
-    earned = max(0, int(profile.get('hp_earned_120day') or 0))
-    eligible = [tier for tier in tiers if int(tier.get('min_points') or 0) <= earned]
-    if not eligible:
-        return profile
-    tier = max(eligible, key=lambda row: (int(row.get('min_points') or 0), int(row.get('sort_order') or 0)))
-    write = db.table('profiles').eq('id', profile['id']).eq('role', 'student').is_('current_tier_id', 'null')
-    write = write.eq('hp_earned_120day', profile['hp_earned_120day']) if profile.get('hp_earned_120day') is not None else write.is_('hp_earned_120day', 'null')
-    rows = write.update({'current_tier_id': tier['id']}).execute()
-    updated = rows[0] if isinstance(rows, list) and rows else rows if isinstance(rows, dict) else None
-    return {**profile, 'current_tier_id': updated['current_tier_id']} if updated and updated.get('current_tier_id') else profile
+    receipt = db.rpc("hg_recalculate_tier_atomic", {"p_user": profile["id"]})
+    tier = receipt.get("tier") if isinstance(receipt, dict) else None
+    return {**profile, "current_tier_id": tier["id"]} if tier and tier.get("id") else profile
+
 
 
 # Finalized Holy Grills Loyalty & Rewards System spec (scope item 6c), values taken as-is from the

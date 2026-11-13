@@ -610,75 +610,17 @@ def get_user_tier(user_id: str, campus_id: str = None) -> dict:
 
 
 def recalculate_tier(user_id: str, campus_id: str = None) -> dict:
-    """
-    Compare hp_earned_120day against tier thresholds (min_points column in hp_tiers).
-    Uses the rolling 120-day earned HP — not the current balance — to determine tier.
-    Updates profiles.current_tier_id and logs to user_tiers (event log).
-    """
-    db = get_db()
-    try:
-        profile = (
-            db.table("profiles")
-            .select("hp_earned_120day,current_tier_id")
-            .eq("id", user_id)
-            .single()
-            .execute()
-        )
-        hp_earned_120day = int(profile.get("hp_earned_120day") or 0)
-        current_tier_id = profile.get("current_tier_id")
-    except Exception:
-        hp_earned_120day = 0
-        current_tier_id = None
-
-    tiers_raw = (
-        db.table("hp_tiers")
-        .select("*")
-        .eq("is_active", "true")
-        .order("sort_order", ascending=False)
-        .execute()
-    )
-    tiers = sorted(tiers_raw or [], key=lambda t: int(t.get("min_points") or 0), reverse=True)
-    new_tier = None
-    for tier in tiers:
-        if hp_earned_120day >= int(tier.get("min_points") or 0):
-            new_tier = tier
-            break
-    if not new_tier and tiers:
-        new_tier = tiers[-1]
-
-    if not new_tier:
-        return {"tier": None, "changed": False}
-
-    if current_tier_id == new_tier["id"]:
-        return {"tier": new_tier, "changed": False}
-
-    event = "upgraded" if (not current_tier_id or _tier_sort_order(new_tier) > _tier_sort_order_by_id(current_tier_id, tiers_raw)) else "downgraded"
-
-    if event == "downgraded":
-        # Downgrades are handled exclusively by the tier_grace_period_check
-        # scheduled task, which respects the maintenance_points threshold and
-        # the 7-day grace window. Applying a downgrade here would skip both.
-        return {"tier": new_tier, "changed": False, "event": "downgrade_deferred_to_grace_job"}
-
-    try:
-        db.table("user_tiers").insert({
-            "user_id": user_id,
-            "tier_id": new_tier["id"],
-            "previous_tier_id": current_tier_id,
-            "event": event,
-            "hp_at_event": hp_earned_120day,
-        }).execute()
-    except Exception as exc:
-        logger.warning("recalculate_tier: could not record the tier history row for %s: %s",
-                        user_id, exc)
-
-    try:
-        db.table("profiles").eq("id", user_id).update({"current_tier_id": new_tier["id"]}).execute()
-    except Exception as exc:
-        logger.error("recalculate_tier: could not persist the new tier on the profile for %s — the user keeps the old tier: %s",
-                      user_id, exc)
-
-    return {"tier": new_tier, "changed": True, "previous_tier_id": current_tier_id, "event": event}
+    """Tier state, valid history event and notification receipts commit together."""
+    result = get_db().rpc("hg_recalculate_tier_atomic", {"p_user": user_id})
+    if not isinstance(result, dict) or result.get("error"):
+        raise RuntimeError("Tier recalculation remains pending")
+    if result.get("reference_id"):
+        try:
+            from app.services.notification_outbox import start_reference_dispatch
+            start_reference_dispatch("tier_" + result["event"], result["reference_id"])
+        except Exception:
+            logger.warning("Tier notification wake deferred", exc_info=True)
+    return result
 
 
 def _tier_sort_order(tier: dict) -> int:
