@@ -143,3 +143,7 @@ Replaced the unsafe read-before-award/no-reference anniversary path with an atom
 Owner-requested checkout tiles make free sides, delivery rewards and Food HP discoverable with focused dialogs and honest available/selected/loading/error states. Gate-only checkout now explains pickup in a popup and persistent summary; pinned home delivery is distinct and can explicitly switch to gate pickup. Existing quotes and reward/payment controls are retained. See `CHECKOUT_PERKS_AND_GATE_PICKUP_2026_11_13.md` for scope and verification.
 
 Checkout UI verification: typecheck/full production build passed; all five new mobile/desktop reward/pickup browser cases and seven existing checkout/handoff regression cases passed. Native checks include selected reward IDs in quote requests, free-side Retry and pin-versus-gate transitions. No production database writes or real payments.
+
+### 13 November — customer reminders for scheduled orders
+
+Added transactional delivery-day customer reminders from 10:00 WAT through the existing scheduled scan and durable notification recovery. Members receive preferred inbox/push/email; guests receive email with their private tracking link. Paid/current/owner/date guards run again at provider handoff; repeated scans are idempotent, internal receipts stay out of status timelines and test orders are excluded. Fresh production rollback and targeted dispatcher/status checks pass. See `SCHEDULED_ORDER_CUSTOMER_REMINDERS_2026_11_13.md` for timing and evidence limits.

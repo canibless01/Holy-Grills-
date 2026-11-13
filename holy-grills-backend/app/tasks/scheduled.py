@@ -741,6 +741,13 @@ def process_scheduled_orders(self):
         return {"skipped": "Lock not acquired"}
 
     try:
+        # Customer email/push receipts are captured by this existing scan. The
+        # existing notification-recovery job dispatches them; no extra scheduler.
+        try:
+            reminder_result = db.rpc("hg_queue_scheduled_order_reminders", {})
+            logger.info("Scheduled customer reminders queued: %s", (reminder_result or {}).get("orders", 0))
+        except Exception:
+            logger.warning("Scheduled customer reminder capture deferred", exc_info=True)
         now = datetime.now(timezone.utc)
         from app.services.notification_service import send_notification
         day_start = today_wat().isoformat() + "T00:00:00+01:00"

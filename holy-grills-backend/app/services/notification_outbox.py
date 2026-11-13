@@ -23,7 +23,16 @@ def dispatch_notification(notification_id):
         status_email=claim['payload'].get('kind')=='event_status_email'
         ticket_email=status_email or refund_email or claim['payload'].get('kind')=='event_ticket_email'
         guest_cart=claim['payload'].get('kind')=='guest_cart_recovery_email'
-        if guest_cart:
+        scheduled_reminder=snapshot.get('type')=='scheduled_order_reminder'
+        if scheduled_reminder:
+            from app.services import scheduled_order_reminders
+            if not scheduled_order_reminders.valid(db,snapshot):
+                return finish({'state':'cancelled','error':'scheduled_order_no_longer_due'})
+        if scheduled_reminder and snapshot.get('user_id') is None:
+            if channel!='email':
+                return finish({'state':'cancelled','error':'invalid_guest_reminder_channel'})
+            profile={'email':snapshot.get('email')}
+        elif guest_cart:
             from app.services import guest_cart_email
             if channel != 'email' or snapshot.get('user_id') is not None or not guest_cart_email.eligible(db, claim['payload']):
                 return finish({'state':'cancelled','error':'guest_checkout_no_longer_eligible'})
@@ -79,7 +88,9 @@ def dispatch_notification(notification_id):
             if str(profile.get('email') or '').strip().lower()!=str(snapshot.get('email') or '').strip().lower():
                 return finish({'state':'skipped','error':'recipient_email_changed'})
             if prepared is None:
-                if guest_cart:
+                if scheduled_reminder:
+                    prepared=scheduled_order_reminders.prepare(db,snapshot)
+                elif guest_cart:
                     prepared=guest_cart_email.prepare(db,notification_id,claim['payload'])
                 elif ticket_email and not refund_email and not status_email:
                     event=db.table('events').select('title,starts_at,location,metadata').eq('id',claim['payload']['event_id']).single().execute() or {}

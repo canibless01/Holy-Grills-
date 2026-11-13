@@ -2213,7 +2213,7 @@ def _log_status_change(order_id: str, from_status: str, to_status: str, changed_
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()
         rows = (db.table("order_status_logs").eq("order_id", order_id).eq("status", to_status).gte("created_at", cutoff)
-                .eq("metadata->delivery_reward_recovery", None).eq("metadata->pending_hp_unlock", None).eq("metadata->hp_bonus_plan", None).eq("metadata->order_streak_recovery", None)
+                .eq("metadata->customer_reminder_day", None).eq("metadata->delivery_reward_recovery", None).eq("metadata->pending_hp_unlock", None).eq("metadata->hp_bonus_plan", None).eq("metadata->order_streak_recovery", None)
                 .update({"changed_by": changed_by, "note": note, "metadata": meta, "campus_id": campus_id}))
         if not rows:
             db.table("order_status_logs").insert({"order_id": order_id, "status": to_status, "changed_by": changed_by,

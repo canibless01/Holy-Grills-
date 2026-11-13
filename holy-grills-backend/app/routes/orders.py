@@ -1696,6 +1696,7 @@ def order_status_history(order_id):
         db.table("order_status_logs")
         .select("*")
         .eq("order_id", order_id)
+        .is_("metadata->customer_reminder_day", "null")
         .order("created_at", ascending=True)
         .execute()
     )
