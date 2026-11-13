@@ -3,7 +3,7 @@ SET LOCAL request.jwt.claims='{"role":"service_role"}';
 DO $verify$
 DECLARE c uuid:=gen_random_uuid(); other_c uuid:=gen_random_uuid(); u uuid; users uuid[]:=ARRAY[gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),gen_random_uuid()];
  m uuid:=gen_random_uuid(); zero_m uuid:=gen_random_uuid(); foreign_m uuid:=gen_random_uuid(); weekly_m uuid:=gen_random_uuid(); legacy_m uuid:=gen_random_uuid(); completion uuid;
- cap integer; month_key text:=to_char(now() AT TIME ZONE 'UTC','YYYY-MM'); r jsonb; again jsonb;
+ cap integer; month_key text:=to_char(now() AT TIME ZONE 'Africa/Lagos','YYYY-MM'); r jsonb; again jsonb;
 BEGIN
  INSERT INTO public.campuses(id,name,slug) VALUES(c,'[AUDIT rollback] Social','audit-social-'||c),(other_c,'[AUDIT rollback] Other','audit-social-'||other_c);
  FOREACH u IN ARRAY users LOOP
@@ -19,6 +19,8 @@ BEGIN
  r:=public.hg_complete_pending_milestone(users[1],m,NULL,50);
  IF r->>'hp_awarded'<>'50' OR r->>'hp_destination'<>'pending' OR (SELECT hp_balance FROM public.profiles WHERE id=users[1])<>0
  OR (SELECT total_earned FROM public.monthly_hp_tracker WHERE user_id=users[1] AND month=month_key)<>50 THEN RAISE EXCEPTION 'pending destination/tracker incorrect'; END IF;
+ IF (SELECT count(*) FROM public.notifications WHERE user_id=users[1] AND type='milestone_achieved')<>2
+ OR (SELECT count(*) FROM public.notification_deliveries WHERE user_id=users[1] AND notification_id IN (SELECT id FROM public.notifications WHERE user_id=users[1] AND type='milestone_achieved'))<>1 THEN RAISE EXCEPTION 'milestone notice/outbox did not commit with grant';END IF;
  UPDATE public.milestones SET hp_awarded=999 WHERE id=m;
  again:=public.hg_complete_pending_milestone(users[1],m,NULL,999);
  IF NOT (again->>'replayed')::boolean OR again->>'hp_awarded'<>'0' OR again->>'recorded_hp_awarded'<>'50'

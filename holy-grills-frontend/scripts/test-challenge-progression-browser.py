@@ -18,15 +18,17 @@ def fixture(route):
  elif p.endswith('/cart'):data={'items':[]}
  elif any(x in p for x in ('messages','config','feature-flags','balance','streak')):data={}
  route.fulfill(status=200,json=data)
-proc=subprocess.Popen(['npm','run','dev','--','--host','127.0.0.1','--port','5216','--strictPort'],cwd=repo,env=dict(os.environ,VITE_API_BASE_URL='/api'),start_new_session=True,stdout=(out/'vite.log').open('w'),stderr=subprocess.STDOUT)
+base=os.environ.get('HG_BROWSER_BASE','http://127.0.0.1:5216')
+proc=None if os.environ.get('HG_BROWSER_BASE') else subprocess.Popen(['npm','run','dev','--','--host','127.0.0.1','--port','5216','--strictPort'],cwd=repo,env=dict(os.environ,VITE_API_BASE_URL='/api'),start_new_session=True,stdout=(out/'vite.log').open('w'),stderr=subprocess.STDOUT)
 try:
  time.sleep(2)
  with sync_playwright() as pw:
   browser=pw.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox']);ctx=browser.new_context(viewport={'width':390,'height':844});ctx.route('**/api/**',fixture)
   ctx.add_init_script("sessionStorage.setItem('hg_access_token','controlled');localStorage.setItem('hg_campus_id','"+campus+"');localStorage.setItem('hg_user_campus_id','"+campus+"');localStorage.setItem('hg_install_dismissed','1');")
-  p=ctx.new_page();p.goto('http://127.0.0.1:5216/rewards?tab=challenges');p.get_by_role('button',name='Essential only',exact=True).click()
+  p=ctx.new_page();p.on('pageerror',lambda error:print(str(error),flush=True));expect.set_options(timeout=20000);p.goto(base+'/rewards?tab=challenges',wait_until='domcontentloaded');p.get_by_role('button',name='Essential only',exact=True).click()
   first=p.get_by_role('heading',name='Invite one friend',exact=True);expect(first).to_be_visible();expect(p.get_by_role('heading',name='Invite five friends',exact=True)).to_have_count(0);expect(p.get_by_role('heading',name='Invite ten friends',exact=True)).to_have_count(0);expect(p.get_by_role('heading',name='New weekly order challenge',exact=True)).to_be_visible()
   first.locator('xpath=../..').locator('xpath=..').get_by_role('button',name='Claim',exact=True).click();expect(p.get_by_role('heading',name='Invite five friends',exact=True)).to_be_visible();expect(p.get_by_role('heading',name='Invite ten friends',exact=True)).to_have_count(0);expect(first).to_have_count(0);expect(p.locator('summary').filter(has_text='Completed (1)')).to_be_visible();expect(p.get_by_role('heading',name='New weekly order challenge',exact=True)).to_be_visible()
   browser.close()
  print(json.dumps({'only_next_referral_visible':True,'claim_reveals_next_step':True,'unrelated_challenge_retained':True,'completed_history_collapsed':True}))
-finally:os.killpg(proc.pid,signal.SIGTERM)
+finally:
+ if proc:os.killpg(proc.pid,signal.SIGTERM)

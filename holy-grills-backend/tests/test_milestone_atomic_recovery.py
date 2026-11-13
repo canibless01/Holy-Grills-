@@ -72,3 +72,15 @@ def test_one_failed_automatic_milestone_does_not_block_other_earned_grants():
         ms.check_milestone_trigger('student','first_order',1)
     assert complete.call_count==2
     assert complete.call_args_list[1].args[2]['id']=='second'
+
+
+def test_completed_milestone_only_wakes_the_committed_receipt():
+    with patch('app.services.notification_outbox.start_reference_dispatch') as wake, patch.object(ms,'get_db') as db:
+        ms.notify_milestone_achieved('student','milestone',hp_awarded=20,completion_id='receipt')
+    wake.assert_called_once_with('milestone_achieved','receipt');db.assert_not_called()
+
+
+def test_no_completion_receipt_never_invents_an_earned_notice():
+    with patch('app.services.notification_outbox.start_reference_dispatch') as wake:
+        ms.notify_milestone_achieved('student','milestone',hp_awarded=20)
+    wake.assert_not_called()

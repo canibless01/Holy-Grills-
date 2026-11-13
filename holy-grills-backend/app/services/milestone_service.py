@@ -430,34 +430,14 @@ def _complete_active_milestone(db, user_id, milestone, hp, period_key, *, campus
 
 
 def notify_milestone_achieved(user_id: str, milestone_id: str, hp_awarded: int = None, completion_id: str = None) -> None:
-    """
-    Shared notification hook for all milestone/badge awards.
-    Always fires push + in_app together. No email for gamification events.
-    hp_awarded: what was actually credited (after multiplier / cap). Defaults to the milestone's listed HP.
-    """
+    """The atomic completion saved its notice; only wake its committed push."""
+    if not completion_id:
+        return
     try:
-        from app.services.notification_service import send_notification
-        # Service client: this runs for a user other than the caller (referrer, event attendee) or with no
-        # request at all, so the caller's session may not be allowed to read this milestone.
-        m = get_db().table("milestones").select("title,hp_awarded,time_window").eq("id", milestone_id).single().execute()
-        if not m:
-            return
-        is_badge = m.get("time_window") is None
-        hp = int(hp_awarded) if hp_awarded is not None else int(m.get("hp_awarded") or 0)
-        _title = MSG.MILESTONE_BADGE_TITLE if is_badge else MSG.MILESTONE_CHALLENGE_TITLE
-        # resolve_msg fills {currency}; a plain .format(hp=hp) raises KeyError('currency') and no notification is sent.
-        _body = m["title"] + (resolve_msg(MSG.MILESTONE_HP_SUFFIX, hp=hp) if hp else "")
-        send_notification(
-            user_id=user_id,
-            notif_type="milestone_achieved",
-            title=_title,
-            body=_body,
-            reference_id=completion_id or milestone_id,
-            reference_type="milestone_completion" if completion_id else "milestone",
-            channels=["push", "in_app"],
-        )
-    except Exception as e:
-        logger.warning("notify_milestone_achieved: failed for user %s milestone %s: %s", user_id, milestone_id, e)
+        from app.services.notification_outbox import start_reference_dispatch
+        start_reference_dispatch("milestone_achieved", completion_id)
+    except Exception:
+        logger.warning("Milestone notice wake deferred for completion %s", completion_id, exc_info=True)
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────

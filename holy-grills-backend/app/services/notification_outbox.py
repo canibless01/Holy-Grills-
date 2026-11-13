@@ -186,7 +186,7 @@ def start_reference_dispatch(kind, reference_id):
     """
     import threading
     from flask import current_app
-    if kind not in ('low_stock_ingredient', 'prize_fulfilment_update', 'squad_hp_share', 'checkin_reclaimed', 'membership_anniversary', 'tier_upgrade', 'tier_downgrade', 'tier_grace_period'):
+    if kind not in ('low_stock_ingredient', 'prize_fulfilment_update', 'squad_hp_share', 'checkin_reclaimed', 'membership_anniversary', 'tier_upgrade', 'tier_downgrade', 'tier_grace_period', 'milestone_achieved'):
         return False
     try:
         app = current_app._get_current_object()

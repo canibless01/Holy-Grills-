@@ -23,6 +23,8 @@ BEGIN
  OR (SELECT hp_balance FROM public.profiles WHERE id=u)<>b THEN RAISE EXCEPTION 'interrupted grant left partial completion or money'; END IF;
  r:=public.hg_complete_active_milestone(u,m,NULL,30,NULL);
  IF NOT (r->>'completed')::boolean OR (r->>'hp_awarded')::integer<>30 OR (r->>'replayed')::boolean THEN RAISE EXCEPTION 'first grant wrong'; END IF;
+ IF (SELECT count(*) FROM public.notifications WHERE user_id=u AND type='milestone_achieved')<>2
+ OR (SELECT count(*) FROM public.notification_deliveries WHERE user_id=u AND notification_id IN (SELECT id FROM public.notifications WHERE user_id=u AND type='milestone_achieved'))<>1 THEN RAISE EXCEPTION 'milestone notice/outbox did not commit with grant';END IF;
  UPDATE public.milestones SET hp_awarded=999 WHERE id=m;
  r:=public.hg_complete_active_milestone(u,m,NULL,999,NULL);
  IF (r->>'hp_awarded')::integer<>0 OR (r->>'recorded_hp_awarded')::integer<>30 OR NOT (r->>'replayed')::boolean

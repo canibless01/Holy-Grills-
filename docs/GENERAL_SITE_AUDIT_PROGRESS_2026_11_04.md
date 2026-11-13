@@ -156,3 +156,7 @@ Removed seven unnecessary browser EXECUTE grants from existing trigger helpers a
 ### 13 November — atomic tier and grace transitions
 
 Corrected rejected history event names, cross-campus tier selection and balance-driven ledger tier assignment. Tier/grace state, history and preferred notification receipts now commit together; missing-tier recovery and existing daily jobs use the same authority. Rolling refresh/grace scans use bounded DB batches instead of per-user REST ledger reads. Full backend 1,707 passed; fresh production tier and active/social/combined/squad reward matrices pass. See `TIER_GRACE_RECOVERY_2026_11_13.md` for migration history, tests and limits.
+
+### 13 November — challenge/milestone and promotion verification
+
+Closed the milestone completion-versus-notification interruption gap with receipt-backed SQL capture and post-commit wake only; pending cap periods now use WAT consistently. Fresh active/social milestone and combined/squad promotion-restoration SQL matrices pass, including idempotent grants and refunds after changed settings. Full merged backend suite **1,709 passed**. See `CHALLENGE_MILESTONE_PROMO_VERIFICATION_2026_11_13.md` for exact coverage and operational limits.
