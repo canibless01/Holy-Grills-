@@ -125,3 +125,7 @@ Evidence and remaining verification are in [stock metadata editing](ADMIN_STOCK_
 ## Inventory, handover and staff settings loop — 12 November
 
 [Closure evidence](STOCK_HANDOVER_SETTINGS_LOOP_2026_11_12.md): added read-only populated stock reconciliation/CSV, transactional low-stock episodes/outbox capture with restock re-arming and stale-send checks, atomic audit/inbox/push for three physical-prize families, preserved fulfilment timestamps, campus-aware feature gates and active-account legacy policy helpers. Full backend 1,650 tests, built native report/handover and existing stock suites, typecheck/build and three fresh production rollback matrices pass. No test fixtures remain or new periodic jobs were added. The separate legacy signup squad-share claim path is the next focused check; unrelated historical domains are not silently certified.
+
+### 13 November — reserved squad signup HP claims
+
+Closed cross-campus claim and award/marker/notice interruption gaps. Signup and the existing daily sweep share an atomic backend-only claim, preserve original grants across both legacy reference keys, and scope unowned invitation binding to the actual campus. No new job or session-hydration read. Full backend suite: 1,658 passed; production rollback and 24-request local concurrency proof passed; production fixtures remaining 0. See `PENDING_SQUAD_HP_RECOVERY_2026_11_13.md` for limits and evidence.

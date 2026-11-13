@@ -300,100 +300,62 @@ def get_pending_squad_hp_report(campus_id: str = None, p_stale_days: int = 14):
         return {"pending": [], "count": 0, "stuck_count": 0, "error": str(e), "campus_id": campus_id, "p_stale_days": p_stale_days}
 
 
+def _claim_pending_row(db, pending, user_id):
+    result = db.rpc("hg_claim_pending_squad_hp", {"p_pending": pending["id"], "p_user": user_id})
+    if not isinstance(result, dict) or not result.get("success"):
+        logger.warning("Squad share %s remains pending: %s", pending.get("id"), result)
+        return False
+    try:
+        from app.services.hp_service import recalculate_tier
+        recalculate_tier(user_id)
+    except Exception:
+        logger.warning("Squad share tier refresh deferred", exc_info=True)
+    # Dispatch only the already committed receipt. The existing outbox job retries failures.
+    try:
+        from app.services.notification_outbox import start_reference_dispatch
+        start_reference_dispatch("squad_hp_share", result["order_id"])
+    except Exception:
+        logger.warning("Squad share dispatch wake failed", exc_info=True)
+    return True
+
+
 def sweep_pending_squad_hp(campus_id: str = None):
-    """
-    Daily sweep that pays any pending_squad_hp row whose email now matches an existing account.
-    Same claim logic as sign-up claim in auth_service.register.
-    """
+    """Existing daily recovery; no campus means legacy null-campus rows only."""
     db = get_db()
     claimed = 0
     try:
-        q = db.table("pending_squad_hp").select("id,email,order_id,hp_amount,campus_id").eq("status", "pending")
-        if campus_id:
-            q = q.eq("campus_id", campus_id)
-        pending_rows = q.execute() or []
-
-        from app.services.hp_service import award_active_hp
-        from app.services.notification_service import send_notification
-
-        for p in pending_rows:
-            email = (p.get("email") or "").strip().lower()
-            if not email:
-                continue
+        q = db.table("pending_squad_hp").select("id,email,campus_id").eq("status", "pending")
+        q = q.eq("campus_id", campus_id) if campus_id else q.is_("campus_id", "null")
+        for pending in q.execute() or []:
             try:
-                prof = db.table("profiles").select("id,campus_id").eq("email", email).single().execute()
-                if not prof or not prof.get("id"):
-                    continue
-                user_id = prof["id"]
-                # Claim as squad_split_claimed
-                award_active_hp(
-                    user_id=user_id,
-                    amount=p["hp_amount"],
-                    source_type="squad_split_claimed",
-                    reference_type="squad_split_claimed",
-                    reference_id=p["order_id"],
-                    notes=f"Squad HP claimed from order {p['order_id'][:8]} (sweep)",
-                    apply_multiplier=False,
-                    campus_id=p.get("campus_id") or prof.get("campus_id"),
-                )
-                db.table("pending_squad_hp").eq("id", p["id"]).update({"status": "claimed"}).execute()
-                try:
-                    send_notification(
-                        user_id=user_id,
-                        notif_type="squad_hp_share",
-                        template_data={"hp": p["hp_amount"]},
-                        campus_id=p.get("campus_id") or prof.get("campus_id"),
-                    )
-                except Exception:
-                    pass
-                claimed += 1
-            except Exception as e:
-                logger.warning("sweep_pending_squad_hp: claim failed for %s row %s: %s", email, p.get("id"), e)
-
-    except Exception as e:
-        logger.error("sweep_pending_squad_hp failed: %s", e)
-
+                if not pending.get("campus_id"):
+                    continue  # Ambiguous legacy ownership needs review, never a guessed campus.
+                profile = (db.table("profiles").select("id").eq("email", (pending.get("email") or "").strip().lower())
+                           .eq("campus_id", pending["campus_id"]).eq("is_active", True).single().execute())
+                if profile and profile.get("id") and _claim_pending_row(db, pending, profile["id"]):
+                    claimed += 1
+            except Exception:
+                logger.warning("Squad share recovery failed for row %s", pending.get("id"), exc_info=True)
+    except Exception:
+        logger.error("Pending squad HP sweep failed", exc_info=True)
     return {"claimed": claimed, "campus_id": campus_id}
 
 
 def claim_pending_for_user(email: str, user_id: str, campus_id: str = None):
-    """
-    Claim pending squad HP for a specific email/user (used in backfill and register flow).
-    """
+    """Signup/backfill share claims use the same atomic, authoritative DB checks."""
+    if not campus_id:
+        return {"claimed": 0}
     db = get_db()
+    claimed = 0
     try:
-        pending = db.table("pending_squad_hp").select("id,order_id,hp_amount,campus_id").eq("email", email.strip().lower()).eq("status", "pending").execute() or []
-        if not pending:
-            return {"claimed": 0}
-        from app.services.hp_service import award_active_hp
-        from app.services.notification_service import send_notification
-        claimed = 0
-        for p in pending:
+        pending = (db.table("pending_squad_hp").select("id").eq("email", email.strip().lower())
+                   .eq("campus_id", campus_id).eq("status", "pending").execute()) or []
+        for row in pending:
             try:
-                award_active_hp(
-                    user_id=user_id,
-                    amount=p["hp_amount"],
-                    source_type="squad_split_claimed",
-                    reference_type="squad_split_claimed",
-                    reference_id=p["order_id"],
-                    notes=f"Squad HP claimed from order {p['order_id'][:8]}",
-                    apply_multiplier=False,
-                    campus_id=p.get("campus_id") or campus_id,
-                )
-                db.table("pending_squad_hp").eq("id", p["id"]).update({"status": "claimed"}).execute()
-                try:
-                    send_notification(
-                        user_id=user_id,
-                        notif_type="squad_hp_share",
-                        template_data={"hp": p["hp_amount"]},
-                        campus_id=p.get("campus_id") or campus_id,
-                    )
-                except Exception:
-                    pass
-                claimed += 1
-            except Exception as e:
-                logger.error("claim_pending_for_user: failed for %s row %s: %s", user_id, p.get("id"), e)
+                claimed += int(_claim_pending_row(db, row, user_id))
+            except Exception:
+                logger.warning("Squad share claim failed for row %s", row.get("id"), exc_info=True)
         return {"claimed": claimed}
-    except Exception as e:
-        logger.error("claim_pending_for_user failed for %s: %s", email, e)
-        return {"claimed": 0, "error": str(e)}
+    except Exception as exc:
+        logger.error("Squad share lookup failed", exc_info=True)
+        return {"claimed": 0, "error": str(exc)}
