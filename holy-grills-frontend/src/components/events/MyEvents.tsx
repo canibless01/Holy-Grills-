@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, Check, Ticket, ChevronRight, Loader2 } from 'lucide-react';
+import { msg } from '@/lib/messages';
 import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { formatDateTime } from '@/lib/hgUtils';
@@ -81,7 +82,7 @@ export default function MyEvents() {
     const title = evt.title || t.event_title || t.title || 'Your event';
     const when = t.starts_at || evt.starts_at;
     const location = evt.location || t.location;
-    const hp = evt.hp_per_attendee ?? evt.hp_reward ?? t.hp_reward ?? 0;
+    const hp = t.checked_in ? (t.hp_earned ?? 0) : evt.hp_per_attendee ?? evt.hp_reward ?? t.hp_reward ?? 0;
     return (
       <button
         key={`${t.event_id}-${t.ticket_id}`}
@@ -99,6 +100,7 @@ export default function MyEvents() {
             {location && <span className="truncate">· {location}</span>}
           </div>
           <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            {t.hp_claim_status==='review_required' && <span className="text-xs text-muted-foreground">{msg('FE_EVENT_HP_REVIEW_WAIT','Your attendance HP is awaiting support review.')}</span>}
             {t.tier_name && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-accent/15 text-primary">{t.tier_name}</span>}
             {t.checked_in
               ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-success/15 text-success">✓ Checked in{hp ? ` · +${hp} HP` : ''}</span>

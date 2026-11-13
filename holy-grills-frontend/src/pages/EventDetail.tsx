@@ -286,7 +286,7 @@ export default function EventDetail() {
           <Check className="w-6 h-6 text-success shrink-0" />
           <div>
             <div className="font-bold text-success text-sm">You've checked in! 🎉</div>
-            <div className="text-xs text-success">{msg('FE_EVENT_ATTENDANCE_RECORDED', 'Your attendance has been recorded.')}</div>
+            <div className="text-xs text-success">{ticket?.hp_claim_status==='review_required'?msg('FE_EVENT_HP_REVIEW_WAIT','Your attendance HP is awaiting support review.'):msg('FE_EVENT_ATTENDANCE_RECORDED', 'Your attendance has been recorded.')}</div>
           </div>
         </div>
       ) : ticket ? (

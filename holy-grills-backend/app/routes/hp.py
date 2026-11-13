@@ -26,6 +26,7 @@ def balance():
       200:
         description: HP balance breakdown
     """
+    get_db().rpc("hg_claim_guest_attendance_hp", {"p_actor":g.user_id})
     bal = get_hp_balance(g.user_id)
     tier = get_user_tier(g.user_id)
     # §24: overflow field removed. §15: no HP→₦ conversion in user-facing response.

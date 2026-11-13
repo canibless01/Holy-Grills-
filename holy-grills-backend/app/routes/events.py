@@ -1842,8 +1842,8 @@ def list_event_registrants(event_id):
     ticket_ids = [t["id"] for t in tickets]
     checkins = {}
     if ticket_ids:
-        ci_rows = db.table("event_checkins").select("ticket_id,created_at").in_("ticket_id", ticket_ids).execute() or []
-        checkins = {r["ticket_id"]: r["created_at"] for r in ci_rows}
+        ci_rows = db.table("event_checkins").select("ticket_id,created_at,reward_receipt").in_("ticket_id", ticket_ids).execute() or []
+        checkins = {r["ticket_id"]: r for r in ci_rows}
 
     enriched = []
     for t in tickets:
@@ -1860,7 +1860,8 @@ def list_event_registrants(event_id):
             "payment_expires_at": t.get("payment_expires_at"),
             "registered_at": t.get("created_at"),
             "checked_in":   bool(checkins.get(t["id"])),
-            "checked_in_at": checkins.get(t["id"]),
+            "checked_in_at": (checkins.get(t["id"]) or {}).get("created_at"),
+            "hp_claim_status": ((checkins.get(t["id"]) or {}).get("reward_receipt") or {}).get("guest_claim_state"),
             "refundable": t.get("status") == "confirmed" and t.get("payment_status") == "paid" and not checkins.get(t["id"]),
             "refund_amount": float(t.get("wallet_amount_used") or 0) + float(t.get("card_amount_used") or 0),
             "hp_paid": int(t.get("hp_amount_paid") or 0),
@@ -2178,6 +2179,7 @@ def my_tickets():
     """Show tickets after reconciling only verified, unowned guest receipts."""
     get_db().rpc("hg_link_verified_event_tickets", {"p_actor":g.user_id})
     get_db().rpc("hg_claim_guest_event_refunds", {"p_actor":g.user_id})
+    get_db().rpc("hg_claim_guest_attendance_hp", {"p_actor":g.user_id})
     db = get_user_client()
     tickets = (
         db.table("event_tickets")
@@ -2225,6 +2227,8 @@ def my_tickets():
             "is_guest": t.get("is_guest", False),
             "checked_in": bool(ci),
             "checked_in_at": ci.get("created_at") if isinstance(ci, dict) else None,
+            "hp_claim_status": ((ci or {}).get("reward_receipt") or {}).get("guest_claim_state"),
+            "hp_earned": ((ci or {}).get("reward_receipt") or {}).get("hp_added_to_active",0),
             "event": e,
         }
         formatted_tickets.append(item)
@@ -2296,3 +2300,21 @@ def review_event_ticket_refund(event_id, refund_id):
     except SupabaseError as exc:
         return _event_refund_error(exc)
     return jsonify(result)
+
+
+@events_bp.route('/<event_id>/tickets/<ticket_id>/attendance-hp', methods=['POST'])
+@require_role('admin')
+def review_guest_attendance_hp(event_id,ticket_id):
+    data=request.get_json(silent=True)
+    try:
+        if not validate_uuid(event_id) or not validate_uuid(ticket_id) or not isinstance(data,dict): raise ValueError
+        amount=as_int(data.get('amount'),0,20000);reason=as_text(data.get('reason'),500)
+        if len(reason)<10:raise ValueError
+    except ValueError:return jsonify({'error':MSG.EVENT_HP_REVIEW_INVALID}),400
+    try:
+        result=get_db().rpc('hg_review_guest_attendance_hp',{'p_actor':g.user_id,'p_event':event_id,'p_ticket':ticket_id,'p_amount':amount,'p_reason':reason})
+        return jsonify(result),200
+    except SupabaseError as exc:
+        if 'HG_ORGANIZER_ACCESS' in str(exc):return jsonify({'error':MSG.RESOURCE_ACCESS_DENIED}),403
+        if 'HG_GUEST_HP_' in str(exc):return jsonify({'error':MSG.EVENT_HP_REVIEW_CONFLICT}),409
+        raise
