@@ -20,8 +20,9 @@ interface CTABlockEditorProps {
  */
 export default function CTABlockEditor({ value, onChange, className }: CTABlockEditorProps) {
   const addBlock = () => {
+    if(value.length>=10)return;
     const newBlock: CTABlock = {
-      id: `cta-${Date.now()}`,
+      id: crypto.randomUUID(),
       label: '',
       url: '',
       style: 'primary',
@@ -46,6 +47,7 @@ export default function CTABlockEditor({ value, onChange, className }: CTABlockE
         <button
           type="button"
           onClick={addBlock}
+          disabled={value.length>=10}
           className="flex items-center gap-1 px-2 py-1 rounded-lg bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20 transition"
         >
           <Plus className="w-3 h-3" />
@@ -70,7 +72,7 @@ export default function CTABlockEditor({ value, onChange, className }: CTABlockE
                   value={block.label}
                   onChange={(e) => updateBlock(block.id, { label: e.target.value })}
                   placeholder="Button label (e.g., Order Now)"
-                  className="flex-1 px-2 py-1.5 rounded-lg border border-border text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  className="min-w-0 flex-1 px-2 py-1.5 rounded-lg border border-border text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/40"
                 />
                 <select
                   value={block.style}
@@ -96,7 +98,7 @@ export default function CTABlockEditor({ value, onChange, className }: CTABlockE
                   value={block.url}
                   onChange={(e) => updateBlock(block.id, { url: e.target.value })}
                   placeholder="https://holygrills.online/menu"
-                  className="flex-1 px-2 py-1.5 rounded-lg border border-border text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  className="min-w-0 flex-1 px-2 py-1.5 rounded-lg border border-border text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/40"
                 />
               </div>
             </div>

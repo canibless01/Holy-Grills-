@@ -1,3 +1,7 @@
+import { useMemo } from 'react';
+import { safeBlastHtml, safeBlastUrl } from '@/lib/blastPreview';
+import ModalPortal from '@/components/ModalPortal';
+import { msg } from '@/lib/messages';
 import { X } from 'lucide-react';
 import type { CTABlock } from './CTABlockEditor';
 import type { ImageBlock } from './ImageStackEditor';
@@ -16,19 +20,20 @@ interface EmailPreviewModalProps {
  * Renders the email with brand styling, images, and CTA buttons.
  */
 export default function EmailPreviewModal({ open, onClose, title, bodyHtml, images, ctaBlocks }: EmailPreviewModalProps) {
+  const safeBody=useMemo(()=>open?safeBlastHtml(bodyHtml):'',[open,bodyHtml]);
   if (!open) return null;
 
   const brandRed = '#E01616';
   const brandRedHover = '#B81212';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+    <ModalPortal><div role="dialog" aria-modal="true" aria-label={msg('FE_BLAST_PREVIEW_TITLE','Email Preview')} className="fixed inset-0 z-[60] flex items-center justify-center p-4 hg-scrim" onKeyDown={e=>{if(e.key==='Escape')onClose();}}>
       <div className="relative w-full max-w-2xl max-h-[90vh] overflow-hidden bg-card rounded-2xl border border-border shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
           <h2 className="font-bold text-lg text-foreground">Email Preview</h2>
           <button
-            onClick={onClose}
+            aria-label={msg('FE_BLAST_PREVIEW_CLOSE','Close email preview')} onClick={onClose}
             className="p-2 rounded-lg hover:bg-secondary transition"
           >
             <X className="w-5 h-5" />
@@ -69,7 +74,7 @@ export default function EmailPreviewModal({ open, onClose, title, bodyHtml, imag
                 {images.map((image) => (
                   <div key={image.id} style={{ marginBottom: '16px' }}>
                     {image.link ? (
-                      <a href={image.link} target="_blank" rel="noopener noreferrer">
+                      <a href={safeBlastUrl(image.link)} target="_blank" rel="noopener noreferrer">
                         <img
                           src={image.url}
                           alt={image.alt}
@@ -128,7 +133,7 @@ export default function EmailPreviewModal({ open, onClose, title, bodyHtml, imag
                   lineHeight: 1.6,
                   color: '#1A1A1A',
                 }}
-                dangerouslySetInnerHTML={{ __html: bodyHtml }}
+                dangerouslySetInnerHTML={{ __html: safeBody }}
               />
 
               {/* CTA Buttons */}
@@ -153,7 +158,7 @@ export default function EmailPreviewModal({ open, onClose, title, bodyHtml, imag
                                     border,
                                   }}>
                                     <a
-                                      href={cta.url}
+                                      href={safeBlastUrl(cta.url)}
                                       style={{
                                         display: 'inline-block',
                                         padding: '14px 28px',
@@ -235,6 +240,6 @@ export default function EmailPreviewModal({ open, onClose, title, bodyHtml, imag
           </div>
         </div>
       </div>
-    </div>
+    </div></ModalPortal>
   );
 }

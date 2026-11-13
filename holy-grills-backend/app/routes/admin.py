@@ -2935,15 +2935,23 @@ def backfill_email_subscriptions():
     if not isinstance(data, dict):
         return jsonify({"error": MSG.INVALID_INPUT}), 400
 
+    if any(data.get(key) is not None and not isinstance(data[key],str) for key in ('user_id','email')):
+        return jsonify({'error':MSG.INVALID_INPUT}),400
+
     from app.services.onesignal_email import ensure_email_subscription
 
-    user_id = (data.get("user_id") or "").strip() or None
-    email = (data.get("email") or "").strip().lower() or None
+    try:
+        user_id=as_text(data['user_id'],100) if data.get('user_id') else None
+        email=as_text(data['email'],254).lower() if data.get('email') else None
+    except ValueError:return jsonify({'error':MSG.INVALID_INPUT}),400
+    campus_id=resolve_scoped_campus_id()
+    if getattr(g,'user_role',None)!='super_admin' and not campus_id:return jsonify({'error':MSG.ACCOUNT_NO_CAMPUS}),403
     if user_id or email:
         if user_id and not validate_uuid(user_id):
             return jsonify({"error": MSG.INVALID_INPUT}), 400
         query = get_db().table("profiles").select("id,email,is_active,email_notifications")
         query = query.eq("id", user_id) if user_id else query.eq("email", email)
+        if campus_id:query=query.eq('campus_id',campus_id)
         profile = query.limit(1).execute() or []
         profile = profile[0] if isinstance(profile, list) and profile else (profile if isinstance(profile, dict) else None)
         if not profile:
@@ -2951,7 +2959,7 @@ def backfill_email_subscriptions():
         details = {}
         linked = ensure_email_subscription(
             profile.get("id"), profile.get("email"),
-            enabled=profile.get("email_notifications") is not False, details=details)
+            enabled=profile.get("is_active") is not False and profile.get("email_notifications") is not False, details=details)
         # 200 either way: the response *is* the diagnosis, not a failure of the call.
         return jsonify({"linked": bool(linked), "profile": {
             "id": profile.get("id"), "email": profile.get("email"),
@@ -2959,14 +2967,14 @@ def backfill_email_subscriptions():
         }, "onesignal": details}), 200
 
     try:
-        limit = int(data.get("limit", 500))
-        offset = int(data.get("offset", 0))
+        limit = as_int(data.get("limit",500),1,2000)
+        offset = as_int(data.get("offset",0),0,10000000)
     except (TypeError, ValueError):
         return jsonify({"error": MSG.INVALID_INPUT}), 400
     if not 1 <= limit <= 2000 or offset < 0:
         return jsonify({"error": MSG.INVALID_INPUT}), 400
     from app.services.onesignal_email import backfill_email_subscriptions as run_backfill
-    threading.Thread(target=lambda: run_backfill(limit=limit, offset=offset), daemon=True).start()
+    threading.Thread(target=lambda: run_backfill(limit=limit, offset=offset, campus_id=campus_id), daemon=True).start()
     return jsonify({"started": True, "limit": limit, "offset": offset,
                     "message": MSG.EMAIL_SUBSCRIPTION_BACKFILL_STARTED}), 202
 

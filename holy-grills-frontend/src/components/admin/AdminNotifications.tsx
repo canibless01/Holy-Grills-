@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { plainBlastHtml } from '@/lib/blastPreview';
+import { useState, useEffect, useRef } from 'react';
 import { Send, Bell, Calendar, Clock, CheckCircle2, AlertCircle, Eye, Mail, TrendingUp } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { timeAgo } from '@/lib/hgUtils';
@@ -45,7 +46,10 @@ const CHANNELS = [
   { id: 'email', label: 'Email' },
 ];
 
+const DEFAULT_AUDIENCE = { has_active_order: 'any', has_cart: 'any', last_order_days: 'any', last_login_days: 'any', hp_balance: 'all', total_orders: 'any', has_pending_hp: 'any', has_referral: 'any', has_reviewed: 'any', has_shared: 'any', has_squad_order: 'any', has_graduated: 'any', event_attendance: 'any', department: '', faculty: '', level: '' };
+
 const STATUS_STYLE = {
+  cancelled: {tone:'cocoa',icon:CheckCircle2,label:msg('FE_BLAST_CANCELLED','Cancelled')},
   sent: { tone: 'green', icon: CheckCircle2, label: msg('FE_BLAST_PROCESSED', 'Processed') },
   scheduled: { tone: 'amber', icon: Clock, label: 'Scheduled' },
   pending: { tone: 'cocoa', icon: AlertCircle, label: 'Pending' },
@@ -57,6 +61,10 @@ const STATUS_STYLE = {
 
 export default function AdminNotifications() {
   const { user } = useHolyGrill();
+  const operationLock=useRef(false);const reviewLock=useRef(false);const syncLock=useRef(false);
+  const previewGeneration=useRef(0);const loadGeneration=useRef(0);const recoveryGeneration=useRef(0);
+  const [historyBusy,setHistoryBusy]=useState<string|null>(null);
+  const [historyOffset,setHistoryOffset]=useState(0);const [historyStatus,setHistoryStatus]=useState('');
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveries, setRecoveries] = useState<RecoverableDelivery[]>([]);
   const [recoveryLoading, setRecoveryLoading] = useState(false);
@@ -69,17 +77,17 @@ export default function AdminNotifications() {
   const [reviewEvidence, setReviewEvidence] = useState('');
   const [reviewSaving, setReviewSaving] = useState(false);
   const loadRecovery = async () => {
-    setRecoveryLoading(true); setRecoveryError('');
-    try { const result = await apiClient.get('/notifications/dispatch/recovery'); setRecoveries(result.deliveries || []); }
-    catch { setRecoveryError('Delivery recovery could not load. Please retry.'); }
-    finally { setRecoveryLoading(false); }
+    const current=++recoveryGeneration.current;setRecoveryLoading(true); setRecoveryError('');
+    try { const result = await apiClient.get('/notifications/dispatch/recovery'); if(current===recoveryGeneration.current)setRecoveries(result.deliveries || []); }
+    catch { if(current===recoveryGeneration.current)setRecoveryError('Delivery recovery could not load. Please retry.'); }
+    finally { if(current===recoveryGeneration.current)setRecoveryLoading(false); }
   };
   const openReview = (row: RecoverableDelivery) => {
     setReview(row); setReviewId(crypto.randomUUID()); setReviewOutcome('sent');
     setReviewProvider(row.provider || 'onesignal'); setReviewMessage(''); setReviewEvidence(''); setRecoveryError('');
   };
   const saveReview = async (event: React.FormEvent) => {
-    event.preventDefault(); if (!review || reviewSaving) return;
+    event.preventDefault(); if (!review || reviewLock.current) return;reviewLock.current=true;
     setReviewSaving(true); setRecoveryError('');
     try {
       await apiClient.post(`/notifications/dispatch/${review.id}/review`, {
@@ -88,7 +96,7 @@ export default function AdminNotifications() {
       });
       setReview(null); await loadRecovery();
     } catch { setRecoveryError('Review could not be saved. Check the provider evidence and refresh if the delivery changed.'); }
-    finally { setReviewSaving(false); }
+    finally { reviewLock.current=false;setReviewSaving(false); }
   };
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -98,7 +106,7 @@ export default function AdminNotifications() {
   const [channels, setChannels] = useState(['push', 'in_app']);
   const [role, setRole] = useState('all');
   const [tier, setTier] = useState('all');
-  const [audience, setAudience] = useState({ has_active_order: 'any', has_cart: 'any', last_order_days: 'any', last_login_days: 'any', hp_balance: 'all', total_orders: 'any', has_pending_hp: 'any', has_referral: 'any', has_reviewed: 'any', has_shared: 'any', has_squad_order: 'any', has_graduated: 'any', event_attendance: 'any', department: '', faculty: '', level: '' });
+  const [audience, setAudience] = useState(DEFAULT_AUDIENCE);
   const [recipientQuery, setRecipientQuery] = useState('');
   const [recipientResults, setRecipientResults] = useState<any[]>([]);
   const [selectedRecipients, setSelectedRecipients] = useState<any[]>([]);
@@ -126,10 +134,10 @@ export default function AdminNotifications() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const intent = useCmsCreateIntent();
+  const testIntent = useCmsCreateIntent();
   const [previewCount, setPreviewCount] = useState(null);
   const [pushImage, setPushImage] = useState(''); // Image for push/in-app notifications
   const [trackingEnabled, setTrackingEnabled] = useState(false); // Enable open/click tracking
-  const [selectedBlastAnalytics, setSelectedBlastAnalytics] = useState(null); // Analytics data for selected blast
   const [analyticsBlastId, setAnalyticsBlastId] = useState<string | null>(null); // Blast ID for analytics modal
   const [analyticsBlastTitle, setAnalyticsBlastTitle] = useState<string>(''); // Blast title for analytics modal
   // Why mail might not land: which providers are configured and how much of
@@ -138,29 +146,33 @@ export default function AdminNotifications() {
   const [showTips, setShowTips] = useState(false);
   const [syncingSubscribers, setSyncingSubscribers] = useState(false);
   const preview = async () => {
-    try { const result = await apiClient.post('/notifications/blasts/preview', buildPayload()); setPreviewCount(result.recipient_count); }
-    catch { toast({ title: msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again."), variant: 'destructive' }); }
+    const current=++previewGeneration.current;
+    try { const result = await apiClient.post('/notifications/blasts/preview', buildPayload()); if(current===previewGeneration.current)setPreviewCount(result.recipient_count); }
+    catch { if(current===previewGeneration.current)toast({ title: msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again."), variant: 'destructive' }); }
   };
   const cancelCampaign = async (id) => {
+    if(operationLock.current)return;operationLock.current=true;setHistoryBusy(id);
     try { await apiClient.post(`/notifications/blasts/${id}/cancel`, {}); await load(); }
     catch (e) { toast({ title: msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again."), description: e.message, variant: 'destructive' }); }
+    finally{operationLock.current=false;setHistoryBusy(null);}
   };
   const retryCampaign = async (id) => {
+    if(operationLock.current)return;operationLock.current=true;setHistoryBusy(id);
     try { await apiClient.post(`/notifications/blasts/${id}/retry`, {}); await load(); }
     catch (e) { toast({ title: msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again."), description: e.message, variant: 'destructive' }); }
+    finally{operationLock.current=false;setHistoryBusy(null);}
   };
-  useEffect(() => { setPreviewCount(null); }, [role, tier, audience, selectedRecipients]);
+  useEffect(() => { previewGeneration.current++;setPreviewCount(null); }, [role, tier, audience, selectedRecipients]);
 
   const load = async () => {
-    setLoading(true);
-    setLoadError(false);
-    try { setBlasts(await mockApi.admin.getNotificationBlasts()); }
-    catch { setLoadError(true); }
-    try { setEmailHealth(await apiClient.get('/admin/email-health')); }
-    catch { setEmailHealth(null); } // advisory only — never blocks the form
-    setLoading(false);
+    const current=++loadGeneration.current;setLoading(true);setLoadError(false);
+    await Promise.all([
+      mockApi.admin.getNotificationBlasts({limit:25,offset:historyOffset,...(historyStatus?{status:historyStatus}:{})}).then(rows=>{if(current===loadGeneration.current)setBlasts(rows);}).catch(()=>{if(current===loadGeneration.current)setLoadError(true);}),
+      apiClient.get('/admin/email-health').then(value=>{if(current===loadGeneration.current)setEmailHealth(value);}).catch(()=>{if(current===loadGeneration.current)setEmailHealth(null);}),
+    ]);
+    if(current===loadGeneration.current)setLoading(false);
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { void load();return()=>{loadGeneration.current++;previewGeneration.current++;recoveryGeneration.current++;}; }, [historyOffset,historyStatus]);
 
   const toggleChannel = (id, checked) => setChannels(checked ? [...channels, id] : channels.filter((x) => x !== id));
   // The editor's image button appends an image block (max 6) and points the admin
@@ -191,7 +203,7 @@ export default function AdminNotifications() {
     payload.segment = segment;
     // Only include send_at when a date/time is set — omitting it means "now".
     if (sendAt) {
-      const d = new Date(sendAt);
+      const d = new Date(`${sendAt.length===16?sendAt+':00':sendAt}+01:00`);
       payload.send_at = d.toISOString();
     }
     // Add rich content fields
@@ -204,14 +216,14 @@ export default function AdminNotifications() {
   };
 
   const doSend = async () => {
-    setSending(true);
+    if(operationLock.current)return;operationLock.current=true;setSending(true);
     try {
       const res = await mockApi.admin.sendNotificationBlast(intent.body(buildPayload()));
       if (res?.already_created && ['pending', 'sending', 'failed'].includes(res?.blast?.status)) {
         toast({ title: msg('FE_BLAST_EXISTS_PENDING', 'This campaign is already saved. Check its history entry to review progress or retry.') });
         setConfirmOpen(false);
         await load();
-        setSending(false);
+        setSending(false);operationLock.current=false;
         return;
       }
       intent.clear();
@@ -223,7 +235,7 @@ export default function AdminNotifications() {
       }
       // Reset form
       setTitle(''); setBody(''); setBodyHtml(''); setImages([]); setCtaBlocks([]); setSendAt(''); setRole('all'); setTier('all'); setActionUrl(''); setPushImage('');
-      setRecipientQuery(''); setSelectedRecipients([]);
+      setRecipientQuery(''); setSelectedRecipients([]);setAudience(DEFAULT_AUDIENCE);setEmailProvider('default');setTrackingEnabled(false);
       setConfirmOpen(false);
       await load();
     } catch (e) {
@@ -231,7 +243,7 @@ export default function AdminNotifications() {
       setConfirmOpen(false);
       await load();
     }
-    setSending(false);
+    operationLock.current=false;setSending(false);
   };
 
   const sendTest = async () => {
@@ -239,18 +251,18 @@ export default function AdminNotifications() {
       toast({ title: 'Cannot send test', description: 'Your email address is not available.', variant: 'destructive' });
       return;
     }
-    setSendingTest(true);
+    if(operationLock.current)return;operationLock.current=true;setSendingTest(true);
     try {
       const res = await apiClient.post('/notifications/blasts/test', {
-        ...intent.body(buildPayload()),
+        ...testIntent.body(buildPayload()),
         test_email: user.email,
       });
-      intent.clear();
+      testIntent.clear();
       // Report what the provider said, not just that the request was accepted: a
       // test that "sent" while OneSignal had no subscription for the address is
       // exactly the failure this page needs to make visible.
       const receipt = res?.email;
-      if (receipt && (receipt.status === 'failed' || receipt.status === 'pending')) {
+      if (channels.includes('email') && !['sent','delivered'].includes(receipt?.status)) {
         toast({
           title: msg('FE_TEST_EMAIL_NOT_DELIVERED', 'Test email was not delivered'),
           description: receipt.error || msg('FE_TEST_EMAIL_NO_RECEIPT', 'The provider did not confirm delivery.'),
@@ -258,7 +270,7 @@ export default function AdminNotifications() {
         });
       } else {
         toast({
-          title: '✅ Test sent',
+          title: msg('FE_BLAST_TEST_PROCESSED','Test request processed'),
           description: receipt?.message_id
             ? `${user.email} · ${msg('FE_TEST_EMAIL_ACCEPTED', 'accepted, id {id}', { id: receipt.message_id })}`
             : `Test notification sent to ${user.email}`,
@@ -267,18 +279,18 @@ export default function AdminNotifications() {
     } catch (e) {
       toast({ title: 'Failed to send test', description: e.message, variant: 'destructive' });
     }
-    setSendingTest(false);
+    operationLock.current=false;setSendingTest(false);
   };
 
   // Existing accounts were never registered as OneSignal email subscribers, which
   // is why a campaign to "everyone" reached almost no inboxes. This backfills them.
   const syncEmailSubscribers = async () => {
-    setSyncingSubscribers(true);
+    if(syncLock.current)return;syncLock.current=true;setSyncingSubscribers(true);
     try {
       await apiClient.post('/admin/email-subscriptions/backfill', { limit: 500 });
       toast({
         title: msg('FE_EMAIL_HEALTH_BACKFILL_STARTED', 'Email subscriber sync started'),
-        description: msg('FE_EMAIL_HEALTH_BACKFILL_HINT', 'Existing accounts are being linked in the background. Re-check OneSignal in a few minutes.'),
+        description: msg('FE_BLAST_SYNC_SCOPE_HINT','Up to 500 accounts in the current campus scope are being checked. Re-check OneSignal for the result.'),
       });
     } catch (e) {
       toast({
@@ -287,81 +299,11 @@ export default function AdminNotifications() {
         variant: 'destructive',
       });
     }
-    setSyncingSubscribers(false);
+    syncLock.current=false;setSyncingSubscribers(false);
   };
 
   const testDeliverability = async () => {
-    // Prompt admin for email addresses to test with
-    const testEmails = prompt(
-      'Enter email addresses to test deliverability (comma-separated):\n\n' +
-      'Examples:\n' +
-      '• your-email@gmail.com (check your own inbox)\n' +
-      '• staff1@gmail.com, staff2@yahoo.com (test multiple providers)\n' +
-      '• test@hotmail.com, test@outlook.com (test Microsoft providers)\n\n' +
-      'The email will be sent to these addresses. You can then check:\n' +
-      '• Did it land in Primary or Spam?\n' +
-      '• Did it arrive quickly?\n' +
-      '• Does it render correctly?'
-    );
-    
-    if (!testEmails) return;
-    
-    // Parse and validate email addresses
-    const emails = testEmails.split(',').map(e => e.trim()).filter(e => e);
-    
-    if (emails.length === 0) {
-      toast({ title: 'No valid emails', description: 'Please enter at least one email address.', variant: 'destructive' });
-      return;
-    }
-    
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const invalidEmails = emails.filter(e => !emailRegex.test(e));
-    
-    if (invalidEmails.length > 0) {
-      toast({ 
-        title: 'Invalid email addresses', 
-        description: `Please check: ${invalidEmails.join(', ')}`, 
-        variant: 'destructive' 
-      });
-      return;
-    }
-    
-    setSendingTest(true);
-    try {
-      // Send test email to each address
-      const results = await Promise.allSettled(
-        emails.map(email => 
-          apiClient.post('/notifications/blasts/test', {
-            ...buildPayload(),
-            test_email: email,
-          })
-        )
-      );
-      
-      const successful = results.filter(r => r.status === 'fulfilled').length;
-      const failed = results.filter(r => r.status === 'rejected').length;
-      
-      if (successful > 0) {
-        toast({
-          title: '✅ Test emails sent',
-          description: `Sent to ${successful} address${successful > 1 ? 'es' : ''}. Check your inboxes to see where they land!${failed > 0 ? ` (${failed} failed)` : ''}`,
-        });
-        
-        // The checklist is shown on the page (not an alert) so the admin can keep
-        // it open while switching over to their inbox.
-        setShowTips(true);
-      } else {
-        toast({ 
-          title: 'Failed to send tests', 
-          description: 'All test emails failed to send.', 
-          variant: 'destructive' 
-        });
-      }
-    } catch (e) {
-      toast({ title: 'Failed to send tests', description: e.message, variant: 'destructive' });
-    }
-    setSendingTest(false);
+    await sendTest();setShowTips(true);
   };
 
   const handleSubmit = () => {
@@ -380,9 +322,9 @@ export default function AdminNotifications() {
         <h3 className="font-bold text-sm text-foreground mb-3 flex items-center gap-2">
           <Bell className="w-4 h-4 text-primary" /> New Campaign
         </h3>
-        <div className="space-y-3">
+        <fieldset disabled={sending||sendingTest||!!historyBusy} className="space-y-3">
           <Field label="Title (required)">
-            <TextInput value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. New menu drop is live 🔥" />
+            <TextInput maxLength={200} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. New menu drop is live 🔥" />
           </Field>
           <Field label="Body (required)">
             <RichTextEditor
@@ -480,11 +422,12 @@ export default function AdminNotifications() {
           </Field>
 
           {/* Schedule — optional. Empty = send now. */}
-          <Field label="Schedule (optional)" hint="Leave empty to send immediately. Pick a date & time to schedule for later.">
+          <Field label={msg('FE_BLAST_SCHEDULE_WAT','Schedule (WAT, optional)')} hint="Leave empty to send immediately. Pick a date & time to schedule for later.">
             <div className="flex items-center gap-2 mt-1">
               <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
               <input
                 type="datetime-local"
+                aria-label={msg('FE_BLAST_SCHEDULE_WAT','Schedule (WAT, optional)')}
                 value={sendAt}
                 onChange={(e) => setSendAt(e.target.value)}
                 className="flex-1 p-2.5 rounded-xl border border-border text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/40"
@@ -560,7 +503,7 @@ export default function AdminNotifications() {
                 </button>
               </div>
               <p className="text-[10px] text-muted-foreground">
-                {msg('FE_EMAIL_HEALTH_NOTE', 'When a provider reaches its daily limit we send on the other one, so the campaign still goes out.')}
+                {msg('FE_EMAIL_HEALTH_NOTE', 'Providers switch at quota limits. Unconfirmed sends need provider review before another attempt.')}
               </p>
             </div>
           )}
@@ -586,7 +529,7 @@ export default function AdminNotifications() {
               onClick={testDeliverability}
               disabled={sendingTest || (!title.trim() && !bodyHtml.trim())}
               className="flex-1 py-3 rounded-full border border-amber-500 text-amber-500 font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-amber-500/10 transition"
-              title="Send test email to specific addresses to check if it lands in Primary or Spam"
+              title={msg('FE_BLAST_OWN_TEST_HINT','Send a test to your signed-in admin account and check its inbox.')}
             >
               <Mail className="w-4 h-4" />
               Test Deliverability
@@ -595,7 +538,7 @@ export default function AdminNotifications() {
 
           <button
             onClick={handleSubmit}
-            disabled={sending || !valid}
+            disabled={sending || sendingTest || !!historyBusy || !valid}
             className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
           >
             <Send className="w-4 h-4" />
@@ -619,7 +562,7 @@ export default function AdminNotifications() {
           )}
           <button onClick={preview} className="text-primary font-bold text-sm">{msg('FE_BLAST_PREVIEW', 'Preview recipients')}</button>
           {previewCount !== null && <p className="text-sm">{msg('FE_BLAST_AUDIENCE_COUNT', '{count} recipients in this audience.', { count: previewCount })}</p>}
-        </div>
+        </fieldset>
       </Card>
 
       <Card>
@@ -660,6 +603,8 @@ export default function AdminNotifications() {
       {/* Recent blasts */}
       <div>
         <h3 className="font-bold text-sm text-foreground mb-2">Recent Campaigns</h3>
+        <Field label={msg('FE_BLAST_HISTORY_STATUS','Campaign status')}><select value={historyStatus} onChange={e=>{setHistoryOffset(0);setHistoryStatus(e.target.value);}} className="w-full rounded-xl border border-border bg-card p-3 text-sm"><option value="">{msg('FE_BLAST_HISTORY_ALL','All statuses')}</option>{Object.entries(STATUS_STYLE).map(([value,info])=><option key={value} value={value}>{info.label}</option>)}</select></Field>
+        <div className="flex justify-between gap-2 py-3"><button disabled={loading||historyOffset===0||!!historyBusy} onClick={()=>setHistoryOffset(v=>Math.max(0,v-25))} className="rounded-full border border-border px-4 py-2 text-xs font-bold disabled:opacity-50">{msg('FE_BLAST_HISTORY_PREVIOUS','Previous campaigns')}</button><button disabled={loading||blasts.length<25||!!historyBusy} onClick={()=>setHistoryOffset(v=>v+25)} className="rounded-full border border-border px-4 py-2 text-xs font-bold disabled:opacity-50">{msg('FE_BLAST_HISTORY_NEXT','Next campaigns')}</button></div>
         {loading ? <LoadingSpinner label="Loading..." /> : loadError ? <div className="space-y-2"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="text-primary font-bold">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div> : blasts.length === 0 ? (
           <p className="text-xs text-muted-foreground text-center py-6">No campaigns sent yet.</p>
         ) : (
@@ -691,15 +636,15 @@ export default function AdminNotifications() {
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">{b.body}</p>
-                  {['pending', 'scheduled'].includes(b.status) && <button onClick={() => cancelCampaign(b.id)} className="text-destructive font-bold text-xs">{msg('FE_BLAST_CANCEL', 'Cancel campaign')}</button>}
-                  {['failed', 'sending'].includes(b.status) && <button onClick={() => retryCampaign(b.id)} className="text-primary font-bold text-xs">{msg('FE_BLAST_RETRY', 'Retry campaign')}</button>}
+                  {['pending', 'scheduled'].includes(b.status) && <button disabled={!!historyBusy || sending || sendingTest} onClick={() => cancelCampaign(b.id)} className="text-destructive font-bold text-xs">{msg('FE_BLAST_CANCEL', 'Cancel campaign')}</button>}
+                  {['failed', 'sending'].includes(b.status) && <button disabled={!!historyBusy || sending || sendingTest} onClick={() => retryCampaign(b.id)} className="text-primary font-bold text-xs">{msg('FE_BLAST_RETRY', 'Retry campaign')}</button>}
                   {b.metadata?.processed_count != null && <p className="text-xs">{msg('FE_BLAST_PROCESSED_RECIPIENTS', 'Campaign processed for {count} recipients.', { count: b.metadata.processed_count })}</p>}
                   {b.metadata?.notification_records != null && <p className="text-xs">{msg('FE_BLAST_STORED_RECORDS', '{count} notification records stored', { count: b.metadata.notification_records })}</p>}
                   {/* Real delivery, not just "processed": counted from
                       notification_deliveries after the send settles. */}
                   {b.metadata?.dispatch?.email && (
                     <p className={`text-xs font-bold ${b.metadata.email_delivery_failed ? 'text-destructive' : 'text-muted-foreground'}`}>
-                      {msg('FE_BLAST_EMAIL_DELIVERY', 'Email delivered to {sent}, failed for {failed}.', {
+                      {msg('FE_BLAST_EMAIL_DELIVERY', 'Email accepted: {sent}; confirmed failures: {failed}.', {
                         sent: b.metadata.dispatch.email.sent ?? 0,
                         failed: b.metadata.dispatch.email.failed ?? 0,
                       })}
@@ -707,7 +652,7 @@ export default function AdminNotifications() {
                   )}
                   {b.metadata?.dispatch?.push && (
                     <p className="text-xs text-muted-foreground">
-                      {msg('FE_BLAST_PUSH_DELIVERY', 'Push delivered to {sent}, failed for {failed}.', {
+                      {msg('FE_BLAST_PUSH_DELIVERY', 'Push accepted: {sent}; confirmed failures: {failed}.', {
                         sent: b.metadata.dispatch.push.sent ?? 0,
                         failed: b.metadata.dispatch.push.failed ?? 0,
                       })}
@@ -734,7 +679,7 @@ export default function AdminNotifications() {
         open={previewOpen}
         onClose={() => setPreviewOpen(false)}
         title={title}
-        bodyHtml={bodyHtml}
+        bodyHtml={bodyHtml||plainBlastHtml(body)}
         images={images}
         ctaBlocks={ctaBlocks}
       />
@@ -755,7 +700,7 @@ export default function AdminNotifications() {
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
             This campaign will go out <strong className="text-foreground">immediately</strong> to
-            {' '}{role === 'all' && tier === 'all' ? 'all users' : 'the selected segment'}.
+            {' '}{selectedRecipients.length?msg('FE_BLAST_CONFIRM_SELECTED','{count} selected accounts',{count:selectedRecipients.length}):msg('FE_BLAST_CONFIRM_AUDIENCE','eligible accounts matching this audience and campus scope')}.
             {channels.includes('push') && ' A push notification will be sent.'}
             {channels.includes('email') && ' An email will be sent.'}
           </p>

@@ -4,7 +4,7 @@ from app.middleware.auth import require_auth, require_role, resolve_scoped_campu
 from app.services.notification_service import send_blast, resolve_segment_user_ids
 from app.db import get_user_client, SupabaseError
 from app.utils.validators import validate_uuid
-from app.utils.campus_scope import assert_can_modify
+from app.utils.campus_scope import assert_can_modify, as_campus_id
 from app.db import get_db
 from app.messages import MSG
 from app.utils.logger import get_logger
@@ -346,6 +346,25 @@ def update_preferences():
         return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
 
 
+def _blast_scope():
+    try:requested=as_campus_id(request.args.get('campus_id'))
+    except ValueError:
+        from flask import abort
+        abort(400,description=MSG.INVALID_CAMPUS_ID)
+    campus=resolve_scoped_campus_id(requested)
+    if getattr(g,'user_role',None)!='super_admin' and not campus:
+        from flask import abort
+        abort(403,description=MSG.ACCOUNT_NO_CAMPUS)
+    return campus
+
+
+def _scoped_blast(db,blast_id):
+    if not validate_uuid(blast_id):return None
+    q=db.table('notification_blasts').select('*').eq('id',blast_id);campus=_blast_scope()
+    if campus:q=q.eq('campus_id',campus)
+    return q.single().execute()
+
+
 @notifications_bp.route("/blasts", methods=["GET"])
 @require_role("admin")
 def list_blasts():
@@ -377,13 +396,14 @@ def list_blasts():
     except (TypeError, ValueError):
         return jsonify({"error": MSG.PAGINATION_INVALID}), 400
     q = db.table("notification_blasts").select("*")
-    campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
+    campus_id = _blast_scope()
     if campus_id:
         q = q.eq("campus_id", campus_id)
     status = request.args.get("status")
     if status:
+        if status not in ("pending","scheduled","sending","sent","failed","cancelled"):return jsonify({"error":MSG.INVALID_INPUT}),400
         q = q.eq("status", status)
-    rows = q.order("created_at", ascending=False).limit(limit).offset(offset).execute() or []
+    rows = q.order("created_at", ascending=False).order("id").limit(limit).offset(offset).execute() or []
     return jsonify({"blasts": rows, "count": len(rows)}), 200
 
 
@@ -405,17 +425,9 @@ def get_blast(blast_id):
       404:
         description: Blast not found
     """
-    db = get_user_client()
-    blast = db.table("notification_blasts").select("*").eq("id", blast_id).limit(1).execute()
-    blast = blast[0] if blast else None
-    if not blast:
-        return jsonify({"error": MSG.NOTIF_BLAST_NOT_FOUND}), 404
-    # A campus admin only sees their own campus's blasts, same scoping list_blasts applies;
-    # a super_admin (resolve_scoped_campus_id returns None with no arg) sees any.
-    campus_id = resolve_scoped_campus_id(None)
-    if campus_id and blast.get("campus_id") and blast["campus_id"] != campus_id:
-        return jsonify({"error": MSG.NOTIF_BLAST_NOT_FOUND}), 404
-    return jsonify(blast), 200
+    blast=_scoped_blast(get_user_client(),blast_id)
+    if not blast:return jsonify({'error':MSG.NOTIF_BLAST_NOT_FOUND}),404
+    return jsonify(blast),200
 
 
 @notifications_bp.route("/blasts/<blast_id>/retry", methods=["POST"])
@@ -424,7 +436,7 @@ def retry_blast(blast_id):
     if not validate_uuid(blast_id):
         return jsonify({"error": MSG.NOTIF_BLAST_NOT_FOUND}), 404
     db = get_user_client()
-    blast = db.table("notification_blasts").select("*").eq("id", blast_id).single().execute()
+    blast = _scoped_blast(db,blast_id)
     if not blast:
         return jsonify({"error": MSG.NOTIF_BLAST_NOT_FOUND}), 404
     assert_can_modify(blast.get("campus_id"))
@@ -477,7 +489,7 @@ def create_blast():
     required = ["title", "body", "channels"]
     for f in required:
         if not data.get(f):
-            return jsonify({"error": f"'{f}' is required"}), 400
+            return jsonify({"error": MSG.FIELD_REQUIRED.format(field=f)}), 400
 
     if (not isinstance(data["title"], str) or not data["title"].strip() or len(data["title"]) > 200
             or not isinstance(data["body"], str) or not data["body"].strip() or len(data["body"]) > 10000
@@ -511,7 +523,7 @@ def create_blast():
     email_provider = data.get("email_provider")
     if email_provider not in (None, "resend", "onesignal"):
         return jsonify({"error": MSG.INVALID_INPUT}), 400
-    if scheduled_at:
+    if scheduled_at not in (None, ""):
         try:
             scheduled_at = as_instant(scheduled_at)
             if datetime.fromisoformat(scheduled_at) <= datetime.now(timezone.utc):
@@ -563,7 +575,7 @@ def create_blast():
 @require_role("admin")
 def cancel_blast(blast_id):
     db = get_user_client()
-    row = db.table("notification_blasts").select("*").eq("id", blast_id).single().execute()
+    row = _scoped_blast(db,blast_id)
     if not row:
         return jsonify({"error": MSG.NOTIF_BLAST_NOT_FOUND}), 404
     assert_can_modify(row.get("campus_id"))
@@ -659,7 +671,10 @@ def send_test_blast():
       200:
         description: Test notification sent
     """
-    data = request.get_json(force=True, silent=True)
+    return _dispatch_test_blast(request.get_json(force=True,silent=True))
+
+
+def _dispatch_test_blast(data):
     if not isinstance(data, dict):
         return jsonify({"error": MSG.INVALID_INPUT}), 400
     
@@ -711,7 +726,7 @@ def send_test_blast():
         # Email leaves on its own thread, so wait briefly for the delivery record and
         # report what the provider actually said. "Sent" without this is how a test
         # could look successful while nothing was ever delivered.
-        email_receipt = _await_email_delivery(blast['id'])
+        email_receipt = _await_email_delivery(blast['id']) if 'email' in channels else None
         return jsonify({'blast_id':blast['id'],'sent_to':result['sent_to'],'channels':channels,
                         'test_user_id':g.user_id,'email':email_receipt}),200
     except Exception:
@@ -890,18 +905,20 @@ def get_blast_analytics(blast_id):
         description: Blast not found
     """
     try:
-        db = get_db()
-        blast = db.table("notification_blasts").select("*").eq("id", blast_id).single().execute()
+        db = get_user_client()
+        blast = _scoped_blast(db,blast_id)
         
         if not blast:
-            return jsonify({"error": "Blast not found"}), 404
+            return jsonify({"error": MSG.NOTIF_BLAST_NOT_FOUND}), 404
         
-        metadata = blast.get("metadata") or {}
+        metadata = blast.get("metadata") if isinstance(blast.get("metadata"),dict) else {}
         
         # Calculate analytics
-        recipient_count = blast.get("recipient_count", 0)
-        open_count = metadata.get("open_count", 0)
-        click_count = metadata.get("click_count", 0)
+        def count(value):
+            return max(0,value) if isinstance(value,int) and not isinstance(value,bool) else 0
+        recipient_count=count(blast.get('recipient_count'))
+        open_count=count(metadata.get('open_count'))
+        click_count=count(metadata.get('click_count'))
         
         open_rate = (open_count / recipient_count * 100) if recipient_count > 0 else 0
         click_rate = (click_count / recipient_count * 100) if recipient_count > 0 else 0
@@ -924,78 +941,16 @@ def get_blast_analytics(blast_id):
         return jsonify(analytics), 200
         
     except Exception as e:
+        from werkzeug.exceptions import HTTPException
+        if isinstance(e,HTTPException):raise
         logger.exception(f"Failed to get analytics for blast {blast_id}")
-        return jsonify({"error": f"Failed to get analytics: {str(e)}"}), 500
+        return jsonify({"error": MSG.SERVICE_UNAVAILABLE}), 503
 
 
 @notifications_bp.route("/blasts/test-deliverability", methods=["POST"])
 @require_role("admin")
 def test_email_deliverability():
-    """
-    Test email deliverability by sending a test email to a spam testing service.
-    Returns recommendations for improving deliverability.
-    ---
-    tags: [Notifications]
-    parameters:
-      - in: body
-        name: body
-        required: true
-        schema:
-          properties:
-            test_email: {type: string, description: "Email address to send test to (e.g., mail-tester address)"}
-            title: {type: string}
-            body: {type: string}
-    responses:
-      200:
-        description: Test email sent
-      400:
-        description: Invalid input
-    """
-    data = request.get_json(force=True, silent=True)
-    if not isinstance(data, dict):
-        return jsonify({"error": MSG.INVALID_INPUT}), 400
-    
-    test_email = data.get("test_email")
-    title = data.get("title", "Test Email")
-    body = data.get("body", "This is a test email for deliverability checking.")
-    
-    if not test_email:
-        return jsonify({"error": "test_email is required"}), 400
-    
-    try:
-        from app.utils.email import send_email_raw, _build_html
-        
-        # Build a test email with typical content
-        html_body = _build_html(
-            "Test User",
-            body,
-            os.environ.get("APP_TAGLINE", APP_TAGLINE_DEFAULT),
-        )
-        
-        # Send the test email
-        send_email_raw(
-            to_email=test_email,
-            to_name="Test User",
-            subject=f"[DELIVERABILITY TEST] {title}",
-            html_body=html_body,
-        )
-        
-        return jsonify({
-            "success": True,
-            "message": f"Test email sent to {test_email}. Check the spam testing service for results.",
-            "recommendations": [
-                "Ensure SPF, DKIM, and DMARC records are properly configured",
-                "Avoid using spam trigger words in subject lines",
-                "Include a clear unsubscribe link for marketing emails",
-                "Use a consistent sender name and email address",
-                "Monitor your sender reputation regularly",
-                "Keep your email list clean and engaged",
-                "Test emails before sending to large lists",
-                "Use double opt-in for new subscribers",
-            ]
-        }), 200
-        
-    except Exception as e:
-        logger.exception("Failed to send deliverability test email")
-        return jsonify({"error": f"Failed to send test: {str(e)}"}), 503
-
+    """Legacy route uses the same own-account, durable test delivery contract."""
+    data=request.get_json(force=True,silent=True)
+    if not isinstance(data,dict):return jsonify({'error':MSG.INVALID_INPUT}),400
+    return _dispatch_test_blast({**data,'title':data.get('title',MSG.BLAST_TEST_SUBJECT),'body':data.get('body',MSG.BLAST_TEST_BODY),'channels':['email']})

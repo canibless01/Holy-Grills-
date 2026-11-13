@@ -1,6 +1,8 @@
 import { X, Eye, MousePointer, TrendingUp, Clock, Link } from 'lucide-react';
 import { apiClient } from '@/lib/apiClient';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import ModalPortal from '@/components/ModalPortal';
+import { msg } from '@/lib/messages';
 import LoadingSpinner from '@/components/LoadingSpinner';
 
 interface BlastAnalyticsModalProps {
@@ -29,28 +31,30 @@ export default function BlastAnalyticsModal({ open, onClose, blastId, blastTitle
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const generation=useRef(0);
   useEffect(() => {
     if (open && blastId) {
-      loadAnalytics();
+      void loadAnalytics();
     }
+    return()=>{generation.current++;};
   }, [open, blastId]);
 
   const loadAnalytics = async () => {
-    setLoading(true);
+    const current=++generation.current;setLoading(true);setAnalytics(null);
     setError(null);
     try {
       const data = await apiClient.get(`/notifications/blasts/${blastId}/analytics`);
-      setAnalytics(data);
+      if(current===generation.current)setAnalytics(data);
     } catch (e) {
-      setError(e.message || 'Failed to load analytics');
+      if(current===generation.current)setError(e.message || 'Failed to load analytics');
     }
-    setLoading(false);
+    if(current===generation.current)setLoading(false);
   };
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+    <ModalPortal><div role="dialog" aria-modal="true" aria-label={msg('FE_BLAST_ANALYTICS_TITLE','Email Analytics')} className="fixed inset-0 z-[60] flex items-center justify-center p-4 hg-scrim" onKeyDown={e=>{if(e.key==='Escape')onClose();}}>
       <div className="relative w-full max-w-4xl max-h-[90vh] overflow-hidden bg-card rounded-2xl border border-border shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
@@ -59,7 +63,7 @@ export default function BlastAnalyticsModal({ open, onClose, blastId, blastTitle
             <p className="text-sm text-muted-foreground">{blastTitle}</p>
           </div>
           <button
-            onClick={onClose}
+            aria-label={msg('FE_BLAST_ANALYTICS_CLOSE','Close campaign analytics')} onClick={onClose}
             className="p-2 rounded-lg hover:bg-secondary transition"
           >
             <X className="w-5 h-5" />
@@ -89,7 +93,7 @@ export default function BlastAnalyticsModal({ open, onClose, blastId, blastTitle
                 <div className="p-4 rounded-xl bg-secondary border border-border">
                   <div className="flex items-center gap-2 mb-2">
                     <TrendingUp className="w-5 h-5 text-primary" />
-                    <span className="text-sm font-medium text-foreground">Sent</span>
+                    <span className="text-sm font-medium text-foreground">{msg('FE_BLAST_ANALYTICS_AUDIENCE','Audience')}</span>
                   </div>
                   <div className="text-2xl font-bold text-foreground">{analytics.recipient_count}</div>
                   <div className="text-xs text-muted-foreground">recipients</div>
@@ -102,7 +106,7 @@ export default function BlastAnalyticsModal({ open, onClose, blastId, blastTitle
                   </div>
                   <div className="text-2xl font-bold text-foreground">{analytics.open_count}</div>
                   <div className="text-xs text-muted-foreground">
-                    {analytics.open_rate}% open rate
+                    {analytics.open_rate} {msg('FE_BLAST_OPEN_ACTIVITY_RATE','opens per 100 audience accounts')}
                   </div>
                 </div>
 
@@ -113,7 +117,7 @@ export default function BlastAnalyticsModal({ open, onClose, blastId, blastTitle
                   </div>
                   <div className="text-2xl font-bold text-foreground">{analytics.click_count}</div>
                   <div className="text-xs text-muted-foreground">
-                    {analytics.click_rate}% click rate
+                    {analytics.click_rate} {msg('FE_BLAST_CLICK_ACTIVITY_RATE','clicks per 100 audience accounts')}
                   </div>
                 </div>
               </div>
@@ -123,21 +127,21 @@ export default function BlastAnalyticsModal({ open, onClose, blastId, blastTitle
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-sm font-medium text-foreground">Click-to-Open Rate</div>
-                    <div className="text-xs text-muted-foreground">Percentage of opens that resulted in clicks</div>
+                    <div className="text-xs text-muted-foreground">{msg('FE_BLAST_CLICK_OPEN_ACTIVITY_RATE','Click events for every 100 open events. Counts can include repeated activity.')}</div>
                   </div>
                   <div className="text-3xl font-bold text-primary">{analytics.click_to_open_rate}%</div>
                 </div>
               </div>
 
               {/* Link Clicks Breakdown */}
-              {Object.keys(analytics.link_clicks).length > 0 && (
+              {Object.keys(analytics.link_clicks||{}).length > 0 && (
                 <div>
                   <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2">
                     <Link className="w-4 h-4" />
                     Link Performance
                   </h3>
                   <div className="space-y-2">
-                    {Object.values(analytics.link_clicks).map((link, idx) => (
+                    {Object.values(analytics.link_clicks||{}).map((link, idx) => (
                       <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-secondary border border-border">
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium text-foreground truncate">
@@ -165,7 +169,7 @@ export default function BlastAnalyticsModal({ open, onClose, blastId, blastTitle
                     <Eye className="w-4 h-4" />
                     Recent Opens
                   </h3>
-                  {analytics.recent_opens.length > 0 ? (
+                  {(analytics.recent_opens||[]).length > 0 ? (
                     <div className="space-y-2 max-h-64 overflow-y-auto">
                       {analytics.recent_opens.map((open, idx) => (
                         <div key={idx} className="p-2 rounded-lg bg-secondary border border-border text-xs">
@@ -174,7 +178,7 @@ export default function BlastAnalyticsModal({ open, onClose, blastId, blastTitle
                             {new Date(open.timestamp).toLocaleString()}
                           </div>
                           <div className="text-foreground mt-1 truncate">
-                            {open.user_agent.substring(0, 50)}...
+                            {String(open.user_agent||'').substring(0, 50)}...
                           </div>
                         </div>
                       ))}
@@ -192,7 +196,7 @@ export default function BlastAnalyticsModal({ open, onClose, blastId, blastTitle
                     <MousePointer className="w-4 h-4" />
                     Recent Clicks
                   </h3>
-                  {analytics.recent_clicks.length > 0 ? (
+                  {(analytics.recent_clicks||[]).length > 0 ? (
                     <div className="space-y-2 max-h-64 overflow-y-auto">
                       {analytics.recent_clicks.map((click, idx) => (
                         <div key={idx} className="p-2 rounded-lg bg-secondary border border-border text-xs">
@@ -204,7 +208,7 @@ export default function BlastAnalyticsModal({ open, onClose, blastId, blastTitle
                             {click.label || 'Link'}
                           </div>
                           <div className="text-muted-foreground truncate">
-                            {click.url.substring(0, 40)}...
+                            {String(click.url||'').substring(0, 40)}...
                           </div>
                         </div>
                       ))}
@@ -227,6 +231,6 @@ export default function BlastAnalyticsModal({ open, onClose, blastId, blastTitle
           ) : null}
         </div>
       </div>
-    </div>
+    </div></ModalPortal>
   );
 }

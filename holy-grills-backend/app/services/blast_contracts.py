@@ -96,6 +96,9 @@ def rich_fields(data):
                 saved['id']=row['id']
             cleaned.append(saved)
         if field in data:result[field]=cleaned
+    if 'tracking_enabled' in data:
+        if not isinstance(data['tracking_enabled'],bool):raise ValueError('tracking')
+        result['tracking_enabled']=data['tracking_enabled']
     if 'push_image' in data:
         image=data['push_image']
         if not isinstance(image,str) or (image and not is_cms_image_url(image)):raise ValueError('push image')

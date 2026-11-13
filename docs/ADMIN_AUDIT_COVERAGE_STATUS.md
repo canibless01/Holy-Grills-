@@ -83,3 +83,7 @@ Targeted Economics campus/date/error/retry and Analytics date/CSV controls are n
 ### Current continuation — 13 November 2026
 
 The historical tables above are not a current backlog: later closure records in `GENERAL_SITE_AUDIT_PROGRESS_2026_11_04.md` supersede earlier open stock/event/settings/reward entries. The page-by-page continuation is now active. Storefront → Newsletter controls have [new native/API/live transaction/concurrency evidence](ADMIN_NEWSLETTER_PAGE_2026_11_13.md): fields, preview, queue/replay, list/detail/paging, cancel/replay, subscriber removal and role/campus guards. Its worker send-boundary/interruption/counter cases are now closed in `ADMIN_NEWSLETTER_WORKER_2026_11_13.md`. Next are Campaigns & Blasts and remaining ambassador/CMS exception cases. No whole-admin sign-off is claimed from page inventory alone.
+
+### Campaigns & Blasts — 13 November 2026
+
+[Recorded page evidence](ADMIN_CAMPAIGNS_PAGE_2026_11_13.md) closes the native composer/history/analytics/test/sync/recovery batch. Fixed cross-campus analytics and subscriber-sync access, dropped tracking settings, WAT scheduling, stale reads and duplicate submissions; verified role/RLS/provider-review boundaries. Full backend 1,771, native mobile/desktop, typecheck/lint/build and live rollback matrices pass. Ambassador roster/milestone, distribution and review exceptions are next; existing completed pages are not reopened merely because older inventory rows predate their evidence.

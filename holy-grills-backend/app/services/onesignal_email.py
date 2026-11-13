@@ -255,7 +255,7 @@ def _preferences_by_user(user_ids):
     return {row.get("user_id"): row for row in rows if isinstance(row, dict) and row.get("user_id")}
 
 
-def backfill_email_subscriptions(limit=500, offset=0):
+def backfill_email_subscriptions(limit=500, offset=0, campus_id=None):
     """Register the email subscription for accounts that predate this sync.
 
     New sign-ups and logins are covered already; this is for the accounts that never
@@ -269,8 +269,9 @@ def backfill_email_subscriptions(limit=500, offset=0):
     summary = {"checked": 0, "linked": 0, "failed": 0, "skipped": 0}
     try:
         from app.db import get_db
-        rows = (get_db().table("profiles")
-                .select("id,email,is_active,email_notifications")
+        query = get_db().table("profiles").select("id,email,is_active,email_notifications")
+        if campus_id:query=query.eq("campus_id",campus_id)
+        rows = (query
                 .order("created_at")
                 .limit(max(1, int(limit)))
                 .offset(max(0, int(offset)))
