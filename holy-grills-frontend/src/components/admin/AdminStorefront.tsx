@@ -179,6 +179,11 @@ const blankSection = (type: string): SectionDraft => ({ section_type: type, draf
 export default function AdminStorefront() {
   const sectionIntent = useCmsCreateIntent();
   const supporterIntent = useCmsCreateIntent();
+  const campaignIntent = useCmsCreateIntent();
+  const campaignLock = useRef(false);
+  const unsubscribeLock = useRef(false);
+  const [subscriberOffset,setSubscriberOffset]=useState(0);
+  const [campaignOffset,setCampaignOffset]=useState(0);
   const [tab, setTab] = useState('hero');
   const [sections, setSections] = useState([]);
   const [supporters, setSupporters] = useState([]);
@@ -186,6 +191,7 @@ export default function AdminStorefront() {
   // Newsletter campaigns (storefront.py) — the send side of the newsletter tab.
   const { campuses, campusId, adminCampusId } = useCampus();
   const loadGeneration = useRef(0);
+  const newsletterGeneration = useRef(0);
   const isSuperAdmin = useIsSuperAdmin();
   const writeScope = useAdminWriteScope();
   const [campaigns, setCampaigns] = useState([]);
@@ -206,17 +212,19 @@ export default function AdminStorefront() {
   const [newsletterLoaded, setNewsletterLoaded] = useState(false);
   const [newsletterError, setNewsletterError] = useState(false);
 
-  const load = async () => {
-    const current = ++loadGeneration.current;
-    setNewsletterLoaded(false); setNewsletterError(false);
-    // Newsletter reports are independent of the public-content editor. An
-    // unavailable report must not hide the CMS or create an editable empty list.
-    void Promise.all([mockApi.admin.getNewsletterSubscribers(), mockApi.storefront.getNewsletterCampaigns()])
-      .then(([n, c]) => {
-        if (current !== loadGeneration.current) return;
-        setSubscribers(Array.isArray(n) ? n : []); setCampaigns(Array.isArray(c) ? c : []);
-      }).catch(() => { if (current === loadGeneration.current) setNewsletterError(true); })
-      .finally(() => { if (current === loadGeneration.current) setNewsletterLoaded(true); });
+  const loadNewsletter = async () => {
+    const current=++newsletterGeneration.current;
+    setNewsletterLoaded(false);setNewsletterError(false);
+    try {
+      const [n,c]=await Promise.all([mockApi.admin.getNewsletterSubscribers({limit:25,offset:subscriberOffset}),mockApi.storefront.getNewsletterCampaigns({limit:25,offset:campaignOffset})]);
+      if(current!==newsletterGeneration.current)return;
+      setSubscribers(Array.isArray(n)?n:[]);setCampaigns(Array.isArray(c)?c:[]);
+    }catch{if(current===newsletterGeneration.current)setNewsletterError(true);}
+    finally{if(current===newsletterGeneration.current)setNewsletterLoaded(true);}
+  };
+  const load = async (refreshNewsletter = true) => {
+    const current=++loadGeneration.current;
+    if(refreshNewsletter)void loadNewsletter();
     try {
       const [b, s] = await Promise.all([mockApi.admin.getStorefrontSections(), mockApi.admin.getEarlySupporters()]);
       if (current !== loadGeneration.current) return;
@@ -226,7 +234,8 @@ export default function AdminStorefront() {
     } catch { if (current !== loadGeneration.current) return; setLoadError(true); }
     setLoaded(true);
   };
-  useEffect(() => { setLoaded(false); load(); return () => { loadGeneration.current++; }; }, [campusId, adminCampusId]);
+  useEffect(() => { setLoaded(false); load(false); return () => { loadGeneration.current++; }; }, [campusId, adminCampusId]);
+  useEffect(() => { void loadNewsletter(); return () => { newsletterGeneration.current++; }; }, [campusId, adminCampusId, subscriberOffset, campaignOffset]);
 
   const activeTab = ALL_TABS.find((t) => t.id === tab);
   const isSectionType = SECTION_TAB_IDS.includes(tab);
@@ -341,7 +350,13 @@ export default function AdminStorefront() {
     setBusy(null);
   };
   const removeSupporter = async (id) => { if (!(await confirmAction({ title: "Remove this early supporter?", destructive: true, confirmLabel: "Remove" }))) return; await mockApi.admin.removeEarlySupporter(id); await load(); };
-  const unsubscribe = async (email) => { setBusy(email); await mockApi.admin.unsubscribeNewsletter({ email }); await load(); setBusy(null); };
+  const unsubscribe = async (email) => {
+    if(unsubscribeLock.current)return;
+    unsubscribeLock.current=true;setBusy(email);
+    try{await mockApi.admin.unsubscribeNewsletter({email});await load();}
+    catch(e){toast({title:msg('FE_NEWSLETTER_UNSUB_FAILED','Could not unsubscribe this address'),description:e.message,variant:'destructive'});}
+    finally{unsubscribeLock.current=false;setBusy(null);}
+  };
 
   const campaignBody = (form) => {
     const body: Record<string, unknown> = { subject: form.subject.trim(), body: form.body.trim() };
@@ -352,51 +367,53 @@ export default function AdminStorefront() {
 
   const sendCampaignTest = async (form) => {
     if (!form.subject.trim() || !form.body.trim()) { toast({ title: msg('FE_ADMIN_STOREFRONT_SUBJECT_AND_MESSAGE_ARE_REQUIRED', 'Subject and message are required'), variant: 'destructive' }); return; }
-    setCampaignBusy('test');
+    if(campaignLock.current)return;campaignLock.current=true;setCampaignBusy('test');
     try {
       const res = await mockApi.storefront.sendNewsletterTest({ subject: form.subject.trim(), body: form.body.trim() });
-      toast({ title: msg('FE_ADMIN_STOREFRONT_TEST_SENT', '✅ Test sent'), description: res?.sent_to ? `Preview delivered to ${res.sent_to}.` : 'Preview delivered to your inbox.' });
+      toast({ title: msg('FE_ADMIN_STOREFRONT_TEST_SENT', '✅ Test sent'), description: msg('FE_NEWSLETTER_TEST_ACCEPTED','Preview accepted for delivery to {email}.',{email:res?.sent_to||'—'}) });
     } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_TEST_FAILED', 'Test failed'), description: e.message, variant: 'destructive' }); }
-    setCampaignBusy(null);
+    campaignLock.current=false;setCampaignBusy(null);
   };
 
   const createCampaign = async (form) => {
     if (!form.subject.trim() || !form.body.trim()) { toast({ title: msg('FE_ADMIN_STOREFRONT_SUBJECT_AND_MESSAGE_ARE_REQUIRED', 'Subject and message are required'), variant: 'destructive' }); return; }
     if (isSuperAdmin && !form.allCampuses && !form.campusId) { toast({ title: msg('FE_ADMIN_STOREFRONT_PICK_A_CAMPUS_OR_SEND_TO_ALL_CAMPUSES', 'Pick a campus or send to all campuses'), variant: 'destructive' }); return; }
-    setCampaignBusy('create');
+    if(campaignLock.current)return;campaignLock.current=true;setCampaignBusy('create');
     try {
-      await mockApi.storefront.createNewsletterCampaign(campaignBody(form));
-      toast({ title: msg('FE_ADMIN_STOREFRONT_CAMPAIGN_QUEUED', '✅ Campaign queued'), description: form.allCampuses ? 'Sending to every campus.' : 'Subscribers will receive it shortly.' });
+      await mockApi.storefront.createNewsletterCampaign(campaignIntent.body(campaignBody(form)));
+      campaignIntent.clear();
+      toast({title:msg('FE_NEWSLETTER_REQUEST_SAVED','Campaign request saved'),description:msg('FE_NEWSLETTER_REQUEST_HELP','Open the campaign to check its current delivery status.')});
       setCampaignForm(null);
       await load();
     } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_COULD_NOT_QUEUE_CAMPAIGN', 'Could not queue campaign'), description: e.message, variant: 'destructive' }); }
-    setCampaignBusy(null);
+    campaignLock.current=false;setCampaignBusy(null);
   };
 
   const cancelCampaign = async (c) => {
+    if(campaignLock.current)return;
     if (!(await confirmAction({ title: "Stop this campaign?", body: "Emails already delivered stay delivered.", destructive: true, confirmLabel: "Stop" }))) return;
-    setCampaignBusy(c.id);
+    if(campaignLock.current)return;campaignLock.current=true;setCampaignBusy(c.id);
     try {
       await mockApi.storefront.cancelNewsletterCampaign(c.id);
       toast({ title: msg('FE_ADMIN_STOREFRONT_CAMPAIGN_CANCELLED', 'Campaign cancelled') });
       await load();
     } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_COULD_NOT_CANCEL', 'Could not cancel'), description: e.message, variant: 'destructive' }); }
-    setCampaignBusy(null);
+    campaignLock.current=false;setCampaignBusy(null);
   };
 
   const openCampaign = async (c) => {
-    setCampaignBusy(c.id);
+    if(campaignLock.current)return;campaignLock.current=true;setCampaignBusy(c.id);
     try { setCampaignView(await mockApi.storefront.getNewsletterCampaign(c.id)); }
     catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_COULD_NOT_LOAD_CAMPAIGN', 'Could not load campaign'), description: e.message, variant: 'destructive' }); }
-    setCampaignBusy(null);
+    campaignLock.current=false;setCampaignBusy(null);
   };
 
-  const CAMPAIGN_TONES = { queued: 'blue', sending: 'amber', sent: 'green', cancelled: 'cocoa', failed: 'red' };
+  const CAMPAIGN_TONES = { partial: 'amber', queued: 'blue', sending: 'amber', sent: 'green', cancelled: 'cocoa', failed: 'red' };
 
   if (!loaded) return <StaffPanelSkeleton />;
   if (loadError) return <Card>
     <p role="alert" className="text-sm text-destructive">{msg('FE_ADMIN_STOREFRONT_LOAD_ERROR', 'Storefront content could not be loaded. Retry before making changes.')}</p>
-    <button onClick={load} className="mt-3 px-4 py-2 rounded-full bg-primary text-white text-xs font-bold">{msg('FE_ADMIN_STOREFRONT_RETRY', 'Retry')}</button>
+    <button onClick={()=>void load()} className="mt-3 px-4 py-2 rounded-full bg-primary text-white text-xs font-bold">{msg('FE_ADMIN_STOREFRONT_RETRY', 'Retry')}</button>
   </Card>;
 
   return (
@@ -534,7 +551,7 @@ export default function AdminStorefront() {
       {tab === 'hours' && <AdminOperatingHours />}
 
       {tab === 'newsletter' && !newsletterLoaded && <StaffPanelSkeleton />}
-      {tab === 'newsletter' && newsletterLoaded && newsletterError && <Card><p role="alert" className="text-sm text-destructive">Newsletter reports could not be loaded. Retry before making changes.</p><button onClick={load} className="mt-3 font-bold text-primary">Retry</button></Card>}
+      {tab === 'newsletter' && newsletterLoaded && newsletterError && <Card><p role="alert" className="text-sm text-destructive">Newsletter reports could not be loaded. Retry before making changes.</p><button onClick={()=>void load()} className="mt-3 font-bold text-primary">Retry</button></Card>}
       {tab === 'newsletter' && newsletterLoaded && !newsletterError && (
         <div className="space-y-2">
           {/* Campaigns — plain-text sends (storefront.py newsletter_campaigns_*). */}
@@ -544,10 +561,10 @@ export default function AdminStorefront() {
                 <div className="font-bold text-sm text-foreground">Campaigns</div>
                 <div className="text-[11px] text-muted-foreground">Plain-text emails to newsletter subscribers. Test sends go to your own inbox; queued sends can be cancelled.</div>
               </div>
-              <button onClick={() => setCampaignForm({ subject: '', body: '', campusId: '', allCampuses: false })} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-primary text-white text-xs font-bold shrink-0"><Plus className="w-3.5 h-3.5" /> New</button>
+              <button disabled={!!campaignBusy} onClick={() => setCampaignForm({ subject: '', body: '', campusId: adminCampusId || '', allCampuses: false })} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-primary text-white text-xs font-bold shrink-0"><Plus className="w-3.5 h-3.5" /> New</button>
             </div>
             {campaigns.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-3">No campaigns yet.</p>
+              <p className="text-xs text-muted-foreground text-center py-3">{msg('FE_NEWSLETTER_EMPTY_CAMPAIGNS','No campaigns on this page.')}</p>
             ) : (
               <div className="space-y-2">
                 {campaigns.map((c) => (
@@ -557,29 +574,31 @@ export default function AdminStorefront() {
                       <div className="text-[11px] text-muted-foreground">{[c.sent_count, c.total_recipients].every((v) => v !== null && v !== undefined) ? `${c.sent_count}/${c.total_recipients} sent` : '—'}{c.created_at ? ` · ${formatDate(c.created_at)}` : ''}{c.last_error ? ` · ${c.last_error}` : ''}</div>
                     </div>
                     <Pill tone={CAMPAIGN_TONES[c.status] || 'cocoa'}>{c.status}</Pill>
-                    <button onClick={() => openCampaign(c)} disabled={campaignBusy === c.id} className="p-2 rounded-lg hover:bg-muted disabled:opacity-50" title="View"><Eye className="w-4 h-4 text-muted-foreground" /></button>
+                    <button onClick={() => openCampaign(c)} disabled={!!campaignBusy} className="p-2 rounded-lg hover:bg-muted disabled:opacity-50" title="View"><Eye className="w-4 h-4 text-muted-foreground" /></button>
                     {(c.status === 'queued' || c.status === 'sending') && (
-                      <button onClick={() => cancelCampaign(c)} disabled={campaignBusy === c.id} className="p-2 rounded-lg hover:tone-error disabled:opacity-50" title="Cancel"><XCircle className="w-4 h-4 text-destructive" /></button>
+                      <button onClick={() => cancelCampaign(c)} disabled={!!campaignBusy} className="p-2 rounded-lg hover:tone-error disabled:opacity-50" title="Cancel"><XCircle className="w-4 h-4 text-destructive" /></button>
                     )}
                   </div>
                 ))}
               </div>
             )}
           </Card>
-          <div className="rounded-xl bg-muted border border-border p-3 text-xs text-muted-foreground flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> {subscribers.length} subscribers.</div>
-          {subscribers.length === 0 ? <Card><p className="text-xs text-muted-foreground text-center py-6">No newsletter subscribers yet.</p></Card> : subscribers.map((s) => (
+          <div className="flex flex-wrap items-center justify-between gap-2 py-2"><button type="button" disabled={campaignOffset===0||!!campaignBusy} onClick={()=>setCampaignOffset(v=>Math.max(0,v-25))} className="rounded-full border border-border px-3 py-2 text-xs font-bold disabled:opacity-50">{msg('FE_NEWSLETTER_PREVIOUS_CAMPAIGNS','Previous campaigns')}</button><button type="button" disabled={campaigns.length<25||!!campaignBusy} onClick={()=>setCampaignOffset(v=>v+25)} className="rounded-full border border-border px-3 py-2 text-xs font-bold disabled:opacity-50">{msg('FE_NEWSLETTER_NEXT_CAMPAIGNS','Next campaigns')}</button></div>
+          <div className="rounded-xl bg-muted border border-border p-3 text-xs text-muted-foreground flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> {msg('FE_NEWSLETTER_SUBSCRIBER_RANGE','Showing subscribers {start}–{end}',{start:subscribers.length?subscriberOffset+1:0,end:subscribers.length?subscriberOffset+subscribers.length:0})}</div>
+          {subscribers.length === 0 ? <Card><p className="text-xs text-muted-foreground text-center py-6">{msg('FE_NEWSLETTER_EMPTY_SUBSCRIBERS','No subscribers on this page.')}</p></Card> : subscribers.map((s) => (
             <Card key={s.id} className="flex items-center gap-3 !p-3">
               <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center"><Mail className="w-4 h-4" /></div>
-              <div className="flex-1 min-w-0"><div className="font-bold text-sm text-foreground truncate">{s.email}</div><div className="text-[11px] text-muted-foreground">{s.full_name || '—'} · via {s.source || '—'} · {formatDate(s.subscribed_at)}</div></div>
-              <button onClick={() => unsubscribe(s.email)} disabled={busy === s.email} className="px-3 py-1.5 rounded-full tone-error border border-destructive/30 text-xs font-bold disabled:opacity-50">Unsubscribe</button>
+              <div className="flex-1 min-w-0"><div className="font-bold text-sm text-foreground truncate">{s.email}</div><div className="text-[11px] text-muted-foreground">{s.full_name || '—'} · via {s.source || '—'} · {formatDate(s.created_at)}</div></div>
+              <button onClick={() => unsubscribe(s.email)} disabled={!!busy} className="px-3 py-1.5 rounded-full tone-error border border-destructive/30 text-xs font-bold disabled:opacity-50">Unsubscribe</button>
             </Card>
           ))}
+          <div className="flex flex-wrap items-center justify-between gap-2 py-2"><button type="button" disabled={subscriberOffset===0||!!busy} onClick={()=>setSubscriberOffset(v=>Math.max(0,v-25))} className="rounded-full border border-border px-3 py-2 text-xs font-bold disabled:opacity-50">{msg('FE_NEWSLETTER_PREVIOUS_SUBSCRIBERS','Previous subscribers')}</button><button type="button" disabled={subscribers.length<25||!!busy} onClick={()=>setSubscriberOffset(v=>v+25)} className="rounded-full border border-border px-3 py-2 text-xs font-bold disabled:opacity-50">{msg('FE_NEWSLETTER_NEXT_SUBSCRIBERS','Next subscribers')}</button></div>
         </div>
       )}
 
-      <Modal open={!!campaignForm} onClose={() => setCampaignForm(null)} title="New newsletter campaign">
+      <Modal open={!!campaignForm} onClose={() => {if(!campaignBusy)setCampaignForm(null);}} title="New newsletter campaign">
         {campaignForm && (
-          <div className="space-y-3">
+          <fieldset disabled={!!campaignBusy} className="space-y-3">
             <Field label="Subject"><TextInput value={campaignForm.subject} onChange={(e) => setCampaignForm({ ...campaignForm, subject: e.target.value })} maxLength={200} placeholder="e.g. 🔥 New week, new sides" /></Field>
             <Field label="Message" hint="Plain text — line breaks are kept, HTML is escaped.">
               <textarea value={campaignForm.body} onChange={(e) => setCampaignForm({ ...campaignForm, body: e.target.value })} rows={6} maxLength={20000} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm" placeholder="What should students know this week?" />
@@ -601,10 +620,10 @@ export default function AdminStorefront() {
               </>
             )}
             <div className="flex justify-between gap-2">
-              <button onClick={() => sendCampaignTest(campaignForm)} disabled={campaignBusy === 'test'} className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-secondary text-foreground text-xs font-bold disabled:opacity-50"><Send className="w-3.5 h-3.5" /> {campaignBusy === 'test' ? 'Sending…' : 'Send test to me'}</button>
-              <button onClick={() => createCampaign(campaignForm)} disabled={campaignBusy === 'create'} className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold disabled:opacity-50"><Send className="w-3.5 h-3.5" /> {campaignBusy === 'create' ? 'Queuing…' : 'Queue campaign'}</button>
+              <button onClick={() => sendCampaignTest(campaignForm)} disabled={!!campaignBusy} className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-secondary text-foreground text-xs font-bold disabled:opacity-50"><Send className="w-3.5 h-3.5" /> {campaignBusy === 'test' ? 'Sending…' : 'Send test to me'}</button>
+              <button onClick={() => createCampaign(campaignForm)} disabled={!!campaignBusy} className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold disabled:opacity-50"><Send className="w-3.5 h-3.5" /> {campaignBusy === 'create' ? 'Queuing…' : 'Queue campaign'}</button>
             </div>
-          </div>
+          </fieldset>
         )}
       </Modal>
 

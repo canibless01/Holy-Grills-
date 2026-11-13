@@ -77,3 +77,7 @@ Targeted Economics campus/date/error/retry and Analytics date/CSV controls are n
 ### Community-manager account control — 7 November 2026
 
 [Owner-confirmed hierarchy](COMMUNITY_MANAGER_ACCOUNT_HIERARCHY_2026_11_07.md) is verified through the API, native directory and fresh Supabase rollback cases. Own-campus manager activation/deactivation belongs to campus admins; global admin-account control remains with super admins. No database restriction was added.
+
+### Current continuation — 13 November 2026
+
+The historical tables above are not a current backlog: later closure records in `GENERAL_SITE_AUDIT_PROGRESS_2026_11_04.md` supersede earlier open stock/event/settings/reward entries. The page-by-page continuation is now active. Storefront → Newsletter controls have [new native/API/live transaction/concurrency evidence](ADMIN_NEWSLETTER_PAGE_2026_11_13.md): fields, preview, queue/replay, list/detail/paging, cancel/replay, subscriber removal and role/campus guards. Its worker send-boundary/interruption/counter cases are the immediate continuation before moving on to Campaigns & Blasts and remaining ambassador/CMS exception cases. No whole-admin sign-off is claimed from page inventory alone.

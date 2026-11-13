@@ -92,7 +92,7 @@ def clean_subject(subject: str) -> str:
 
 def _default_sender(to_email, to_name, subject, html_body, headers=None) -> bool:
     from app.utils.email import send_email_raw
-    return send_email_raw(to_email, to_name, subject, html_body, headers=headers)
+    return send_email_raw(to_email, to_name, subject, html_body, headers=headers, transactional=False)
 
 
 def _compose(email, name, subject, body, app_name, tagline):

@@ -1244,7 +1244,7 @@ const admin = {
   async getEarlySupporters() { return unwrap(await apiClient.get('/storefront/early-supporters', { include_inactive: '1' }), 'early_supporters', 'sections'); },
   async addEarlySupporter(body) { return apiClient.post('/storefront/early-supporters', body); },
   async removeEarlySupporter(id) { return apiClient.delete(`/storefront/early-supporters/${id}`); },
-  async getNewsletterSubscribers() { return unwrap(await apiClient.get('/storefront/newsletter'), 'subscribers', 'newsletter'); },
+  async getNewsletterSubscribers(params = {}) { return unwrap(await apiClient.get('/storefront/newsletter', params), 'subscribers', 'newsletter'); },
   async unsubscribeNewsletter(body) { return apiClient.post('/storefront/newsletter/admin-unsubscribe', body); },
 
   // --- Operating Hours (storefront.py: GET public, PATCH admin, POST override admin) ---

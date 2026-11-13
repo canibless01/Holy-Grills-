@@ -13,7 +13,7 @@ from flask import Blueprint, request, jsonify, g
 
 from app.middleware.auth import (  # D17-B04 (validate_promo now requires login)
     require_auth, require_role, optional_auth,
-    resolve_admin_write_campus, GLOBAL_SCOPE_MARKERS,
+    resolve_admin_write_campus, GLOBAL_SCOPE_MARKERS, resolve_scoped_campus_id,
 )
 from app.middleware.rate_limit import rate_limit                                 # D17-B16: newsletter abuse guard
 from app.constants import ADMIN_ROLES
@@ -26,7 +26,7 @@ from app.services import newsletter_service
 from app.utils.logger import get_logger
 from app.utils.tz import today_wat
 from app.utils.schedule import override_window, resolve_date_override
-from app.utils.validators import validate_email
+from app.utils.validators import validate_email, validate_uuid
 from app.utils.upload_urls import is_cms_image_url
 
 logger = get_logger(__name__)                                                    # D17-B09: module had no logging at all
@@ -1772,12 +1772,10 @@ def newsletter_list():
         offset = max(0, int(request.args.get("offset", 0)))
     except (TypeError, ValueError):
         return _bad_request()
-    q = db.table("newsletter_subscriptions").select("*")
+    q = _newsletter_query(db,"newsletter_subscriptions","*")
     if request.args.get("active_only", "true").lower() != "false":
         q = q.is_("unsubscribed_at", "null")
-    if getattr(g, "user_role", None) == "super_admin" and request.args.get("campus_id"):
-        q = q.eq("campus_id", request.args["campus_id"].strip())
-    rows = q.order("created_at", ascending=False).limit(limit).offset(offset).execute()
+    rows = q.order("created_at", ascending=False).order("id").limit(limit).offset(offset).execute()
     return jsonify(rows), 200
 
 
@@ -1792,7 +1790,7 @@ def admin_newsletter_unsubscribe():
     if err:
         return err
     db = get_user_client()
-    campus_id = _get_campus_id()
+    campus_id = _newsletter_scope()
     q = db.table("newsletter_subscriptions").select("id,unsubscribed_at").eq("email", email)
     if campus_id:
         q = q.eq("campus_id", campus_id)
@@ -1820,19 +1818,43 @@ def _campaign_text(data):
     return subject, body, None
 
 
+def _newsletter_scope():
+    requested=request.args.get('campus_id')
+    if requested and not validate_uuid(requested):
+        from flask import abort
+        abort(400,description=MSG.INVALID_CAMPUS_ID)
+    scope=resolve_scoped_campus_id(requested)
+    if getattr(g,'user_role',None)!='super_admin' and not scope:
+        from flask import abort
+        abort(403,description=MSG.ACCOUNT_NO_CAMPUS)
+    return scope
+
+
+def _newsletter_query(db,table,columns):
+    q=db.table(table).select(columns);scope=_newsletter_scope()
+    return q.eq('campus_id',scope) if scope else q
+
+
 def _campaign_target(data):
-    """
-    (campus_id|None, error_response|None). Campus admins always send to their own campus.
-    super_admin must be explicit: `campus_id`, or `all_campuses: true` (campus_id None = every campus).
-    """
-    if getattr(g, "user_role", None) == "super_admin":
-        if data.get("all_campuses") is True:
-            return None, None
-        cid = str(data.get("campus_id") or request.args.get("campus_id") or "").strip()
-        if not cid:
-            return None, (jsonify({"error": MSG.STOREFRONT_CAMPAIGN_TARGET_REQUIRED}), 400)
-        return cid, None
-    return getattr(g, "campus_id", None), None
+    if getattr(g,'user_role',None)=='super_admin':
+        if data.get('all_campuses') is True:return None,None
+        cid=data.get('campus_id') or request.args.get('campus_id')
+        if not cid:return None,(jsonify({'error':MSG.STOREFRONT_CAMPAIGN_TARGET_REQUIRED}),400)
+        if not validate_uuid(cid):return None,(jsonify({'error':MSG.INVALID_CAMPUS_ID}),400)
+        return cid,None
+    cid=getattr(g,'campus_id',None)
+    if not cid:return None,(jsonify({'error':MSG.ACCOUNT_NO_CAMPUS}),403)
+    return cid,None
+
+
+def _newsletter_error(exc):
+    text=str(exc)
+    if 'HG_NEWSLETTER_ACCESS' in text:return jsonify({'error':MSG.RESOURCE_ACCESS_DENIED}),403
+    if 'HG_NEWSLETTER_DUPLICATE' in text:return jsonify({'error':MSG.STOREFRONT_CAMPAIGN_DUPLICATE}),409
+    if 'HG_NEWSLETTER_CONFLICT' in text:return jsonify({'error':MSG.NEWSLETTER_INTENT_CONFLICT}),409
+    if 'HG_NEWSLETTER_TERMINAL' in text:return jsonify({'error':MSG.STOREFRONT_CAMPAIGN_NOT_CANCELLABLE}),409
+    if 'HG_NEWSLETTER_INVALID' in text:return _bad_request()
+    raise exc
 
 
 @storefront_bp.route("/newsletter/campaigns", methods=["POST"])
@@ -1860,7 +1882,6 @@ def create_newsletter_campaign():
       409:
         description: An identical campaign was queued in the last 10 minutes
     """
-    db = get_user_client()
     data = _json_body()
     if data is None:
         return _bad_request()
@@ -1871,16 +1892,11 @@ def create_newsletter_campaign():
     if err:
         return err
 
-    since = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()         # double-click / retry guard
-    recent = db.table("newsletter_campaigns").select("id,campus_id,body").eq("subject", subject).gte("created_at", since).execute() or []
-    if any(r.get("campus_id") == campus_id and r.get("body") == body for r in recent):
-        return jsonify({"error": MSG.STOREFRONT_CAMPAIGN_DUPLICATE}), 409
-
-    payload = {"subject": subject, "body": body, "status": "queued", "created_by": g.user_id}
-    if campus_id:
-        payload["campus_id"] = campus_id
-    row = _row(db.table("newsletter_campaigns").insert(payload))
-    return jsonify({"message": MSG.STOREFRONT_CAMPAIGN_QUEUED, "campaign": row}), 201
+    request_id=data.get('request_id') or str(uuid.uuid4())
+    if not validate_uuid(request_id):return _bad_request()
+    try:result=get_db().rpc('hg_queue_newsletter_campaign',{'p_actor':g.user_id,'p_request':request_id,'p_campus':campus_id,'p_subject':subject,'p_body':body})
+    except SupabaseError as exc:return _newsletter_error(exc)
+    return jsonify({**result,'message':MSG.STOREFRONT_CAMPAIGN_QUEUED}),200 if result.get('replayed') else 201
 
 
 @storefront_bp.route("/newsletter/campaigns", methods=["GET"])
@@ -1893,8 +1909,8 @@ def list_newsletter_campaigns():
         offset = max(0, int(request.args.get("offset", 0)))
     except (TypeError, ValueError):
         return _bad_request()
-    rows = (db.table("newsletter_campaigns").select(_CAMPAIGN_LIST_COLS)
-            .order("created_at", ascending=False).limit(limit).offset(offset).execute()) or []
+    rows = (_newsletter_query(db,"newsletter_campaigns",_CAMPAIGN_LIST_COLS)
+            .order("created_at", ascending=False).order("id").limit(limit).offset(offset).execute()) or []
     return jsonify(rows), 200
 
 
@@ -1903,7 +1919,8 @@ def list_newsletter_campaigns():
 def get_newsletter_campaign(campaign_id):
     """Campaign detail incl. body and delivery counts."""
     db = get_user_client()
-    row = db.table("newsletter_campaigns").select("*").eq("id", campaign_id).single().execute()
+    if not validate_uuid(campaign_id):return _bad_request()
+    row = _newsletter_query(db,"newsletter_campaigns","*").eq("id", campaign_id).single().execute()
     if not row:
         return jsonify({"error": MSG.STOREFRONT_CAMPAIGN_NOT_FOUND}), 404
     return jsonify(row), 200
@@ -1913,17 +1930,10 @@ def get_newsletter_campaign(campaign_id):
 @require_role("admin")
 def cancel_newsletter_campaign(campaign_id):
     """Stop a queued / sending campaign. Emails already delivered stay delivered."""
-    db = get_user_client()
-    row = db.table("newsletter_campaigns").select("id,status").eq("id", campaign_id).single().execute()
-    if not row:
-        return jsonify({"error": MSG.STOREFRONT_CAMPAIGN_NOT_FOUND}), 404
-    if row["status"] not in ("queued", "sending"):
-        return jsonify({"error": MSG.STOREFRONT_CAMPAIGN_NOT_CANCELLABLE}), 409
-    updated = _row(db.table("newsletter_campaigns").eq("id", campaign_id).in_("status", ["queued", "sending"])
-                   .update({"status": "cancelled", "completed_at": _now_iso()}))
-    if updated is None:                                                              # finished between the read and the update
-        return jsonify({"error": MSG.STOREFRONT_CAMPAIGN_NOT_CANCELLABLE}), 409
-    return jsonify({"message": MSG.STOREFRONT_CAMPAIGN_CANCELLED, "campaign": updated}), 200
+    if not validate_uuid(campaign_id):return _bad_request()
+    try:result=get_db().rpc('hg_cancel_newsletter_campaign',{'p_actor':g.user_id,'p_campaign':campaign_id,'p_scope':_newsletter_scope()})
+    except SupabaseError as exc:return _newsletter_error(exc)
+    return jsonify({**result,'message':MSG.STOREFRONT_CAMPAIGN_CANCELLED}),200
 
 
 @storefront_bp.route("/newsletter/campaigns/test", methods=["POST"])
