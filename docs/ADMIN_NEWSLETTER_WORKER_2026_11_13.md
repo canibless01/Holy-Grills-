@@ -1,0 +1,17 @@
+# Newsletter delivery loop — 13 November 2026
+
+Completes the delivery-worker follow-up to `ADMIN_NEWSLETTER_PAGE_2026_11_13.md`.
+
+The existing worker now prepares each message before claiming a durable recipient handoff. A service-only transaction locks the campaign, verifies it is still sending, verifies the original audience/campus/current email/confirmation/unsubscribe state, and creates the unique campaign/subscriber receipt. Cancellation or unsubscribe committed before this boundary prevents the send, even if the Python audience page was already loaded. A message already handed off can still arrive after cancellation; no system can recall an external provider handoff.
+
+Totals now come from saved delivery rows under a campaign lock, instead of adding per-process totals with read/modify/write. The campaign cannot complete while an eligible recipient is unattempted or a send remains in flight. Cancellation and its first completion timestamp survive worker finalization/replay. Confirmed provider refusals remain failed; timeouts, ambiguous responses and interrupted handoffs become uncertain, produce a visible review notice, and are never automatically resent or counted as confirmed failure/success. A partial campaign is not included in the automatic queued/sending scan.
+
+Migration `20261113092226_newsletter_delivery_summary.sql` extends the existing delivery-status CHECK with uncertain and adds two backend-only invoker functions. No new table, column, cron job or periodic service. Existing scheduler interval remains configurable with a default fifteen-minute scan. No historical campaign or subscriber is backfilled or externally emailed. Existing old worker code remains compatible with the extended status constraint during deployment.
+
+Evidence:
+- Full merged backend suite: 1,742 passed; final focused newsletter set: 36 passed, including escaped plain-text HTML, paragraph preservation, normalized subjects, signed unsubscribe tamper/key mismatch and explicit marketing delivery without one-click headers.
+- Fresh live production rollback: actual service-role handoff, duplicate claims, current recipient/campus/audience checks, unsubscribe/cancel denial, pending/in-flight completion guards, counter replay, preserved cancellation and uncertain outcome/grants.
+- Real Python worker against disposable local PostgreSQL with a substituted provider: unsubscribe and cancel between recipients each stop the next cached recipient; provider timeout remains uncertain without resend; killing a process after a committed handoff leaves one recoverable unknown record and the next subscriber proceeds; four concurrent summary refreshes agree; four competing claims hand off only once.
+- The preceding control batch passed the native mobile/desktop editor/read/list/detail/preview/paging/cancel/unsubscribe tests and frontend production build. This backend-only follow-up does not change frontend components.
+
+Limits: provider acceptance is distinct from inbox arrival. No real recipient inbox was used in this batch. Unknown sends require provider evidence before any deliberate manual resend; this work intentionally adds no blind retry. Newsletter action and worker cases above are closed; the entire admin audit is not complete. Campaigns & Blasts is the next page continuation, then remaining ambassador measurement/share/review and CMS/presentation exceptions, with later records superseding historical open items.

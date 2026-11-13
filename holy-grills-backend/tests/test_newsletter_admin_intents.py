@@ -33,9 +33,9 @@ def test_cancel_scope_and_server_actor():
 
 def test_newsletter_is_marketing_even_without_one_click_api_url():
  from app.services import newsletter_service
- with patch('app.utils.email.send_email_raw',return_value=True) as send:
+ with patch('app.utils.email.send_email_routed',return_value=True) as send:
   assert newsletter_service._default_sender('a@example.invalid','A','Subject','<p>Body</p>',None)
- send.assert_called_once_with('a@example.invalid','A','Subject','<p>Body</p>',headers=None,transactional=False)
+ send.assert_called_once_with('a@example.invalid','A','Subject','<p>Body</p>',provider='resend',headers=None,transactional=False,receipt={})
 
 @pytest.mark.parametrize('role',['student','event_organizer','community_manager','kitchen','rider'])
 @pytest.mark.parametrize('method,path',[('GET','/newsletter'),('POST','/newsletter/campaigns'),('POST',f'/newsletter/campaigns/{R}/cancel')])

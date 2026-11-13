@@ -678,6 +678,7 @@ class MSG:
     FE_EVENT_SUPPORT_HELP = "Admission is free. Choose a free ticket, or select an optional paid support tier when you register."
     EVENT_HP_REVIEW_INVALID = "Enter the verified attendance HP amount and a reason of at least 10 characters."
     EVENT_HP_REVIEW_CONFLICT = "This attendance reward changed or is not eligible for review. Refresh its status."
+    NEWSLETTER_SEND_UNCERTAIN = "Some email sends have an unconfirmed outcome. They will not be sent again automatically. Review provider records before resending."
     FE_NEWSLETTER_TEST_ACCEPTED = "Preview accepted for delivery to {email}."
     FE_NEWSLETTER_EMPTY_SUBSCRIBERS = "No subscribers on this page."
     FE_NEWSLETTER_EMPTY_CAMPAIGNS = "No campaigns on this page."

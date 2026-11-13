@@ -3,13 +3,13 @@ app/services/newsletter_service.py — per-campus newsletters.
 
   * signed unsubscribe tokens (no login needed, cannot be forged without SECRET_KEY)
   * plain-text -> safe HTML newsletter with an unsubscribe footer
-  * delivery engine used by the Celery task `send_newsletter_campaigns` (runs every 5 minutes)
+  * delivery engine used by the Celery task `send_newsletter_campaigns` (uses the configured campaign scan interval)
 
 Delivery guarantees
   * one row per (campaign, subscriber) in newsletter_deliveries, UNIQUE(campaign_id, subscriber) — the row is
     INSERTED BEFORE the email is sent, so a retry, a crash or two overlapping runs can never email a person twice
   * a subscriber who unsubscribes while a campaign is running is skipped (the audience is re-read every batch)
-  * a campaign can be cancelled while it is sending (checked every 10 emails)
+  * campaign cancellation and subscriber eligibility are checked atomically for each handoff
   * a campaign is never sent unless the unsubscribe link can point at the real frontend
 """
 import html as _html
@@ -21,7 +21,7 @@ from urllib.parse import quote
 from flask import current_app
 from itsdangerous import BadSignature, URLSafeSerializer
 
-from app.db import SupabaseError, get_db
+from app.db import get_db
 from app.messages import MSG
 from app.utils.logger import get_logger
 
@@ -29,7 +29,7 @@ logger = get_logger(__name__)
 
 _SALT = "newsletter-unsubscribe"
 BATCH_SIZE = int(os.environ.get("NEWSLETTER_BATCH_SIZE", "100"))            # emails per campaign per run
-STALE_DELIVERY_MINUTES = 15                                                 # a delivery stuck in 'sending' longer than this is treated as failed
+STALE_DELIVERY_MINUTES = 15                                                 # a delivery stuck in 'sending' longer than this is treated as uncertain
 PAGE_SIZE = 100                                                             # subscribers read per query (the id list goes in the URL: 200 ids = ~7,970 chars, right at the ~8 KB gateway limit; 100 = ~4,070)
 SEND_INTERVAL_SECONDS = float(os.environ.get("NEWSLETTER_SEND_INTERVAL", "0.6"))   # Resend allows ~2 req/s
 TIME_BUDGET_SECONDS = int(os.environ.get("NEWSLETTER_TIME_BUDGET", "240"))  # cron lock expires after 20 min
@@ -91,8 +91,14 @@ def clean_subject(subject: str) -> str:
 
 
 def _default_sender(to_email, to_name, subject, html_body, headers=None) -> bool:
-    from app.utils.email import send_email_raw
-    return send_email_raw(to_email, to_name, subject, html_body, headers=headers, transactional=False)
+    from app.utils.email import send_email_routed
+    receipt={}
+    accepted=send_email_routed(to_email,to_name,subject,html_body,provider='resend',headers=headers,transactional=False,receipt=receipt)
+    final=receipt.get('fallback') or receipt
+    status=final.get('http_status') or 0
+    if not accepted and (final.get('state')=='unknown' or status>=500 or status in (200,201,408)):
+        raise RuntimeError(MSG.NEWSLETTER_SEND_UNCERTAIN)
+    return accepted
 
 
 def _compose(email, name, subject, body, app_name, tagline):
@@ -110,17 +116,13 @@ def send_test(email, name, subject, body, sender=None) -> bool:
     app_name = current_app.config.get("APP_NAME", "Holy Grills")
     tagline = current_app.config.get("APP_TAGLINE", "")
     subj, html, headers = _compose(email, name, subject, body, app_name, tagline)
-    return bool(sender(email, name or "there", f"[TEST] {subj}", html, headers))
+    try:return bool(sender(email, name or "there", f"[TEST] {subj}", html, headers))
+    except Exception:return False
 
 
 # ───────────────────────────── delivery engine ─────────────────────────────
 def _now():
     return datetime.now(timezone.utc).isoformat()
-
-
-def _campaign_status(db, campaign_id):
-    row = db.table("newsletter_campaigns").select("status").eq("id", campaign_id).limit(1).execute()
-    return row[0]["status"] if row else None
 
 
 def _audience_page(db, campaign, last_id):
@@ -140,7 +142,7 @@ def _process_one(db, campaign, deadline, sender):
     out = {"sent": 0, "failed": 0, "done": False}
 
     if not frontend_base_ok():
-        db.table("newsletter_campaigns").eq("id", cid).update({
+        db.table("newsletter_campaigns").eq("id", cid).in_("status",["queued","sending"]).update({
             "status": "failed", "completed_at": _now(),
             "last_error": MSG.NEWSLETTER_FRONTEND_URL_MISSING})
         logger.error("newsletter campaign %s not sent: FRONTEND_URL missing/localhost", cid)
@@ -157,18 +159,16 @@ def _process_one(db, campaign, deadline, sender):
     tagline = current_app.config.get("APP_TAGLINE", "")
     sent_now = failed_now = 0
     stale_cut = (datetime.now(timezone.utc) - timedelta(minutes=STALE_DELIVERY_MINUTES)).isoformat()
-    stale = (db.table("newsletter_deliveries").eq("campaign_id", cid).eq("status", "sending").lt("created_at", stale_cut)
-             .update({"status": "failed", "error": "interrupted before the send was confirmed"}))
-    failed_now += len(stale) if isinstance(stale, list) else 0     # a worker died mid-send: counted as failed, never re-sent (no double email)
+    (db.table("newsletter_deliveries").eq("campaign_id", cid).eq("status", "sending").lt("created_at", stale_cut)
+             .update({"status": "uncertain", "error": MSG.NEWSLETTER_SEND_UNCERTAIN}))
+    # Unconfirmed handoffs are not counted as confirmed provider failures or retried.
     attempted = 0
     last_id = None
-    exhausted = False
     stopped = False
 
     while True:
         page = _audience_page(db, campaign, last_id)
         if not page:
-            exhausted = True
             break
         last_id = page[-1]["id"]
         ids = [s["id"] for s in page]
@@ -182,52 +182,39 @@ def _process_one(db, campaign, deadline, sender):
             if attempted >= BATCH_SIZE or time.monotonic() > deadline:
                 stopped = True
                 break
-            if attempted and attempted % 10 == 0 and _campaign_status(db, cid) == "cancelled":
-                stopped = True
-                break
-            try:                                                   # claim BEFORE sending: unique(campaign, subscriber)
-                delivery = db.table("newsletter_deliveries").insert(
-                    {"campaign_id": cid, "subscription_id": sub["id"], "status": "sending"})
-            except SupabaseError as e:
-                if str((e.details or {}).get("code")) == "23505":
-                    continue                                       # another run already owns this recipient
-                raise
+            # Prepare before claiming so cancellation/unsubscribe changes during
+            # rendering are rechecked at the last durable provider boundary.
+            subj, html, headers = _compose(sub["email"], sub.get("full_name"), campaign["subject"], campaign["body"], app_name, tagline)
+            delivery=db.rpc('hg_claim_newsletter_delivery',{'p_campaign':cid,'p_subscription':sub['id'],'p_email':sub['email']})
+            if not delivery:
+                continue
+            if not isinstance(delivery,dict) or not delivery.get('id'):
+                raise RuntimeError('Invalid newsletter handoff receipt')
             attempted += 1
             ok, err = False, "send failed"
+            uncertain=False
             try:
-                subj, html, headers = _compose(sub["email"], sub.get("full_name"), campaign["subject"], campaign["body"], app_name, tagline)
                 ok = bool(sender(sub["email"], sub.get("full_name") or "there", subj, html, headers))
             except Exception as e:                                 # a bad address / provider hiccup must not stop the campaign
-                err = f"{type(e).__name__}: {e}"[:300]
+                uncertain=True
+                err=MSG.NEWSLETTER_SEND_UNCERTAIN
                 logger.error("newsletter %s: send to subscriber %s raised: %s", cid, sub["id"], e)
             row_id = (delivery[0] if isinstance(delivery, list) and delivery else delivery or {}).get("id")
-            upd = {"status": "sent", "sent_at": _now()} if ok else {"status": "failed", "error": err}
+            upd = {"status": "sent", "sent_at": _now()} if ok else {"status": "uncertain" if uncertain else "failed", "error": err}
             if row_id:
                 db.table("newsletter_deliveries").eq("id", row_id).update(upd)
             if ok:
                 sent_now += 1
-            else:
+            elif not uncertain:
                 failed_now += 1
             time.sleep(SEND_INTERVAL_SECONDS)
         if stopped:
             break
         if len(page) < PAGE_SIZE:
-            exhausted = True
             break
 
-    fresh = db.table("newsletter_campaigns").select("status,sent_count,failed_count").eq("id", cid).limit(1).execute()
-    cur = fresh[0] if fresh else {"status": None, "sent_count": 0, "failed_count": 0}
-    sent_total = (cur.get("sent_count") or 0) + sent_now
-    failed_total = (cur.get("failed_count") or 0) + failed_now
-    patch = {"sent_count": sent_total, "failed_count": failed_total}
-    if cur.get("status") == "cancelled":
-        patch["completed_at"] = _now()
-        out["done"] = True
-    elif exhausted:
-        patch.update({"status": "sent" if failed_total == 0 else "partial", "completed_at": _now(),
-                      "total_recipients": sent_total + failed_total})
-        out["done"] = True
-    db.table("newsletter_campaigns").eq("id", cid).update(patch)
+    saved=db.rpc('hg_refresh_newsletter_summary',{'p_campaign':cid,'p_uncertain_notice':MSG.NEWSLETTER_SEND_UNCERTAIN})
+    out['done']=bool((saved or {}).get('done'))
     out["sent"], out["failed"] = sent_now, failed_now
     return out
 

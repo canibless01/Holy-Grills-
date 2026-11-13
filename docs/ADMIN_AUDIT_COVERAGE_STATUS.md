@@ -1,3 +1,5 @@
+Current executed continuation: [Newsletter controls](ADMIN_NEWSLETTER_PAGE_2026_11_13.md) and [delivery worker](ADMIN_NEWSLETTER_WORKER_2026_11_13.md), 13 November 2026. Earlier dated open items below are historical; later closure evidence takes precedence. The whole admin audit remains open.
+
 General-site continuation: [4 November ownership and progress](GENERAL_SITE_AUDIT_PROGRESS_2026_11_04.md).
 
 Current remaining work: [30 October launch and full audit list](REMAINING_LAUNCH_AND_AUDIT_2026_10_30.md).
@@ -80,4 +82,4 @@ Targeted Economics campus/date/error/retry and Analytics date/CSV controls are n
 
 ### Current continuation — 13 November 2026
 
-The historical tables above are not a current backlog: later closure records in `GENERAL_SITE_AUDIT_PROGRESS_2026_11_04.md` supersede earlier open stock/event/settings/reward entries. The page-by-page continuation is now active. Storefront → Newsletter controls have [new native/API/live transaction/concurrency evidence](ADMIN_NEWSLETTER_PAGE_2026_11_13.md): fields, preview, queue/replay, list/detail/paging, cancel/replay, subscriber removal and role/campus guards. Its worker send-boundary/interruption/counter cases are the immediate continuation before moving on to Campaigns & Blasts and remaining ambassador/CMS exception cases. No whole-admin sign-off is claimed from page inventory alone.
+The historical tables above are not a current backlog: later closure records in `GENERAL_SITE_AUDIT_PROGRESS_2026_11_04.md` supersede earlier open stock/event/settings/reward entries. The page-by-page continuation is now active. Storefront → Newsletter controls have [new native/API/live transaction/concurrency evidence](ADMIN_NEWSLETTER_PAGE_2026_11_13.md): fields, preview, queue/replay, list/detail/paging, cancel/replay, subscriber removal and role/campus guards. Its worker send-boundary/interruption/counter cases are now closed in `ADMIN_NEWSLETTER_WORKER_2026_11_13.md`. Next are Campaigns & Blasts and remaining ambassador/CMS exception cases. No whole-admin sign-off is claimed from page inventory alone.
