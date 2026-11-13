@@ -170,3 +170,7 @@ Final merged verification for this request: **1,736 full backend tests passed**,
 ### 13 November — remove location-first reward friction
 
 Rewards are now discovered and selectable before a location: delivery percentage/cap and food-HP multiplier appear upfront, selected IDs follow location changes, and exact savings come from the existing quote. Both types share one authenticated read-only discovery request; no reserve/spend action occurs. Full backend **1,753 passed**, typecheck/full build passed, and native selection/repricing/request-count checks passed. See `CHECKOUT_UPFRONT_REWARD_SELECTION_2026_11_13.md`. The owner assigned admin page-by-page work to the other auditor; it is not duplicated here.
+
+### 13 November — legacy gift/reward recovery closed for current launch
+
+Live read-only counts are zero for legacy gifts, flagged orders/lines, old profile multipliers/delivery caps and unsnapshotted redemptions. The obsolete hot-dog promotion remains disabled with an expired window. Added fresh isolated legacy admission/conversion/interruption/replay/new-gift/cancellation conservation proof; refreshed earned normal/flash snapshot proof using a self-created account. Both production matrices and 39 focused backend tests pass; all fixtures rolled back. No runtime/schema/customer-data change was needed. See `LEGACY_GIFT_RECOVERY_CLOSURE_2026_11_13.md` for exact closure and the separately deferred obsolete feature boundary.

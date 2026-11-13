@@ -3,15 +3,13 @@ BEGIN;
 SET LOCAL request.jwt.claims = '{"role":"service_role"}';
 DO $audit$
 DECLARE
- u uuid; c uuid:=gen_random_uuid(); r uuid:=gen_random_uuid(); normal_id uuid; flash_id uuid;
+ u uuid:=gen_random_uuid(); c uuid:=gen_random_uuid(); r uuid:=gen_random_uuid(); normal_id uuid; flash_id uuid;
  result jsonb; promise jsonb; fake_line jsonb; order_result jsonb; v_order_id uuid;
 BEGIN
- SELECT p.id INTO u FROM public.profiles p JOIN public.campuses c ON c.id=p.campus_id
- WHERE p.role::text='student' AND p.is_active AND p.full_name ILIKE '%audit%'
- AND c.name ILIKE '%audit%' LIMIT 1;
- IF u IS NULL THEN RAISE EXCEPTION 'isolated audit student required'; END IF;
  INSERT INTO public.campuses(id,name,slug) VALUES(c,'[AUDIT rollback] Reward promise','audit-reward-promise-'||c);
- UPDATE public.profiles SET campus_id=c,hp_balance=10000 WHERE id=u;
+ INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES(u,'audit-reward-promise-'||u||'@example.invalid','{"full_name":"[AUDIT rollback] Reward promise"}');
+ UPDATE public.profiles SET campus_id=c,role='student',next_order_hp_multiplier=1,next_order_free_delivery_cap=0 WHERE id=u;
+ PERFORM public.record_hp_transaction_atomic(u,10000,'earn','active','audit_reward_promise','audit_reward_promise',gen_random_uuid(),NULL,'[AUDIT rollback] Seed points',c);
  INSERT INTO public.rewards(id,name,hp_cost,reward_type,stock_quantity,max_per_user,campus_id,metadata)
  VALUES(r,'[AUDIT rollback] Earned meal',100,'food',5,5,c,'{"private_cost_note":"must not enter receipt"}');
  result:=public.hg_redeem_reward(u,r);
@@ -68,5 +66,5 @@ BEGIN
  THEN RAISE EXCEPTION 'normal and flash HP conservation failed'; END IF;
 END;
 $audit$;
-SELECT 'passed' AS earned_reward_promise_checks;
+SELECT 'passed: isolated normal/flash promise snapshots, edited/deactivated catalogue, immutable history, attached-order release and HP conservation; all fixtures rolled back' AS earned_reward_promise_checks;
 ROLLBACK;

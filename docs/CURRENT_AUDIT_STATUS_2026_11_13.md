@@ -12,7 +12,7 @@
 
 1. Historical database RPC/RLS/grant dependency review. Existing advisor findings remain; the other chat has already reduced unnecessary trigger-helper grants. Avoid disabling shared predicates/aggregates without proving their dependencies.
 2. Remaining native administration/exception coverage: newsletter/preferences, ambassador measurement/report/share exceptions and CMS/presentation variants beyond the completed cases. This is unverified breadth, not a list of reproduced defects.
-3. Uncommon legacy-gift and special reward/promotion variants beyond the named fresh matrices. Ambiguous historical entitlements remain review-required; no speculative balance backfill is authorized by an incomplete record.
+3. **Legacy recovery closed for the current launch configuration:** live inspection found no pending legacy gift/multiplier/cap/unsnapshotted records, and fresh legacy admission/refund/replay and earned-snapshot matrices pass. See `LEGACY_GIFT_RECOVERY_CLOSURE_2026_11_13.md`. The obsolete disabled hot-dog promotion is deferred feature work if reintroduced; it is not a current customer-recovery backlog.
 4. Operational observations: actual inbox/device receipt of the new scheduled reminder, subsequent nightly job receipts and any bank/provider settlement. SQL rollbacks and provider acceptance are not customer inbox confirmation.
 
 Previously owner-confirmed installation, GPS, push receipt and ordinary customer ordering are not reopened. Event implementation/acceptance remains with the other chat and its latest evidence. Deferred marketplace/subscription, group ticket buying and official ticket transfer are not silently enabled. No new periodic service/job, existing-price edit or retained production test fixture was introduced by this request.
