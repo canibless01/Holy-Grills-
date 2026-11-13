@@ -1,5 +1,7 @@
 # Current audit checkpoint — 13 November 2026
 
+Reconciled against shared main through `d7ad502`. This is the current summary; older dated open lists are historical and must be read with later closure evidence. The whole-site audit is **not complete**. This chat's recent order/reward/retention and legacy-recovery batches are closed for their recorded cases, not a certification of every possible site interaction.
+
 ## This request's completed scope
 
 - Scheduled-order customer reminders: starting 10:00 WAT on the paid order's delivery date, existing scan/recovery jobs, member preferred email/push/inbox and guest transactional email/private tracking. Repeated, unpaid, test, cancelled, delivered and rescheduled-away orders are guarded.
@@ -11,8 +13,15 @@
 ## Still separate from whole-site sign-off
 
 1. Historical database RPC/RLS/grant dependency review. Existing advisor findings remain; the other chat has already reduced unnecessary trigger-helper grants. Avoid disabling shared predicates/aggregates without proving their dependencies.
-2. Remaining native administration/exception coverage: newsletter/preferences, ambassador measurement/report/share exceptions and CMS/presentation variants beyond the completed cases. This is unverified breadth, not a list of reproduced defects.
+2. Remaining native administration/exception coverage, owned by the other admin auditor: ambassador roster/milestone administration and measurement/report/share exceptions, promo distribution and monthly review exceptions, followed by residual CMS/storefront presentation/sorting controls. Wider reporting/filter/export and settings cases remain limited to their recorded evidence; inventory alone is not certification. This is unverified breadth, not a list of reproduced defects. Newsletter controls, newsletter worker cancellation/unsubscribe/concurrent counters/interrupted dispatch, and Campaigns & Blasts composer/history/analytics/test/sync/recovery are now closed for their documented cases; do not keep listing those whole batches as unfinished.
 3. **Legacy recovery closed for the current launch configuration:** live inspection found no pending legacy gift/multiplier/cap/unsnapshotted records, and fresh legacy admission/refund/replay and earned-snapshot matrices pass. See `LEGACY_GIFT_RECOVERY_CLOSURE_2026_11_13.md`. The obsolete disabled hot-dog promotion is deferred feature work if reintroduced; it is not a current customer-recovery backlog.
 4. Operational observations: actual inbox/device receipt of the new scheduled reminder, subsequent nightly job receipts and any bank/provider settlement. SQL rollbacks and provider acceptance are not customer inbox confirmation.
 
 Previously owner-confirmed installation, GPS, push receipt and ordinary customer ordering are not reopened. Event implementation/acceptance remains with the other chat and its latest evidence. Deferred marketplace/subscription, group ticket buying and official ticket transfer are not silently enabled. No new periodic service/job, existing-price edit or retained production test fixture was introduced by this request.
+
+## Shared handoff and next priority
+
+- [Admin coverage index](ADMIN_AUDIT_COVERAGE_STATUS.md) and its latest [Campaigns & Blasts checkpoint](ADMIN_CAMPAIGNS_PAGE_2026_11_13.md) identify the other auditor's next native pages. [General progress](GENERAL_SITE_AUDIT_PROGRESS_2026_11_04.md) records both chats' completed batches.
+- [Historical ownership split](REMAINING_ECOSYSTEM_AUDIT_SPLIT.md) assigns database/security inventory to Workstream B as well as admin pages. Its old task descriptions and the October evidence matrix are not a current list of unfinished features.
+- [Latest database evidence](DATABASE_TRIGGER_GRANTS_2026_11_13.md) leaves dependency-aware RPC/RLS/definer review, pg_net placement and leaked-password protection configuration open. Backend-only no-policy tables require an explicit access decision, not automatic public policies. These are review/configuration items, not a claim of a reproduced exploit.
+- Recommended technical continuation: finish that database/dependency review while the other auditor completes ambassador and CMS exceptions. Keep real scheduled-reminder receipt, later nightly receipts and provider settlement observations separate from code defects. No whole-site sign-off is recorded until these remaining categories have explicit evidence or documented deferral.
