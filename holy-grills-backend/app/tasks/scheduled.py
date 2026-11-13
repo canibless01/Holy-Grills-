@@ -1236,129 +1236,67 @@ def reset_monthly_hp_tracker(self):
                            "run (%s) — the job may be skipped next time", exc)
 
 
-@celery_app.task(name="app.tasks.scheduled.membership_anniversary_awards", bind=True, max_retries=3)
+@celery_app.task(name="app.tasks.scheduled.membership_anniversary_awards", bind=True, max_retries=3, autoretry_for=(Exception,), retry_backoff=60)
 @with_cron_logging("membership-anniversary-awards")
 def membership_anniversary_awards(self):
-    """
-    Runs: Daily at 06:00 WAT.
-    Awards HP to users on their membership anniversary milestones
-    (3, 6, 12, 24, 36, 48, 60 months since created_at), using
-    the membership_rewards table seeded by the Phase 2 migration.
-    """
+    """Existing daily job: atomic configured awards and current-month outage catch-up."""
     db = get_db()
-    try:
-        lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "membership_anniversary_awards"})
-    except Exception as e:
-        logger.error("membership_anniversary_awards: lock RPC failed, skipping run to be safe: %s", e)
-        lock_acquired = False
-    if not lock_acquired:
+    if not db.rpc("try_acquire_cron_lock", {"p_job_name": "membership_anniversary_awards"}):
         return {"skipped": "Lock not acquired"}
-
+    failures = []
     try:
-        now = datetime.now(timezone.utc)
+        from calendar import monthrange
+        from app.utils.tz import WAT_OFFSET
+        from app.services.notification_outbox import start_reference_dispatch
         today = today_wat()
-
         campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
         results = {}
-        from app.services.hp_service import award_active_hp
-        from app.services.notification_service import send_notification
-
-        for campus in (campuses if isinstance(campuses, list) else []):
+        for campus in campuses:
             campus_id = campus["id"]
-            rewards = (
-                db.table("membership_rewards")
-                .select("months,hp_awarded")
-                .eq("campus_id", campus_id)
-                .execute()
-            ) or []
+            rewards = db.table("membership_rewards").select("months,is_active").eq("campus_id", campus_id).execute() or []
             if not rewards:
-                rewards = (
-                    db.table("membership_rewards")
-                    .select("months,hp_awarded")
-                    .is_("campus_id", "null")
-                    .execute()
-                ) or []
-
-            if not rewards:
-                results[campus_id] = {"skipped": "No membership_rewards configured"}
+                rewards = db.table("membership_rewards").select("months,is_active").is_("campus_id", "null").execute() or []
+            milestones = {int(row["months"]) for row in rewards if row.get("is_active") is not False}
+            if not milestones:
+                results[campus_id] = {"awarded": 0, "date": today.isoformat()}
                 continue
-
-            reward_map = {int(r["months"]): int(r["hp_awarded"]) for r in rewards}
-            month_milestones = set(reward_map.keys())
-
-            profiles = (
-                db.table("profiles")
-                .select("id,full_name,created_at")
-                .eq("is_active", "true")
-                .eq("role", "student")
-                .eq("campus_id", campus_id)
-                .execute()
-            ) or []
-
+            profiles = (db.table("profiles").select("id,created_at").eq("is_active", True)
+                        .eq("role", "student").eq("campus_id", campus_id).execute()) or []
             awarded = 0
             for profile in profiles:
-                created_at_str = profile.get("created_at")
-                if not created_at_str:
-                    continue
                 try:
-                    created_dt = datetime.fromisoformat(str(created_at_str).replace("Z", "+00:00"))
-                    months_member = (now.year - created_dt.year) * 12 + (now.month - created_dt.month)
+                    joined = (datetime.fromisoformat(str(profile["created_at"]).replace("Z", "+00:00")) + WAT_OFFSET).date()
+                    months = (today.year - joined.year) * 12 + today.month - joined.month
+                    due_day = min(joined.day, monthrange(today.year, today.month)[1])
+                    if months not in milestones or today.day < due_day:
+                        continue
+                    result = db.rpc("hg_award_membership_anniversary", {"p_user": profile["id"]})
+                    if not isinstance(result, dict) or not result.get("success"):
+                        raise RuntimeError("Membership anniversary remains pending")
+                    awarded += int(int(result.get("awarded") or 0) > 0)
+                    if result.get("reference_id"):
+                        try:
+                            from app.services.hp_service import recalculate_tier
+                            recalculate_tier(profile["id"])
+                        except Exception:
+                            logger.warning("Membership tier refresh deferred", exc_info=True)
+                        # Saved receipts survive a crash; wake failure does not undo a grant.
+                        try:
+                            start_reference_dispatch("membership_anniversary", result["reference_id"])
+                        except Exception:
+                            logger.warning("Membership notice wake deferred", exc_info=True)
                 except Exception:
-                    continue
-
-                if months_member not in month_milestones:
-                    continue
-
-                signup_day = created_dt.day
-                if today.day != signup_day:
-                    continue
-
-                hp_amount = reward_map[months_member]
-
-                already = (
-                    db.table("hp_transactions")
-                    .select("id")
-                    .eq("user_id", profile["id"])
-                    .eq("campus_id", campus_id)
-                    .eq("reference_type", "membership_anniversary")
-                    .gte("created_at", f"{today.year}-{today.month:02d}-01T00:00:00+00:00")
-                    .execute()
-                )
-                if already:
-                    continue
-
-                try:
-                    award_active_hp(
-                        user_id=profile["id"],
-                        amount=hp_amount,
-                        txn_type="earn_membership",
-                        reference_type="membership_anniversary",
-                        notes=f"Membership anniversary — {months_member} months",
-                        apply_multiplier=False,
-                        campus_id=campus_id,
-                    )
-                    from app.messages import MSG
-                    name = (profile.get("full_name") or "").split()[0] or MSG.ANNIVERSARY_FALLBACK_NAME
-                    send_notification(
-                        user_id=profile["id"],
-                        notif_type="membership_anniversary",
-                        template_data={"months": months_member, "name": name, "hp": hp_amount},
-                        campus_id=campus_id,
-                    )
-                    awarded += 1
-                except Exception as e:
-                    logger.warning("membership_anniversary_awards: failed for user %s: %s", profile["id"], e)
-
+                    failures.append(profile["id"])
+                    logger.warning("Membership anniversary retry required for %s", profile["id"], exc_info=True)
             results[campus_id] = {"awarded": awarded, "date": today.isoformat()}
-
+        if failures:
+            raise RuntimeError(f"Membership anniversary incomplete for {len(failures)} users")
         return results
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "membership_anniversary_awards"})
-        except Exception as exc:
-            # The job stays locked, so its next scheduled run may skip itself.
-            logger.warning("cron: could not release the job lock after this "
-                           "run (%s) — the job may be skipped next time", exc)
+        except Exception:
+            logger.warning("Membership anniversary cron lock release failed", exc_info=True)
 
 
 @celery_app.task(name="app.tasks.scheduled.send_scheduled_blasts", bind=True, max_retries=3)

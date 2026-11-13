@@ -133,3 +133,7 @@ Closed cross-campus claim and award/marker/notice interruption gaps. Signup and 
 ### 13 November — transactional check-in recovery notices
 
 Attendance and its deterministic inbox/push receipt now commit together; replay matches old Python notice IDs, and the copy identifies the actual activity and WAT date. No new scheduled work. Expanded production rollback matrix and 81 targeted recovery/outbox cases passed; full merged backend suite **1,659 passed**. See `CHECKIN_NOTICE_RECOVERY_2026_11_13.md`. The preceding squad batch `5c5c7fa` has successful API/worker/beat/Vercel statuses.
+
+### 13 November — membership milestone grant reliability
+
+Replaced the unsafe read-before-award/no-reference anniversary path with an atomic account/milestone grant, monthly increment and inbox/push capture. Preserves original amounts after configuration changes, adopts exact legacy grants and their notice channels, supports current-month outage catch-up and month-end clamping, and retries incomplete recipients using the existing job. Full merged backend **1,665 passed**, final focused **24 passed**, production rollback and independent 24-session-request local matrix passed, no retained production fixtures. See `MEMBERSHIP_REWARD_RECOVERY_2026_11_13.md` for policy and scope limits.
