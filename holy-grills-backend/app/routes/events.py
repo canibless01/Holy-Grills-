@@ -2318,3 +2318,29 @@ def review_guest_attendance_hp(event_id,ticket_id):
         if 'HG_ORGANIZER_ACCESS' in str(exc):return jsonify({'error':MSG.RESOURCE_ACCESS_DENIED}),403
         if 'HG_GUEST_HP_' in str(exc):return jsonify({'error':MSG.EVENT_HP_REVIEW_CONFLICT}),409
         raise
+
+
+@events_bp.route('/<event_id>/tickets/<ticket_id>/resend',methods=['POST'])
+@optional_auth
+@rate_limit(max_requests=10,window_seconds=60)
+def resend_event_ticket(event_id,ticket_id):
+    data=request.get_json(silent=True)
+    if not isinstance(data,dict) or not all(validate_uuid(value) for value in (event_id,ticket_id,data.get('request_id'))):
+        return jsonify({'error':MSG.EVENT_REQUEST_INVALID}),400
+    db=get_db()
+    ticket=db.table('event_tickets').select('id,event_id,user_id,guest_email').eq('id',ticket_id).eq('event_id',event_id).single().execute() or {}
+    if not ticket:return jsonify({'error':MSG.TICKET_ACCESS_DENIED}),403
+    from app.utils.event_ticket_access import valid_ticket_access
+    signed=valid_ticket_access(data.get('access_token'),ticket,db)
+    try:
+        result=db.rpc('hg_resend_event_ticket',{'p_event':event_id,'p_ticket':ticket_id,'p_request':data['request_id'],'p_actor':getattr(g,'user_id',None),'p_email':data.get('guest_email') if isinstance(data.get('guest_email'),str) else None,'p_signed':signed,'p_title':MSG.EVENT_TICKET_RESEND_TITLE,'p_body':MSG.EVENT_TICKET_RESEND_BODY})
+    except SupabaseError as exc:
+        message=str(exc)
+        if 'HG_TICKET_RESEND_ACCESS' in message:return jsonify({'error':MSG.TICKET_ACCESS_DENIED}),403
+        if 'HG_TICKET_RESEND_COOLDOWN' in message:return jsonify({'error':MSG.EVENT_TICKET_RESEND_COOLDOWN}),429
+        if 'HG_TICKET_RESEND_' in message:return jsonify({'error':MSG.EVENT_TICKET_RESEND_UNAVAILABLE}),409
+        raise
+    # A failed immediate wake does not erase the durable receipt.
+    start_ticket_email_dispatch(result['delivery_id'])
+    response=jsonify(result);response.headers['Cache-Control']='private, no-store'
+    return response,200

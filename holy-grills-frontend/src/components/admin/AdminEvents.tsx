@@ -1,3 +1,4 @@
+import TicketResendButton from '@/components/events/TicketResendButton';
 import GuestAttendanceHpReview from '@/components/events/GuestAttendanceHpReview';
 import EventQuestionsEditor, { normalizedEventQuestions } from '@/components/events/EventQuestionsEditor';
 import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
@@ -418,6 +419,7 @@ export default function AdminEvents() {
                   </div>
                   <div className="flex items-center flex-wrap gap-2 shrink-0">
                     {safeText(r.tier_name || r.tier, '') && <Pill tone="blue">{safeText(r.tier_name || r.tier, '')}</Pill>}
+                    {['paid','not_required'].includes(r.payment_status) && !['cancelled','expired'].includes(r.status) && <TicketResendButton eventId={regs.eventId} ticketId={r.ticket_id} />}
                     {r.hp_claim_status === 'review_required' && <GuestAttendanceHpReview eventId={regs.eventId} ticketId={r.ticket_id} onSaved={()=>viewRegs(regs.eventId)} />}
                     {r.checked_in ? <Pill tone="green">✓ Checked in</Pill> : <Pill tone="cocoa">Registered</Pill>}
                     {!r.checked_in && r.status === 'confirmed' && ['paid','not_required'].includes(r.payment_status) && <button disabled={admitting} className="text-primary font-bold text-xs" onClick={() => void admitTicket(regs.eventId, `hg-event:${regs.eventId}:${r.ticket_id}`)}>{msg('FE_EVENT_CHECK_IN_ATTENDEE', 'Check in attendee')}</button>}

@@ -1,3 +1,4 @@
+import TicketResendButton from '@/components/events/TicketResendButton';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ChevronLeft, Calendar, MapPin, Flame, Users, Ticket, Check, Camera, Info, Loader2, Download, ChevronRight } from 'lucide-react';
@@ -304,6 +305,7 @@ export default function EventDetail() {
           </div>
           {!isAuthenticated && <div className="rounded-xl bg-secondary p-4 text-center space-y-3"><p className="text-sm">{msg('FE_EVENT_SIGNUP_REWARD', 'Create an account with your ticket email to earn HP when you attend.')}</p><Link to="/signup" state={{from:`/events/${id}`}} className="inline-flex rounded-full bg-primary px-5 py-2 text-sm font-bold text-white">{msg('FE_EVENT_CREATE_ACCOUNT', 'Create an account')}</Link></div>}
           <div className="rounded-2xl border-2 border-dashed border-primary/30 p-4 text-center bg-primary/5">
+            <TicketResendButton eventId={eventId} ticketId={ticket.ticket_id} guestEmail={ticket.guest_email} accessToken={ticket.access_token} />
             <TicketQrImage eventId={eventId} ticketId={ticket.ticket_id} guestEmail={ticket.guest_email} accessToken={ticket.access_token} />
             <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Ticket ID</div>
             <div className="font-mono font-bold text-sm text-foreground break-all">{ticket.ticket_id}</div>
