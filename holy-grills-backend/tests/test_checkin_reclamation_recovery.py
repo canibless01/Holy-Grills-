@@ -24,17 +24,16 @@ def test_claim_and_replay_use_saved_day_reference_for_notification(replayed):
     app=Flask(__name__);app.config['STREAK_RECLAIM_MIN_TOPUP']=1500
     db=MagicMock();db.rpc.return_value={'reclaimed':not replayed,'already_reclaimed':replayed,
         'day_offset':1,'source_date':'2026-11-03','reference_id':REFERENCE}
-    with app.app_context(),patch.object(s,'get_db',return_value=db),patch('app.services.notification_service.send_notification') as notify:
+    with app.app_context(),patch.object(s,'get_db',return_value=db),patch('app.services.notification_outbox.start_reference_dispatch') as notify:
         result=s.try_reclaim_checkin('owner','wallet_topup',RECEIPT)
     db.rpc.assert_called_once_with('hg_reclaim_login_checkin',{'p_user_id':'owner','p_source_type':'wallet_topup','p_source_id':RECEIPT,'p_min_topup':1500})
     assert result['day_offset']==1
-    assert notify.call_args.kwargs['reference_id']==REFERENCE
-    assert notify.call_args.kwargs['reference_type']=='streak_reclaim'
+    notify.assert_called_once_with('checkin_reclaimed', REFERENCE)
 
 
 def test_unqualified_receipt_does_not_notify():
     db=MagicMock();db.rpc.return_value={'reclaimed':False,'reason':'unqualified_source'}
-    with Flask(__name__).app_context(),patch.object(s,'get_db',return_value=db),patch('app.services.notification_service.send_notification') as notify:
+    with Flask(__name__).app_context(),patch.object(s,'get_db',return_value=db),patch('app.services.notification_outbox.start_reference_dispatch') as notify:
         assert not s.try_reclaim_checkin('owner','order',RECEIPT)['reclaimed']
     notify.assert_not_called()
 

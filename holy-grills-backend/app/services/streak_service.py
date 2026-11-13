@@ -319,9 +319,8 @@ def try_reclaim_checkin(user_id: str, reclaim_type: str = "order", reference_id:
         if not isinstance(result, dict) or "reclaimed" not in result or result.get("error"):
             raise RuntimeError("Check-in reclamation remains pending")
         if (result.get("reclaimed") or result.get("already_reclaimed")) and result.get("reference_id"):
-            from app.services.notification_service import send_notification
-            send_notification(user_id=user_id, notif_type="checkin_reclaimed", template_data={},
-                              reference_id=result["reference_id"], reference_type="streak_reclaim")
+            from app.services.notification_outbox import start_reference_dispatch
+            start_reference_dispatch("checkin_reclaimed", result["reference_id"])
         return result
     except Exception as exc:
         logger.warning("try_reclaim_checkin: recovery failed for %s: %s", user_id, exc)

@@ -6,7 +6,7 @@ DECLARE c uuid:=gen_random_uuid(); u uuid:=gen_random_uuid(); other_u uuid:=gen_
  food uuid:=gen_random_uuid(); unpaid uuid:=gen_random_uuid(); addon_only uuid:=gen_random_uuid();
  today date:=(now() AT TIME ZONE 'Africa/Lagos')::date;
  monday date:=date_trunc('week',now() AT TIME ZONE 'Africa/Lagos')::date;
- receipt_day date; key text; today_key text; r jsonb; base_hp integer; before_state jsonb;
+ receipt_day date; key text; today_key text; r jsonb; base_hp integer; before_state jsonb;claim_ref uuid;
 BEGIN
  receipt_day:=greatest(monday,today-1);key:=(receipt_day-monday)::text;today_key:=(today-monday)::text;
  INSERT INTO public.campuses(id,name,slug) VALUES(c,'[AUDIT rollback] Check-in','audit-checkin-'||c);
@@ -32,11 +32,22 @@ BEGIN
   PERFORM public.hg_reclaim_login_checkin(u,'wallet_topup',topup,1000);
   RAISE EXCEPTION 'controlled reclaim interruption';
  EXCEPTION WHEN raise_exception THEN IF SQLERRM<>'controlled reclaim interruption' THEN RAISE; END IF; END;
+ IF EXISTS(SELECT 1 FROM public.notifications WHERE user_id=u AND type='checkin_reclaimed') THEN RAISE EXCEPTION 'interruption persisted notice';END IF;
  IF (SELECT week_state FROM public.login_streaks WHERE user_id=u)<>'{}'::jsonb THEN RAISE EXCEPTION 'interruption persisted attendance'; END IF;
  r:=public.hg_reclaim_login_checkin(u,'wallet_topup',topup,1000);
  IF NOT (r->>'reclaimed')::boolean OR (r->>'day_offset')::integer<>key::integer OR (r->>'source_date')::date<>receipt_day THEN RAISE EXCEPTION 'receipt WAT day not used'; END IF;
  r:=public.hg_reclaim_login_checkin(u,'wallet_topup',topup,1000);
  IF (r->>'reclaimed')::boolean OR NOT (r->>'already_reclaimed')::boolean THEN RAISE EXCEPTION 'replay counted twice'; END IF;
+ claim_ref:=(r->>'reference_id')::uuid;
+ IF (SELECT count(*) FROM public.notifications WHERE user_id=u AND reference_id=claim_ref)<>2
+ OR (SELECT count(*) FROM public.notification_deliveries WHERE user_id=u AND notification_id IN (SELECT id FROM public.notifications WHERE reference_id=claim_ref))<>1 THEN RAISE EXCEPTION 'missing or duplicate durable recovery notices';END IF;
+ IF NOT EXISTS(SELECT 1 FROM public.notifications WHERE reference_id=claim_ref AND body LIKE '%wallet top-up%' AND metadata->>'source_date'=receipt_day::text) THEN RAISE EXCEPTION 'notice lost original activity/day';END IF;
+
+ -- Saving attendance does not override HP-category notification opt-outs.
+ INSERT INTO public.notification_preferences(user_id,hp_updates) VALUES(other_u,false) ON CONFLICT(user_id) DO UPDATE SET hp_updates=false;
+ INSERT INTO public.login_streaks(user_id,current_week_start,week_state,streak_count,cycle_week_number,consecutive_weeks,campus_id) VALUES(other_u,monday,'{}',1,1,0,c);
+ r:=public.hg_reclaim_login_checkin(other_u,'wallet_topup',foreign_topup,1000);
+ IF NOT (r->>'reclaimed')::boolean OR EXISTS(SELECT 1 FROM public.notifications WHERE user_id=other_u AND type='checkin_reclaimed') THEN RAISE EXCEPTION 'reclaim preference ignored or attendance denied';END IF;
  -- A normal login merges its key, retaining the earlier receipt's attendance.
  r:=public.hg_mark_current_login_checkin(u);
  IF NOT (r->>'success')::boolean OR (SELECT week_state->>key FROM public.login_streaks WHERE user_id=u)<>'reclaimed'

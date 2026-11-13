@@ -129,3 +129,7 @@ Evidence and remaining verification are in [stock metadata editing](ADMIN_STOCK_
 ### 13 November — reserved squad signup HP claims
 
 Closed cross-campus claim and award/marker/notice interruption gaps. Signup and the existing daily sweep share an atomic backend-only claim, preserve original grants across both legacy reference keys, and scope unowned invitation binding to the actual campus. No new job or session-hydration read. Full backend suite: 1,658 passed; production rollback and 24-request local concurrency proof passed; production fixtures remaining 0. See `PENDING_SQUAD_HP_RECOVERY_2026_11_13.md` for limits and evidence.
+
+### 13 November — transactional check-in recovery notices
+
+Attendance and its deterministic inbox/push receipt now commit together; replay matches old Python notice IDs, and the copy identifies the actual activity and WAT date. No new scheduled work. Expanded production rollback matrix and 81 targeted recovery/outbox cases passed; full merged backend suite **1,659 passed**. See `CHECKIN_NOTICE_RECOVERY_2026_11_13.md`. The preceding squad batch `5c5c7fa` has successful API/worker/beat/Vercel statuses.
