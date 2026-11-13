@@ -137,3 +137,9 @@ Attendance and its deterministic inbox/push receipt now commit together; replay 
 ### 13 November — membership milestone grant reliability
 
 Replaced the unsafe read-before-award/no-reference anniversary path with an atomic account/milestone grant, monthly increment and inbox/push capture. Preserves original amounts after configuration changes, adopts exact legacy grants and their notice channels, supports current-month outage catch-up and month-end clamping, and retries incomplete recipients using the existing job. Full merged backend **1,665 passed**, final focused **24 passed**, production rollback and independent 24-session-request local matrix passed, no retained production fixtures. See `MEMBERSHIP_REWARD_RECOVERY_2026_11_13.md` for policy and scope limits.
+
+### 13 November — visible checkout perks and gate-pickup communication
+
+Owner-requested checkout tiles make free sides, delivery rewards and Food HP discoverable with focused dialogs and honest available/selected/loading/error states. Gate-only checkout now explains pickup in a popup and persistent summary; pinned home delivery is distinct and can explicitly switch to gate pickup. Existing quotes and reward/payment controls are retained. See `CHECKOUT_PERKS_AND_GATE_PICKUP_2026_11_13.md` for scope and verification.
+
+Checkout UI verification: typecheck/full production build passed; all five new mobile/desktop reward/pickup browser cases and seven existing checkout/handoff regression cases passed. Native checks include selected reward IDs in quote requests, free-side Retry and pin-versus-gate transitions. No production database writes or real payments.

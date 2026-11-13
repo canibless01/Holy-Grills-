@@ -46,7 +46,7 @@ export default function OffCampusMap({ gates = [], pin, onPinChange, onGateSelec
         if (event.latLng) callbacks.current.onPinChange?.({ lat: event.latLng.lat(), lng: event.latLng.lng() });
       });
       setMaps(api);
-    }).catch(() => { if (alive) setError('The map is unavailable. You can still use GPS, or choose a gate and enter your address below.'); });
+    }).catch(() => { if (alive) setError('The map is unavailable. Try GPS for home delivery, or choose a gate for pickup at that gate.'); });
     return () => {
       alive = false; generation.current++;
       const api = (window as any).google?.maps;

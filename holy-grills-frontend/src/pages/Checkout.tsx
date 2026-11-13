@@ -9,7 +9,7 @@ import StorefrontSlider from '@/components/storefront/StorefrontSlider';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ChevronLeft, ChevronDown, MapPin, CreditCard, Wallet, Split, Check, AlertCircle, AlertTriangle, Tag, User, Plus, Clock, Flame, Gift } from 'lucide-react';
+import { ChevronLeft, ChevronDown, MapPin, CreditCard, Wallet, Split, Check, AlertCircle, AlertTriangle, Tag, User, Plus, Clock, Flame, Gift, Truck, ArrowUpRight } from 'lucide-react';
 import { mockApi } from '@/lib/mockApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { useCampus } from '@/lib/campusContext';
@@ -175,6 +175,8 @@ export default function Checkout() {
     available_sides: FreeSideItem[];
   }>({ count: 0, expires_at: null, available_sides: [] });
   const [showFreeSide, setShowFreeSide] = useState(false);
+  const [rewardPanel, setRewardPanel] = useState<'hp' | 'delivery' | 'free' | null>(null);
+  const [gatePickupNotice, setGatePickupNotice] = useState(false);
   const [freeSideChoice, setFreeSideChoice] = useState<FreeSideItem | null>(null);
   // The cart_free_side_selections row created by POST /free-sides/select — kept
   // so changing the choice can replace it instead of stacking selections.
@@ -183,6 +185,7 @@ export default function Checkout() {
   const freeSideBusyRef = useRef(false);
   const [freeSideSelections, setFreeSideSelections] = useState<any[]>([]);
   const [freeSideLoadError, setFreeSideLoadError] = useState('');
+  const [freeSideLoading, setFreeSideLoading] = useState(true);
   const applyFreeSideStatus = (value) => {
     setFreeSideCredits(value);
     const selections = value.active_selections || [];
@@ -192,8 +195,20 @@ export default function Checkout() {
     setFreeSideLoadError('');
   };
   const refreshFreeSides = async () => {
+    setFreeSideLoading(true);
     try { const value = await mockApi.rewards.getFreeSideCredits(); applyFreeSideStatus(value); return value; }
     catch (e) { setFreeSideLoadError(e.message || msg('FE_FREE_SIDES_LOAD_ERROR', 'Free-side rewards could not be loaded. Please retry.')); }
+    finally { setFreeSideLoading(false); }
+  };
+  const gatePickup = deliveryType === 'off_campus' && !!gateId && deliveryPin?.lat == null;
+  const pickupGate = gates.find(gate => gate.id === gateId);
+  useEffect(() => {
+    setGatePickupNotice(gatePickup);
+  }, [gatePickup, gateId]);
+  const selectCheckoutGate = (gate) => {
+    setSelectedAddressId(null); setGateId(gate.id);
+    if (!deliveryPin) { setDeliveryAddress(`Pickup at ${gate.name}`); setLandmark(''); }
+    calcOffCampusFee(gate.id, deliveryPin, { keepGate: true });
   };
   const [showGateSelector, setShowGateSelector] = useState(true);
   const [globalAddons, setGlobalAddons] = useState([]);
@@ -277,13 +292,14 @@ export default function Checkout() {
   useEffect(() => {
     if (!isAuthenticated) return;
     let live = true;
-    (async () => {
-      try { const a = await mockApi.addresses.list(); if (live) setAddresses(a || []); } catch { /* ignore */ }
-      if (freeSidesReleased) {
-        try { const c = await mockApi.rewards.getFreeSideCredits(); if (live) applyFreeSideStatus(c); }
-        catch (e) { if (live) setFreeSideLoadError(e.message || msg('FE_FREE_SIDES_LOAD_ERROR', 'Free-side rewards could not be loaded. Please retry.')); }
-      }
-    })();
+    void mockApi.addresses.list().then(a => { if (live) setAddresses(a || []); }).catch(() => { /* Keep checkout usable without saved addresses. */ });
+    if (freeSidesReleased) {
+      setFreeSideLoading(true);
+      void mockApi.rewards.getFreeSideCredits()
+        .then(value => { if (live) applyFreeSideStatus(value); })
+        .catch(e => { if (live) setFreeSideLoadError(e.message || msg('FE_FREE_SIDES_LOAD_ERROR', 'Free-side rewards could not be loaded. Please retry.')); })
+        .finally(() => { if (live) setFreeSideLoading(false); });
+    }
     return () => { live = false; };
   }, [isAuthenticated, freeSidesReleased]);
 
@@ -849,25 +865,63 @@ export default function Checkout() {
         <button disabled={placing || scheduling || abandoning} onClick={recoverCheckout} className="rounded-full bg-gradient-cta text-white font-bold px-4 py-2 disabled:opacity-50">{msg('FE_CHECKOUT_RECOVER_ACTION', 'Recover checkout')}</button>
         <button type="button" disabled={placing || scheduling || abandoning} onClick={startNewCheckout} className="ml-2 rounded-full border border-border px-4 py-2 font-semibold disabled:opacity-50">{abandoning ? 'Closing previous checkout…' : 'Start a new checkout'}</button>
       </section>}
-      {isAuthenticated && <section className="rounded-2xl border border-border bg-card p-4 space-y-3" aria-label={msg('FE_CHECKOUT_REWARDS_TITLE', 'Available rewards')}>
-        <h2 className="font-bold">{msg('FE_CHECKOUT_REWARDS_TITLE', 'Available rewards')}</h2>
-        <p className="text-xs text-muted-foreground">{msg('FE_CHECKOUT_REWARDS_HELP', 'Choose rewards for this order, or save them for later. An HP bonus is reserved for this order and used when it is delivered.')}</p>
+      {isAuthenticated && <section className="rounded-2xl border border-primary/15 bg-card p-4 space-y-3" aria-label={msg('FE_CHECKOUT_REWARDS_TITLE', 'Available rewards')}>
+        <div className="flex items-center gap-2"><Gift className="h-4 w-4 text-primary" aria-hidden="true" /><h2 className="font-bold">Your checkout perks</h2></div>
+        <p className="text-xs text-muted-foreground">Tap a box to check your rewards and choose what to use.</p>
+        <div className={`grid gap-2 ${!rewardOnly && freeSidesReleased ? 'grid-cols-3' : 'grid-cols-2'}`}>
+          {!rewardOnly && freeSidesReleased && <button type="button" aria-haspopup="dialog" onClick={() => !freeSideLoading && freeSideCredits.count > 0 && freeSideSelections.length <= 1 && !freeSideLoadError ? setShowFreeSide(true) : setRewardPanel('free')}
+            className="relative flex min-w-0 flex-col items-start gap-2 rounded-2xl border border-amber-300/60 bg-amber-50 p-3 text-left text-amber-950 transition hover:border-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:bg-amber-950/30 dark:text-amber-100">
+            <Gift className="h-5 w-5 text-amber-700 dark:text-amber-300" aria-hidden="true" /><span className="text-xs font-bold sm:text-sm">Free sides</span>
+            <span className="text-[11px] leading-relaxed">{freeSideLoading ? 'Checking…' : freeSideLoadError ? 'Retry loading' : freeSideSelections.length ? `${freeSideSelections.length} added ✓` : `${freeSideCredits.count} credits`}</span>
+            <span className="flex items-center gap-1 text-[10px] font-semibold">View sides <ArrowUpRight className="h-3 w-3" aria-hidden="true" /></span>
+          </button>}
+          <button type="button" aria-haspopup="dialog" onClick={() => setRewardPanel('delivery')}
+            className="flex min-w-0 flex-col items-start gap-2 rounded-2xl border border-emerald-300/60 bg-emerald-50 p-3 text-left text-emerald-950 transition hover:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:bg-emerald-950/30 dark:text-emerald-100">
+            <Truck className="h-5 w-5 text-emerald-700 dark:text-emerald-300" aria-hidden="true" /><span className="text-xs font-bold sm:text-sm">Delivery rewards</span>
+            <span className="text-[11px] leading-relaxed">{deliveryRewardId !== 'none' ? 'Selected ✓' : !quote ? 'Check eligibility' : `${rewardOptions.delivery.length} available`}</span>
+            <span className="flex items-center gap-1 text-[10px] font-semibold">View rewards <ArrowUpRight className="h-3 w-3" aria-hidden="true" /></span>
+          </button>
+          <button type="button" aria-haspopup="dialog" onClick={() => setRewardPanel('hp')}
+            className="flex min-w-0 flex-col items-start gap-2 rounded-2xl border border-orange-300/60 bg-orange-50 p-3 text-left text-orange-950 transition hover:border-orange-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:bg-orange-950/30 dark:text-orange-100">
+            <Flame className="h-5 w-5 text-orange-700 dark:text-orange-300" aria-hidden="true" /><span className="text-xs font-bold sm:text-sm">Food HP</span>
+            <span className="text-[11px] leading-relaxed">{hpRewardId !== 'none' ? 'Selected ✓' : !quote ? 'Check eligibility' : `${rewardOptions.hp.length} available`}</span>
+            <span className="flex items-center gap-1 text-[10px] font-semibold">View rewards <ArrowUpRight className="h-3 w-3" aria-hidden="true" /></span>
+          </button>
+        </div>
+      </section>}
+      <Dialog open={!!rewardPanel} onOpenChange={open => { if (!open) setRewardPanel(null); }}>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto bg-card">
+          <DialogHeader className=""><DialogTitle>{rewardPanel === 'free' ? 'Your free side credits' : rewardPanel === 'delivery' ? 'Your delivery rewards' : 'Your Food HP rewards'}</DialogTitle>
+            <DialogDescription>{rewardPanel === 'free' ? 'One credit adds one eligible side to your order at ₦0. Delivery is still payable.' : rewardPanel === 'delivery' ? 'Use an earned delivery reward on this order, or keep it for later.' : 'Choose an earned food HP bonus. It is used when this order is delivered.'}</DialogDescription>
+          </DialogHeader>
+          {rewardPanel === 'free' ? <div className="space-y-3 text-sm">
+            {freeSideLoading ? <p role="status">Checking your free side credits…</p> : freeSideLoadError ? <div role="alert">{freeSideLoadError}<button type="button" onClick={refreshFreeSides} className="ml-2 font-semibold text-primary underline">Retry</button></div>
+              : <p>{freeSideSelections.length ? 'Your free sides are already added to this checkout. You can remove them below the reward boxes.' : freeSideCredits.count ? `You have ${freeSideCredits.count} free side credits.` : 'No free side credits yet. Earn them through rewards and challenges, then come back here to choose your side.'}</p>}
+            {!freeSideLoading && !freeSideLoadError && freeSideCredits.count > 0 && freeSideSelections.length <= 1 && <button type="button" onClick={() => { setRewardPanel(null); setShowFreeSide(true); }} className="rounded-xl bg-primary px-4 py-2 font-bold text-primary-foreground">Choose a free side</button>}
+          </div> : <div className="space-y-3">
+            {!quote ? <p className="rounded-xl bg-muted p-3 text-sm">Choose your delivery location below and wait for the order total to load so we can check eligible rewards.</p>
+              : (rewardPanel === 'delivery' ? rewardOptions.delivery : rewardOptions.hp).length === 0 && <p className="rounded-xl bg-muted p-3 text-sm">No eligible {rewardPanel === 'delivery' ? 'delivery' : 'Food HP'} rewards for this order yet. You can continue checkout and save future rewards for another order.</p>}
+            {rewardPanel === 'delivery' ? <>
         <label className="block text-sm font-semibold">{msg('FE_CHECKOUT_DELIVERY_REWARD', 'Delivery reward')}
-          <select aria-label={msg('FE_CHECKOUT_DELIVERY_REWARD', 'Delivery reward')} disabled={!!pendingCheckout || placing || scheduling || !rewardChoicesReady} value={deliveryRewardId} onChange={e => chooseReward('delivery', e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-background p-3 font-normal">
+          <select aria-label={msg('FE_CHECKOUT_DELIVERY_REWARD', 'Delivery reward')} disabled={!quote || !!pendingCheckout || placing || scheduling || !rewardChoicesReady} value={deliveryRewardId} onChange={e => chooseReward('delivery', e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-background p-3 font-normal">
             <option value="none">{msg('FE_CHECKOUT_REWARD_SAVE', 'Save rewards for later')}</option>
             {deliveryRewardId !== 'none' && !rewardOptions.delivery.some(r => r.id === deliveryRewardId) && <option disabled value={deliveryRewardId}>{msg('FE_CHECKOUT_REWARD_REVIEW', 'Review your selected reward')}</option>}
             {rewardOptions.delivery.map(r => <option key={r.id} value={r.id}>{r.name} · {formatNaira(r.discount)} {msg('FE_CHECKOUT_REWARD_OFF', 'off delivery')}</option>)}
           </select>
         </label>
+            </> : <>
         <label className="block text-sm font-semibold">{msg('FE_CHECKOUT_HP_REWARD', 'Food HP reward')}
-          <select aria-label={msg('FE_CHECKOUT_HP_REWARD', 'Food HP reward')} disabled={!!pendingCheckout || placing || scheduling || !rewardChoicesReady} value={hpRewardId} onChange={e => chooseReward('hp', e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-background p-3 font-normal">
+          <select aria-label={msg('FE_CHECKOUT_HP_REWARD', 'Food HP reward')} disabled={!quote || !!pendingCheckout || placing || scheduling || !rewardChoicesReady} value={hpRewardId} onChange={e => chooseReward('hp', e.target.value)} className="mt-1 w-full rounded-xl border border-border bg-background p-3 font-normal">
             <option value="none">{msg('FE_CHECKOUT_REWARD_SAVE', 'Save rewards for later')}</option>
             {hpRewardId !== 'none' && !rewardOptions.hp.some(r => r.id === hpRewardId) && <option disabled value={hpRewardId}>{msg('FE_CHECKOUT_REWARD_REVIEW', 'Review your selected reward')}</option>}
             {rewardOptions.hp.map(r => <option key={r.id} value={r.id}>{r.name} · {r.multiplier}× HP</option>)}
           </select>
         </label>
-        {!quote && <p className="text-xs text-muted-foreground">{msg('FE_CHECKOUT_REWARD_LOCATION', 'Choose your delivery location to load eligible rewards.')}</p>}
-      </section>}
+            </>}
+          </div>}
+          <button type="button" onClick={() => setRewardPanel(null)} className="rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground">Done</button>
+        </DialogContent>
+      </Dialog>
       {scheduleRequested && <p className="rounded-xl border border-primary/30 bg-primary/10 p-3 text-sm">{msg('FE_CHECKOUT_YOUR_ORDER_WILL_BE_SCHEDULED_FOR_THE_NEXT_AVAILA', "Your order will be scheduled for the next available opening. Wallet payment is charged when you place the order.")}</p>}
 
       {!isAuthenticated && (
@@ -879,22 +933,6 @@ export default function Checkout() {
 
       {isAuthenticated && (
         <>
-          {/* Free side credit — sits at the top with the squad order entry point */}
-          {!rewardOnly && freeSidesReleased && <div className="rounded-2xl bg-primary/10 border border-primary/30 p-3 flex items-center gap-3">
-            <span className="text-xl">🏆</span>
-            <div className="flex-1 text-xs text-foreground">
-              {freeSideCredits.count > 0 ? (
-                <>You have <span className="font-bold text-primary">{freeSideCredits.count}</span> free side credit{freeSideCredits.count !== 1 ? 's' : ''}!{freeSideChoice && <span className="text-success font-semibold"> · {freeSideChoice.name} added at ₦0</span>}</>
-              ) : (
-                <>No free side credits yet. Earn them through rewards and challenges.</>
-              )}
-            </div>
-            {freeSideCredits.count > 0 && (
-              <button disabled={freeSideBusy || freeSideSelections.length > 1} onClick={() => setShowFreeSide(true)} className="px-3 py-1.5 rounded-xl bg-gradient-cta text-white text-xs font-bold shrink-0 shadow-glow">
-                {freeSideChoice ? 'Change' : 'Use one'}
-              </button>
-            )}
-          </div>}
           {!rewardOnly && freeSidesReleased && freeSideLoadError && <div role="alert" className="text-sm text-destructive">{freeSideLoadError} <button onClick={refreshFreeSides} className="underline">{msg('FE_FREE_SIDES_RETRY', 'Retry')}</button></div>}
           {!rewardOnly && freeSidesReleased && freeSideSelections.map(selection => <div key={selection.id} className="flex justify-between items-center rounded-xl border border-border p-3 text-sm">
             <span>{selection.free_side_items?.name || msg('FE_FREE_SIDE_UNAVAILABLE', 'Unavailable free side')}</span>
@@ -1051,7 +1089,20 @@ export default function Checkout() {
 
         {deliveryType === 'off_campus' && (
           <div className="mt-3 animate-fade-in space-y-3">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Delivery pin</label>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Home delivery or gate pickup</label>
+            <p className="text-xs text-muted-foreground">Drop a map pin for home delivery. Without a pin, choose a gate and meet your rider there.</p>
+            {gatePickup && <div role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">
+              <p className="font-bold">Gate pickup · {pickupGate?.name || 'Selected gate'}</p>
+              <p className="mt-1">Meet your rider at this gate. This is not delivery to your home or lodge. For home delivery, add your location pin on the map.</p>
+            </div>}
+            {!gatePickup && deliveryPin && <div className="rounded-xl bg-primary/5 p-3 text-sm">
+              <p>Home delivery to your selected pin. Enter the exact address below so your rider can find you.</p>
+              {pickupGate && <button type="button" onClick={() => {
+                feeRequestId.current += 1; if (feeTimer.current) clearTimeout(feeTimer.current);
+                pinRef.current = null; setDeliveryPin(null); setSelectedAddressId(null); setFeePreview(null); setRadiusError(null);
+                setDeliveryAddress(`Pickup at ${pickupGate.name}`); setLandmark(''); setDeliveryFee(Number(pickupGate.base_fee) || 0);
+              }} className="mt-2 font-bold text-primary underline">Use gate pickup instead</button>}
+            </div>}
             <DeliveryLocationMap
               savedAddressId={selectedAddressId}
               gates={gates}
@@ -1059,7 +1110,7 @@ export default function Checkout() {
               pin={deliveryPin}
               onPinChange={(ll) => { setSelectedAddressId(null); setDeliveryPin(ll); calcOffCampusFee(gateId, ll); }}
               selectedGateId={gateId}
-              onGateSelect={(g) => { setSelectedAddressId(null); setGateId(g.id); calcOffCampusFee(g.id, deliveryPin, { keepGate: true }); }}
+              onGateSelect={selectCheckoutGate}
               feePreview={feePreview}
             />
 
@@ -1073,12 +1124,12 @@ export default function Checkout() {
             <div>
               <button type="button" onClick={() => setShowGateSelector((v) => !v)} className="flex items-center gap-2 text-xs font-semibold text-primary">
                 <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showGateSelector ? 'rotate-180' : ''}`} />
-                {showGateSelector ? 'Hide gate selector' : 'Can\'t see your location? Select closest gate'}
+                {showGateSelector ? (deliveryPin ? 'Hide gate options' : 'Hide gate pickup options') : (deliveryPin ? 'Choose nearest gate' : 'Prefer gate pickup? Choose a gate')}
               </button>
               {showGateSelector && (
                 <div className="grid grid-cols-2 gap-2 mt-1.5 animate-fade-in">
                   {gates.map((g) => (
-                    <button key={g.id} onClick={() => { setSelectedAddressId(null); setGateId(g.id); calcOffCampusFee(g.id, deliveryPin, { keepGate: true }); }} className={`p-2.5 rounded-xl border text-xs font-semibold transition-all ${gateId === g.id ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/30'}`}>
+                    <button key={g.id} onClick={() => selectCheckoutGate(g)} className={`p-2.5 rounded-xl border text-xs font-semibold transition-all ${gateId === g.id ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/30'}`}>
                       {g.name}
                       <div className="text-[10px] font-normal text-muted-foreground">{formatNaira(g.base_fee)}</div>
                     </button>
@@ -1089,8 +1140,8 @@ export default function Checkout() {
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Exact address / description</label>
-              <input value={deliveryAddress} onChange={(e) => { setSelectedAddressId(null); setDeliveryAddress(e.target.value); }} placeholder="e.g. Behind the market, near the blue gate" className="w-full mt-1.5 p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{gatePickup ? 'Gate pickup instructions' : 'Exact address / description'}</label>
+              <input value={deliveryAddress} onChange={(e) => { setSelectedAddressId(null); setDeliveryAddress(e.target.value); }} placeholder={gatePickup ? 'e.g. Meet at the gate entrance' : 'e.g. Behind the market, near the blue gate'} className="w-full mt-1.5 p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
             </div>
 
             <div>
@@ -1266,6 +1317,16 @@ export default function Checkout() {
         {placing ? <span className="flex items-center justify-center gap-2"><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Placing order...</span> : `Place Order · ${formatNaira(total)}`}
       </motion.button>
 
+      <Dialog open={gatePickupNotice && gatePickup} onOpenChange={setGatePickupNotice}>
+        <DialogContent className="bg-card">
+          <DialogHeader className=""><DialogTitle>Pick up at {pickupGate?.name || 'the selected gate'}</DialogTitle>
+            <DialogDescription>You have selected gate pickup without a home delivery pin. Meet your rider at this gate; they will not deliver to your home or lodge.</DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">Want home delivery instead? Add your location pin on the map and enter your address.</p>
+          <button type="button" onClick={() => setGatePickupNotice(false)} className="rounded-xl bg-primary px-4 py-3 font-bold text-primary-foreground">Got it — I’ll meet the rider at the gate</button>
+          <button type="button" onClick={() => { setGatePickupNotice(false); setSelectedAddressId(null); setGateId(null); setDeliveryFee(0); setFeePreview(null); setDeliveryAddress(''); }} className="rounded-xl border border-border px-4 py-3 text-sm font-semibold">Choose home delivery instead</button>
+        </DialogContent>
+      </Dialog>
       <Dialog open={!!contactAction} onOpenChange={open => { if (!open) setContactAction(null); }}>
         <DialogContent className="bg-card border-border">
           <DialogHeader className=""><DialogTitle>{msg('FE_CHECKOUT_CONTACT_TITLE', 'Please use a phone number you can answer')}</DialogTitle>
