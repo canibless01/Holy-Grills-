@@ -1,3 +1,4 @@
+import { EventAdmissionOpening } from '@/components/events/EventAdmissionWindow';
 import TicketResendButton from '@/components/events/TicketResendButton';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
@@ -192,6 +193,8 @@ export default function EventDetail() {
           </span>
         )}
       </div>
+
+      <EventAdmissionOpening event={event}/>
 
       {/* Dynamic stat chips — each only renders when it has a value, so the
           row never leaves an L-shaped gap when an event has no price / HP / capacity */}

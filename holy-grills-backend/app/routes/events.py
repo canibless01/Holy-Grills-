@@ -278,6 +278,8 @@ def checkin(event_id):
         return jsonify(response), 200
 
     except Exception as e:
+        if "HG_ADMISSION_NOT_OPEN" in str(e):return jsonify({"error":MSG.EVENT_ADMISSION_NOT_OPEN}),409
+        if "HG_ADMISSION_WINDOW_INVALID" in str(e):return jsonify({"error":MSG.EVENT_ADMISSION_WINDOW_INVALID}),409
         logger.error("checkin failed for event %s: %s", event_id, e)
         return jsonify({"error": MSG.EVENT_CHECKIN_FAILED}), 500
 
@@ -2344,3 +2346,19 @@ def resend_event_ticket(event_id,ticket_id):
     start_ticket_email_dispatch(result['delivery_id'])
     response=jsonify(result);response.headers['Cache-Control']='private, no-store'
     return response,200
+
+
+@events_bp.route('/<event_id>/admission-window',methods=['POST'])
+@require_role('admin')
+def set_event_admission_window(event_id):
+    data=request.get_json(silent=True)
+    try:
+        if not validate_uuid(event_id) or not isinstance(data,dict) or 'minutes' not in data:raise ValueError
+        minutes=None if data['minutes'] is None else as_int(data['minutes'],0,10080)
+    except ValueError:return jsonify({'error':MSG.EVENT_ADMISSION_WINDOW_INVALID}),400
+    try:return jsonify(get_db().rpc('hg_set_event_admission_window',{'p_actor':g.user_id,'p_event':event_id,'p_minutes':minutes})),200
+    except SupabaseError as exc:
+        if 'HG_ORGANIZER_ACCESS' in str(exc):return jsonify({'error':MSG.RESOURCE_ACCESS_DENIED}),403
+        if 'HG_ADMISSION_WINDOW_LOCKED' in str(exc):return jsonify({'error':MSG.EVENT_ADMISSION_WINDOW_LOCKED}),409
+        if 'HG_ADMISSION_WINDOW_INVALID' in str(exc):return jsonify({'error':MSG.EVENT_ADMISSION_WINDOW_INVALID}),400
+        raise

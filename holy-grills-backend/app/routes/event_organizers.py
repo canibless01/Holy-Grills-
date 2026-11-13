@@ -38,6 +38,8 @@ ERRORS={
 }
 
 def _failure(exc):
+ if "HG_ADMISSION_NOT_OPEN" in str(exc):return jsonify({"error":MSG.EVENT_ADMISSION_NOT_OPEN}),409
+ if "HG_ADMISSION_WINDOW_INVALID" in str(exc):return jsonify({"error":MSG.EVENT_ADMISSION_WINDOW_INVALID}),409
  if 'HG_EVENT_CHANGE_STALE' in str(exc):return jsonify({'error':MSG.EVENT_CHANGE_STALE,'code':'event_changed'}),409
  if 'Events disabled' in str(exc):return jsonify({'error':MSG.EVENT_RELEASE_CLOSED}),403
  if any(text in str(exc) for text in ('Event not available','Ticket not admissible')):return jsonify({'error':MSG.EVENT_TICKET_NOT_ADMISSIBLE}),409

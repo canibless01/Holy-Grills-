@@ -1,3 +1,4 @@
+import EventAdmissionWindow from '@/components/events/EventAdmissionWindow';
 import TicketResendButton from '@/components/events/TicketResendButton';
 import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
@@ -112,6 +113,7 @@ function EventAccount({id,admin,externalRevision,onEdit,onChange}) {
       {!admin && <PayoutForm event={event} available={account.available} busy={busy || loading} run={run} />}
       <div className="space-y-3">{(account.requests||[]).map(row=><PayoutCard key={row.id} row={row} admin={admin} busy={busy || loading} run={run} eventId={id}/>)}</div>
     </div>
+    {admin && <EventAdmissionWindow event={event} disabled={busy || loading} onSaved={()=>{reload();onChange();}} />}
     {admin && <EventOperationControls key={id} event={event} disabled={busy || loading} onSaved={()=>{reload();onChange();}} />}
     {admin && event.metadata?.lifecycle_status !== 'cancelled' && <ReviewControls account={account} busy={busy || loading} run={run} />}
     <Attendees id={id} admin={admin} fields={event.registration_fields||[]} revision={revision} busy={busy || loading || event.metadata?.lifecycle_status === 'cancelled'} onScan={()=>setScanner(true)} onAdmit={ticket=>void admit(`hg-event:${id}:${ticket}`)} />
