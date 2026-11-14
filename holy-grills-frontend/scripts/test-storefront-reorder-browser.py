@@ -37,7 +37,7 @@ try:
     route.fulfill(json=data)
    ctx=browser.new_context(viewport={'width':width,'height':1000});ctx.route('**/api/**',api)
    ctx.add_init_script("sessionStorage.setItem('hg_access_token','controlled');localStorage.setItem('hg_user_role','super_admin');localStorage.setItem('hg_admin_scope_all','1');localStorage.setItem('hg_cookie_consent',JSON.stringify({essential:true,analytics:false,date:new Date().toISOString()}));")
-   page=ctx.new_page();page.set_default_timeout(10000);page.on('pageerror',lambda e:errors.append(str(e)));page.goto('http://127.0.0.1:5273/admin?section=storefront',wait_until='domcontentloaded')
+   page=ctx.new_page();page.set_default_timeout(10000);page.on('pageerror',lambda e:errors.append(str(e)));page.goto('http://127.0.0.1:5273/admin?section=storefront',wait_until='domcontentloaded',timeout=30000)
    expect(page.get_by_display_value('Carousel 5') if hasattr(page,'get_by_display_value') else page.locator('input[value="Carousel 5"]')).to_be_visible()
    carousel=page.locator('fieldset').filter(has=page.locator('input[value="Carousel 5"]')).first
    carousel.get_by_title('Move carousel up',exact=True).click();expect(page.locator('input[value^="Carousel "]').nth(3)).to_have_value('Carousel 5')

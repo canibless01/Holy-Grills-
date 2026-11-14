@@ -8,7 +8,7 @@ with sync_playwright() as p:
  browser=p.chromium.launch(executable_path='/usr/bin/chromium',args=['--no-sandbox'])
  for width,role in [(393,'admin'),(1280,'super_admin'),(393,'community_manager')]:
   ctx=browser.new_context(viewport={'width':width,'height':900});ctx.add_init_script(f"localStorage.setItem('hg_access_token','synthetic');localStorage.setItem('hg_campus_id','{C}');localStorage.setItem('hg_user_campus_id','{C}');localStorage.setItem('hg_user_role','{role}');")
-  writes=[];rows=[];held=[];errors=[];failed_search=False
+  writes=[];rows=[{'id':U,'campus_id':None,'metric':'orders','threshold':2,'reward_type':'hp','reward_amount':50,'validity_days':14,'is_active':True}];held=[];errors=[]
   def api(route):
    nonlocal_unused=None
    req=route.request;path=urlparse(req.url).path;data={}
@@ -43,6 +43,7 @@ with sync_playwright() as p:
    search.fill('fail');expect(d.get_by_role('alert')).to_be_visible();d.get_by_role('button',name='Retry',exact=True).click();expect(d.get_by_role('alert')).to_be_visible();search.fill('new');expect(d.get_by_text('Latest person',exact=True)).to_be_visible()
    d.get_by_role('button',name='Add Ambassador tag',exact=True).last.click();expect(d).not_to_be_visible();assert len(writes)==1
   page.get_by_role('button',name='Performance milestones',exact=True).click()
+  expect(page.get_by_role('button',name='Edit milestone',exact=True)).to_have_count(1 if role=='super_admin' else 0)
   if role=='community_manager':assert not page.get_by_role('button',name='New milestone',exact=True).count()
   else:
    page.get_by_role('button',name='New milestone',exact=True).click();d=page.get_by_role('dialog')

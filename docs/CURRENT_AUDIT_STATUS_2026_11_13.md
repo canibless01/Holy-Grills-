@@ -1,3 +1,5 @@
+> Latest continuation: [14 November admin checkpoint](ADMIN_CONTINUATION_CHECKPOINT_2026_11_14.md). Ambassador roster/milestone/distribution/review exceptions now have recorded evidence; the earlier next-priority wording below is historical.
+
 # Current audit checkpoint — 13 November 2026
 
 Updated 14 November after signup/referral and CMS continuation; previous shared-main reconciliation was `d7ad502`. This is the current summary; older dated open lists are historical and must be read with later closure evidence. The whole-site audit is **not complete**. This chat's recent order/reward/retention and legacy-recovery batches are closed for their recorded cases, not a certification of every possible site interaction.

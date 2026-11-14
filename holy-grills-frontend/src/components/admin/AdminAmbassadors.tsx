@@ -211,6 +211,7 @@ function TagAmbassadorModal({ onClose, onTagged }: { onClose: () => void; onTagg
 }
 
 function MilestonesTab({ readOnly }: { readOnly: boolean }) {
+  const { user } = useHolyGrill();
   const [items, setItems] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
   const [editing,setEditing]=useState<any>(null);
@@ -250,7 +251,7 @@ function MilestonesTab({ readOnly }: { readOnly: boolean }) {
               {m.auto_issue ? ` · ${msg('FE_ADMIN_AMBASSADOR_AUTO_ISSUE', 'Issue reward automatically when reached')}` : ''}
             </div>
           </div>
-          {!readOnly&&<button type="button" disabled={loadError} onClick={()=>{setEditing(m);setOpen(true);}} className="rounded-full border border-border px-3 py-2 text-xs font-bold">{msg('FE_AMBASSADOR_EDIT_MILESTONE','Edit milestone')}</button>}
+          {!readOnly&&(m.campus_id || user?.role==='super_admin')&&<button type="button" disabled={loadError} onClick={()=>{setEditing(m);setOpen(true);}} className="rounded-full border border-border px-3 py-2 text-xs font-bold">{msg('FE_AMBASSADOR_EDIT_MILESTONE','Edit milestone')}</button>}
         </div>
       ))}
       {open && <MilestoneModal initial={editing} onClose={() => setOpen(false)} onSaved={load} />}

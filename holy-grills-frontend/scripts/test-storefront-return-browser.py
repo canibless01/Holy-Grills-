@@ -72,7 +72,7 @@ def new_page(browser, phase='transient', auth=True):
     if auth: seed.update(hg_access_token='controlled', hg_user_campus_id=a, hg_user_role='student')
     ctx.add_init_script('for(const[k,v]of Object.entries(' + json.dumps(seed) + '))localStorage.setItem(k,v)')
     page = ctx.new_page(); page.on('pageerror', lambda e: print('Browser error: ' + str(e), flush=True)); page.on('console', lambda m: print('Console error: '+m.text[:400], flush=True) if m.type=='error' else None); page.set_default_timeout(12000)
-    page.goto('http://127.0.0.1:5236/__audit_storefront_return.html'); page.get_by_label('Preserved draft').fill('keep my draft')
+    page.goto('http://127.0.0.1:5236/__audit_storefront_return.html', wait_until='domcontentloaded', timeout=30000); page.get_by_label('Preserved draft').fill('keep my draft')
     page.get_by_role('link', name='Test Home', exact=True).click()
     return ctx, page
 
@@ -123,6 +123,9 @@ try:
         ctx.close()
         ctx, page = new_page(browser, 'unauthorized')
         expect(page.get_by_role('status', name='Home highlights', exact=True).get_by_role('button', name='Retry', exact=True)).to_be_visible()
+        # Menu and Home mount separate observers. Await Home's initial request
+        # before measuring automatic retries; a visible error can precede it.
+        page.wait_for_function("async()=>{const {queryClientInstance}=await import('/src/lib/query-client.ts');return queryClientInstance.isFetching({queryKey:['published-storefront']})===0}")
         refused = len([r for r in state['reads'] if r['resource'] == 'banners' and not r['params']])
         page.wait_for_timeout(2000)
         assert len([r for r in state['reads'] if r['resource'] == 'banners' and not r['params']]) == refused
