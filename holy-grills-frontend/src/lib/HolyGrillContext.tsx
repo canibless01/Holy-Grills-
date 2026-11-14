@@ -403,21 +403,13 @@ export const HolyGrillProvider = ({ children }) => {
 
   const register = async (body) => {
     const data = await liveApi.auth.register(body);
-    // Backend returns { status: "check_email", message } when the account is
-    // created but email verification is required before login. Don't call
-    // /auth/me — there's no valid session yet. The Register page shows the
-    // message as info (not an error) with login/reset links.
-    if (data?.status === 'check_email') {
-      return data;
+    // Register immediately navigates after the API persists issued tokens.
+    // Let the destination restore its profile/cart once; a slow secondary
+    // read must not turn successful account creation into a signup error.
+    if (data?.access_token && data?.refresh_token) {
+      sessionStore.setItem('hg_login_session', String(Date.now()) + Math.random().toString(36).slice(2));
     }
-    const profile = await loadSessionProfile();
-    setUser(profile); persistUserCampus(profile);
-    setHpBalance(normalizeHpBalance(profile));
-    setWallet(profile.wallet || null);
-    setAuthed(true);
-    sessionStore.setItem('hg_login_session', String(Date.now()) + Math.random().toString(36).slice(2));
-    await refreshCart();
-    return { ...data, role: profile.role || data?.user?.role || 'student' };
+    return data;
   };
 
   const logout = async () => {

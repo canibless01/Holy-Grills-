@@ -53,7 +53,7 @@ const auth = {
   },
   async me() { return apiClient.get('/auth/me'); },
   async register(body) {
-    const data = await apiClient.post('/auth/register', body);
+    const data = await apiClient.post('/auth/register', body, { timeoutMs: 30000 });
     if (data?.access_token && data?.refresh_token) setTokens(data.access_token, data.refresh_token);
     return data;
   },

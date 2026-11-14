@@ -11,3 +11,8 @@ Verification:
 - TypeScript, edited new components/helper ESLint and complete client/SSR/prerender build pass.
 
 No schema migration, price edit, customer-data mutation or new scheduled task.
+
+
+Production follow-up: deployed browser inspection confirmed redirect/prefill and a live enabled faculty list, but exposed a prerender hydration mismatch on an old homepage referral URL. A root referral entry now uses the existing client-rendered fallback, because its destination is signup rather than the static homepage; ordinary public pages retain prerender hydration. Its router navigation runs as a transition. Successful signup also no longer waits for serial profile/cart reads before its full-page navigation: the destination restores the issued session normally. The account-creation request has a 30-second bounded deadline instead of the shared 12-second default, with no automatic POST retry. Native signup verifies that a secondary profile request cannot hold the registration page after success. This is a reduction in unnecessary post-signup requests, not a bypass of account/profile persistence or reward grants on the backend.
+
+Final production-built static-host regression passes at 393px and 1280px: the old homepage link reaches signup, prefills the code and enables faculty selection with **zero hydration/page errors**. Native signup session/referral/retry/reload checks and the complete production build/typecheck/edited-component lint pass after the handoff change. Initial live read-only reference requests returned 200 with 64 departments and 6 levels (0.74s and 0.43s from this workspace; these are observations, not a mobile-network speed guarantee). Production browser inspection suppressed all writes, including ambassador tracking.

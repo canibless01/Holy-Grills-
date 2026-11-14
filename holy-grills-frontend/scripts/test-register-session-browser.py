@@ -17,7 +17,9 @@ def fixture(route):
   clicks.append(route.request.post_data_json);data={'anonymous_id':'controlled-anon'}
  elif path.endswith('/auth/register'):
   registered.append(route.request.post_data_json);data={'access_token':'issued-access','refresh_token':'issued-refresh','user':{'id':'controlled-owner'}};status=201
- elif path.endswith('/auth/me'):data=profile
+ elif path.endswith('/auth/me'):
+  if registered: assert '/register' not in urlparse(route.request.headers.get('referer','')).path, 'No secondary profile read may delay successful signup'
+  data=profile
  elif path.endswith('/campuses'):data=[{'id':campus,'name':'Campus','is_active':True}]
  elif path.endswith('/departments'):data=[{'id':'department','name':'Computer Science'}]
  elif path.endswith('/academic-levels'):data=[{'id':'level','name':'100L','value':'100L'}]
@@ -31,7 +33,7 @@ proc=subprocess.Popen(['npm','run','dev','--','--host','127.0.0.1','--port','525
 try:
  time.sleep(2)
  with sync_playwright() as p:
-  b=p.chromium.launch(executable_path='/usr/bin/chromium',args=['--no-sandbox']);c=b.new_context();c.route('**/api/**',fixture);page=c.new_page();page.set_default_timeout(10000)
+  b=p.chromium.launch(executable_path='/usr/bin/chromium',args=['--no-sandbox']);c=b.new_context();c.route('**/api/**',fixture);page=c.new_page();page.set_default_timeout(10000);page.set_default_navigation_timeout(30000)
   page.add_locator_handler(page.get_by_role('button',name='Essential only',exact=True),lambda button:button.click())
   page.goto('http://127.0.0.1:5251/?ref=HGFRIEND',wait_until='domcontentloaded')
   page.wait_for_url('**/register?ref=HGFRIEND')
