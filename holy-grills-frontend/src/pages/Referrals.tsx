@@ -24,7 +24,7 @@ const readStats = (raw, user) => {
     s.referral_code || s.code || profile.referral_code || (profile.profile && profile.profile.referral_code) || '';
   const link =
     s.referral_link || s.link ||
-    (code ? `${window.location.origin}/r/${code}` : '');
+    (code ? `${window.location.origin}/register?ref=${encodeURIComponent(code)}` : '');
   return {
     referral_code: code,
     referral_link: link,

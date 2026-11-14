@@ -1382,7 +1382,8 @@ def registration_options():
     if campus and not validate_uuid(campus):
         return jsonify({'error': MSG.INVALID_CAMPUS_ID}), 400
     try:
-        result = get_db().rpc('hg_registration_options', {'p_campus_id': campus or None})
+        from app.services.registration_options import registration_snapshot
+        result = registration_snapshot(get_db(), campus or None)
     except (SupabaseError, _req.RequestException):
         logger.exception('Registration reference snapshot unavailable')
         return jsonify({'error': MSG.REFERENCE_DATA_UNAVAILABLE}), 503

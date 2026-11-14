@@ -941,7 +941,7 @@ def ambassador_dashboard(db, user_id: str, frontend_url: str) -> dict | None:
         "is_ambassador": True,
         "month": month,
         "referral_code": code,
-        "tracking_link": f"{frontend_url}?ref={code}" if code else None,
+        "tracking_link": f"{frontend_url.rstrip('/')}/register?ref={code}" if code else None,
         "lifetime": lifetime,
         "month_activity": {**activity, **month_metrics},
         "milestones": milestones,
@@ -973,7 +973,7 @@ def staff_ambassador_list(db, campus_id: str | None, is_super: bool) -> list[dic
         out.append({
             "ambassador": r,
             "profile": p,
-            "tracking_link": f"{_frontend_base()}?ref={code}" if code else None,
+            "tracking_link": f"{_frontend_base().rstrip('/')}/register?ref={code}" if code else None,
             "lifetime": lifetime,
             "month": {**activity, **monthly},
         })

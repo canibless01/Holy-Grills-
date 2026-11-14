@@ -138,7 +138,7 @@ def my_referrals():
         frontend_url = current_app.config.get("FRONTEND_URL", "")
         return jsonify({
             "referral_code": referral_code,
-            "referral_link": f"{frontend_url}?ref={referral_code}" if referral_code else None,
+            "referral_link": f"{frontend_url.rstrip('/')}/register?ref={referral_code}" if referral_code else None,
             "total_referrals": len(enriched_referrals),
             "completed_referrals": len(completed),
             "total_hp_earned": total_hp,
@@ -186,7 +186,7 @@ def referral_stats():
         frontend_url = current_app.config.get("FRONTEND_URL", "")
         return jsonify({
             "referral_code": referral_code,
-            "referral_link": f"{frontend_url}?ref={referral_code}" if referral_code else None,
+            "referral_link": f"{frontend_url.rstrip('/')}/register?ref={referral_code}" if referral_code else None,
             "total_referrals": len(referrals),
             "completed_referrals": len(completed),
             "pending_referrals": len(referrals) - len(completed),

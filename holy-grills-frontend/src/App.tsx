@@ -21,7 +21,7 @@ import ClientOnly from '@/components/ClientOnly';
 
 // Eager imports — the entry-critical screens render with no per-route
 // Suspense spinner. Everything else is split at the route (see below).
-import Home from '@/pages/Home';
+import ReferralEntry from '@/components/ReferralEntry';
 const Kitchen = lazy(() => import('@/pages/Kitchen'));
 const Rider = lazy(() => import('@/pages/Rider'));
 const Admin = lazy(() => import('@/pages/Admin'));
@@ -74,11 +74,12 @@ const AppRoutes = () => {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/signup" element={<Register />} />
+      <Route path="/r/:code" element={<ReferralEntry />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route element={<Layout />}>
         {/* Public browsing + ordering (guests welcome) */}
-        <Route path="/" element={<Home />} />
+        <Route path="/" element={<ReferralEntry />} />
         {/* Domain 0 — campus-scoped routes. Guests get the non-cancelable
             CampusGate before these; authenticated users are scoped by their
             own campus_id. Static pages (FAQ, Terms, Our Story) stay open. */}

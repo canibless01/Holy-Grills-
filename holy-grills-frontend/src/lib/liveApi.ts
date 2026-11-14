@@ -1,3 +1,4 @@
+import { registrationOptions } from './registrationOptions';
 // HolyGrill Live API — drop-in replacement for mockApi that calls the real backend.
 // Every method mirrors mockApi's signature so components only change their import.
 // Base URL + JWT token handling live in ./apiClient. Verified against the live
@@ -45,7 +46,7 @@ const naWrite = (method) => () => {
 
 // ========== AUTH ==========
 const auth = {
-  async registrationOptions(params = {}, force = false) { return apiClient.get('/auth/registration-options', params, undefined, { cacheMs: force ? 0 : 60000 }); },
+  registrationOptions,
   async login(body) {
     const data = await apiLogin(body.email, body.password);
     return data;

@@ -408,10 +408,10 @@ class FinancialAdminGuardTests(AmbassadorTestBase):
 # ---------------------------------------------------------------------------
 class PromoDistributionTests(AmbassadorTestBase):
     def test_caption_personalization_replaces_every_placeholder_form(self):
-        link = 'https://holygrills.example?ref=HGAMB1'
+        link = 'https://holygrills.example/register?ref=HGAMB1'
         self.assertEqual(
             svc.personalize_caption('Grab a bite {{link}} today', link),
-            'Grab a bite https://holygrills.example?ref=HGAMB1 today')
+            'Grab a bite https://holygrills.example/register?ref=HGAMB1 today')
         self.assertEqual(svc.personalize_caption('Use {link}', link),
                          f'Use {link}')
         self.assertEqual(svc.personalize_caption('See {{LINK}} now', link),
@@ -452,7 +452,7 @@ class PromoDistributionTests(AmbassadorTestBase):
         assignments = svc.promo_assignments(self.db, message_id)
         links = {a['ambassador_id']:
                  svc.personalize_caption('Order with {{link}}',
-                                         f"https://holygrills.example?ref={a['profile']['referral_code']}")
+                                         f"https://holygrills.example/register?ref={a['profile']['referral_code']}")
                  for a in assignments}
         self.assertIn('ref=HGAMB1', links[AMB])
         self.assertIn('ref=HGAMB2', links[AMB2])
@@ -1015,7 +1015,7 @@ class DashboardAndReviewTests(AmbassadorTestBase):
         self.assertTrue(payload['is_ambassador'])
         self.assertEqual(payload['referral_code'], 'HGAMB1')
         self.assertEqual(payload['tracking_link'],
-                         'https://holygrills.example?ref=HGAMB1')
+                         'https://holygrills.example/register?ref=HGAMB1')
         self.assertEqual(payload['referral_hp_earned'], 100)
         self.assertIn('meal_discounts', payload)
         self.assertIn('month_activity', payload)

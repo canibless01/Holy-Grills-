@@ -259,6 +259,14 @@
       "dest": "/app-shell.html"
     },
     {
+      "src": "/r",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/r/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
       "src": "/referrals",
       "dest": "/app-shell.html"
     },

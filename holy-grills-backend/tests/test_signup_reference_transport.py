@@ -105,3 +105,31 @@ def test_related_ambassador_writes_use_filtered_real_transport(operation):
     patches=db._session.patch.call_args_list
     assert len(patches)==(2 if operation=='recommendation' else 1)
     assert all(c.kwargs['params']==({'profile_id':'eq.student'} if operation in ('reactivate','remove') else {'id':'eq.review'}) for c in patches)
+
+
+def test_reference_cache_is_campus_scoped_copied_and_expires():
+    from app.services.registration_options import registration_snapshot
+    app = Flask(__name__)
+    db = Mock()
+    db.rpc.side_effect = [{'campus_id': CAMPUS, 'departments': [{'name': 'Original'}]},
+                          {'campus_id': 'other'}, {'campus_id': CAMPUS, 'departments': []}]
+    with app.app_context(), patch('app.services.registration_options.monotonic', return_value=100) as clock:
+        first = registration_snapshot(db, CAMPUS)
+        first['departments'][0]['name'] = 'Mutated'
+        assert registration_snapshot(db, CAMPUS)['departments'][0]['name'] == 'Original'
+        assert registration_snapshot(db, 'other')['campus_id'] == 'other'
+        assert db.rpc.call_count == 2
+        clock.return_value = 131
+        assert registration_snapshot(db, CAMPUS)['departments'] == []
+        assert db.rpc.call_count == 3
+
+
+def test_reference_cache_does_not_save_retired_campus_errors():
+    from app.services.registration_options import registration_snapshot
+    app = Flask(__name__)
+    db = Mock()
+    db.rpc.side_effect = [{'error': 'campus_unavailable'}, {'campus_id': CAMPUS}]
+    with app.app_context():
+        assert registration_snapshot(db, CAMPUS)['error'] == 'campus_unavailable'
+        assert registration_snapshot(db, CAMPUS)['campus_id'] == CAMPUS
+        assert db.rpc.call_count == 2

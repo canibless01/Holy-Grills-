@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 
@@ -21,19 +22,22 @@ import { useHolyGrill } from '@/lib/HolyGrillContext';
  */
 export default function AmbassadorClickTracker() {
   const { user } = useHolyGrill();
+  const location = useLocation();
+  const trackedCode = useRef<string | null>(null);
   const mergeDone = useRef<string | null>(null);
 
   // 1. Record the click whenever the page loads with a ref code.
   useEffect(() => {
     try {
-      const params = new URLSearchParams(window.location.search);
-      const ref = (params.get('ref') || params.get('referral') || '').trim();
-      if (!ref) return;
+      const params = new URLSearchParams(location.search);
+      const ref = (params.get('ref') || params.get('referral') || (location.pathname.startsWith('/r/') ? decodeURIComponent(location.pathname.slice(3)) : '')).trim();
+      if (!ref || trackedCode.current === ref) return;
+      trackedCode.current = ref;
       void liveApi.ambassadors.trackClick(ref).catch(() => undefined);
     } catch {
       /* no-op: tracking is best-effort */
     }
-  }, []);
+  }, [location.search, location.pathname]);
 
   // 2. Adopt the anonymous trail after authentication, once per user/device.
   useEffect(() => {

@@ -174,3 +174,7 @@ Rewards are now discovered and selectable before a location: delivery percentage
 ### 13 November — legacy gift/reward recovery closed for current launch
 
 Live read-only counts are zero for legacy gifts, flagged orders/lines, old profile multipliers/delivery caps and unsnapshotted redemptions. The obsolete hot-dog promotion remains disabled with an expired window. Added fresh isolated legacy admission/conversion/interruption/replay/new-gift/cancellation conservation proof; refreshed earned normal/flash snapshot proof using a self-created account. Both production matrices and 39 focused backend tests pass; all fixtures rolled back. No runtime/schema/customer-data change was needed. See `LEGACY_GIFT_RECOVERY_CLOSURE_2026_11_13.md` for exact closure and the separately deferred obsolete feature boundary.
+
+### 14 November — signup/reference resilience and referral entry
+
+[Recorded evidence](SIGNUP_REFERENCE_REFERRAL_RECOVERY_2026_11_14.md): short-lived campus reference snapshots, one bounded automatic transient read retry and reload reuse; direct signup referral/ambassador links plus backward-compatible guest root and /r entry. Native signup carries the prefilled code into the issued session. Existing referral and ambassador accounting remain separate consumers of the same unique code. No retained fixtures or external messages. CMS/storefront administration is the next requested continuation; this batch does not claim whole-site closure.
