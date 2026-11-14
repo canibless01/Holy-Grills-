@@ -162,6 +162,8 @@ class MSG:
     FE_CREATE_SQUAD_REVIEW_MEMBERS = "Review your members on the squad page."
     FE_PUSH_SOFT_RETRY_SETTINGS = "You can enable it later in notification settings."
     FE_PUSH_SOFT_DISMISS = "Dismiss"
+    FE_PUSH_GUEST_BODY = "Allow Holy Grills notifications on this device. You can change this in your browser settings."
+    FE_PUSH_ALLOW = "Allow notifications"
     FE_PUSH_SOFT_TITLE = "Never miss an update"
     FE_PUSH_SOFT_BODY = "Get instant alerts when your order is on the way, when you earn HP, and when rewards are available."
     FE_PUSH_SOFT_ENABLE = "Enable notifications"

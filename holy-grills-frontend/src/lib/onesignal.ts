@@ -41,6 +41,7 @@ let identifiedUserId: string | null = null;
 let storedDevice: { userId: string; subscriptionId: string } | null = null;
 let initialization: Promise<void> | null = null;
 let identityGeneration = 0;
+let logoutTask: Promise<void> | null = null;
 let identityTask: { userId: string; promise: Promise<void> } | null = null;
 const SDK_TIMEOUT_MS = 15000;
 // How long an explicit "Enable push" tap waits for the SDK + identity before it
@@ -128,7 +129,7 @@ const identify = async (target: string) => {
 export const initOneSignal = async (userId: string | null) => {
   const appId = APP_CONFIG.onesignal.appId;
   if (userId) registeredUserId = userId;
-  if (!appId || !registeredUserId) return;
+  if (!appId) return;
   // Never start the SDK on the www alias: the browser treats it as a different
   // origin from the one the OneSignal app is configured for, so init can only fail
   // (loudly, in the console). Move the visitor to the canonical origin instead —
@@ -137,6 +138,7 @@ export const initOneSignal = async (userId: string | null) => {
   if (enforceCanonicalOrigin() || isOnAliasedOrigin()) return;
   try {
     await ensureSdk(appId);
+    await logoutTask;
     const target = registeredUserId;
     if (target && identifiedUserId !== target) await identify(target);
   } catch {
@@ -175,16 +177,14 @@ export const ensurePushReady = async (userId: string | null = null, timeoutMs = 
   }
   if (userId) registeredUserId = userId;
   const target = registeredUserId;
-  if (!target) {
-    throw new Error(msg('FE_ONESIGNAL_SIGN_IN_TO_ENABLE_PUSH_ON_THIS_DEVICE', 'Sign in to enable push notifications on this device.'));
-  }
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   const ready = (async () => {
     await ensureSdk(appId);
+    await logoutTask;
     if (!initialized || !sdkInstance) throw new Error('push_sdk_not_initialized');
     if (registeredUserId !== target) return; // a newer login took over
-    await identify(target);
+    if (target) await identify(target);
   })();
 
   try {
@@ -203,7 +203,7 @@ export const ensurePushReady = async (userId: string | null = null, timeoutMs = 
   }
 
   if (registeredUserId !== target) return;
-  if (identifiedUserId !== target) {
+  if (identifiedUserId !== target || logoutTask) {
     throw new Error(msg('FE_ONESIGNAL_PUSH_COULDN_T_LOAD_CHECK_YOUR_CONNECTION_AND', 'Push couldn’t load on this connection. Check your network and tap Enable again.'));
   }
 };
@@ -219,11 +219,15 @@ export const optOutOneSignal = async () => {
 export const logoutOneSignal = async () => {
   registeredUserId = null; identifiedUserId = null; storedDevice = null; identityGeneration += 1;
   const generation = identityGeneration;
-  if (sdkInstance) {
+  const previous = logoutTask;
+  const task = (async () => {
+    await previous?.catch(() => {});
     await identityTask?.promise.catch(() => {});
     if (generation !== identityGeneration || registeredUserId) return;
-    try { await sdkInstance.logout(); } catch (e) { /* ignore */ }
-  }
+    if (sdkInstance) await sdkInstance.logout();
+  })();
+  logoutTask = task;
+  try { await task; } finally { if (logoutTask === task) logoutTask = null; }
 };
 
 export const requestPushPermission = async () => {
@@ -234,13 +238,14 @@ export const requestPushPermission = async () => {
     // must be set in src/config/app.config.js → onesignal.appId.
     throw new Error(msg('FE_ONESIGNAL_PUSH_NOTIFICATIONS_AREN_T_CONFIGURED', 'Push notifications aren’t configured yet. Set the OneSignal App ID in app.config to enable them.'));
   }
-  if (!sdkInstance || !registeredUserId || identifiedUserId !== registeredUserId) {
+  if (!sdkInstance || logoutTask || identifiedUserId !== registeredUserId) {
     throw new Error(msg('FE_ONESIGNAL_ONE_SIGNAL_IS_STILL_LOADING_TRY_AGAIN', 'OneSignal is still loading — try again in a moment.'));
   }
 
   return new Promise<boolean>((resolve, reject) => {
     const sdk = sdkInstance;
     const userId = registeredUserId;
+    const generation = identityGeneration;
     let settled = false;
     let checking = false;
 
@@ -259,11 +264,15 @@ export const requestPushPermission = async () => {
     const checkSubscribed = async (): Promise<boolean> => {
       const optedIn = sdk.User?.PushSubscription?.optedIn;
       const subId = sdk.User?.PushSubscription?.id;
-      if (optedIn && subId && userId && registeredUserId === userId && identifiedUserId === userId) {
+      if (generation !== identityGeneration || registeredUserId !== userId || identifiedUserId !== userId || logoutTask) return false;
+      if (optedIn && subId && !subId.startsWith('local-')) {
+        // Anonymous subscriptions live in OneSignal. Never call authenticated
+        // device-token/preferences endpoints for a guest or invent an account.
+        if (!userId) return true;
         await storeDeviceToken(userId, subId);
-        if (registeredUserId !== userId || identifiedUserId !== userId) return false;
+        if (generation !== identityGeneration || registeredUserId !== userId || identifiedUserId !== userId) return false;
         await liveApi.notifications.updatePreferences({ push_enabled: true });
-        if (registeredUserId !== userId || identifiedUserId !== userId) return false;
+        if (generation !== identityGeneration || registeredUserId !== userId || identifiedUserId !== userId) return false;
         return true;
       }
       return false;
@@ -308,9 +317,13 @@ export const requestPushPermission = async () => {
 };
 
 export const isPushSupported = () => {
-  return typeof window !== 'undefined' && 'Notification' in window && 'serviceWorker' in navigator;
+  return typeof window !== 'undefined' && 'Notification' in window && 'serviceWorker' in navigator && window.isSecureContext !== false;
 };
 
-export const isPushRegistered = () => Boolean(storedDevice && registeredUserId &&
-  storedDevice.userId === registeredUserId && identifiedUserId === registeredUserId &&
-  sdkInstance?.User?.PushSubscription?.optedIn && sdkInstance?.User?.PushSubscription?.id === storedDevice.subscriptionId);
+export const isPushRegistered = () => {
+  const subscription = sdkInstance?.User?.PushSubscription;
+  if (logoutTask || !subscription?.optedIn || !subscription?.id || subscription.id.startsWith('local-')) return false;
+  if (!registeredUserId) return identifiedUserId === null;
+  return Boolean(storedDevice && storedDevice.userId === registeredUserId &&
+    identifiedUserId === registeredUserId && subscription.id === storedDevice.subscriptionId);
+};

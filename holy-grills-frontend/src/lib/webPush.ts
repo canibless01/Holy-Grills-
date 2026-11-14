@@ -8,7 +8,7 @@
  *
  *   1. init OneSignal with the configured App ID (registers the OneSignal
  *      service worker and the app user).
- *   2. show OneSignal's slidedown permission prompt.
+ *   2. request native permission only after the explicit Allow/Enable tap.
  *   3. on grant, OneSignal's subscriptionChange handler stores the player id
  *      via POST /auth/device-token (the backend owns delivery).
  *
@@ -27,8 +27,8 @@ export const isWebPushSupported = isPushSupported;
  * browser blocks notifications.
  */
 export const subscribeToWebPush = async (userId: string | null = null) => {
-  // Wait for the SDK to finish initializing (and for the signed-in user to be
-  // identified) BEFORE asking for permission. This is the whole point of the
+  // Wait for anonymous initialization or signed-in identification before
+  // asking permission. This is the whole point of the
   // ready gate: on a slow connection the tap used to land while the SDK was
   // still loading and the user got "OneSignal is still loading — try again",
   // even though nothing was wrong. `ensurePushReady` waits (bounded) and, when

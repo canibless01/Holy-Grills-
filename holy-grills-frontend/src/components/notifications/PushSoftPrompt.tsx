@@ -1,139 +1,106 @@
-import { localStore } from '@/lib/storage';
-import { useCampus } from '@/lib/campusContext';
-import { isPushRegistered } from '@/lib/onesignal';
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { Bell, Loader2, X } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
-import { msg } from '@/lib/messages';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, X, Loader2 } from 'lucide-react';
+import { useCampus } from '@/lib/campusContext';
+import { localStore } from '@/lib/storage';
+import { getConsent } from '@/lib/cookieConsent';
+import { ensurePushReady, isPushRegistered, isPushSupported } from '@/lib/onesignal';
 import { subscribeToWebPush } from '@/lib/webPush';
-import { toast } from '@/components/ui/use-toast';
+import { msg } from '@/lib/messages';
+import APP_CONFIG from '@/config/app.config';
 
-/**
- * Soft prompt to enable push notifications after first order.
- * Shows a non-intrusive banner that can be dismissed.
- * Only shows once per user (tracked via localStorage).
- */
+const GUEST_CONSENT = 'hg_guest_push_consent_v1';
+const COOLDOWN = 7 * 24 * 60 * 60 * 1000;
+const AUTH_PAGES = new Set(['/login', '/register', '/signup', '/forgot-password', '/reset-password']);
+
+/** A suggestion only: native permission is requested exclusively by the Allow tap. */
 export default function PushSoftPrompt() {
   const { pathname } = useLocation();
-  const { user } = useHolyGrill();
-  const { campusId, gateOpen } = useCampus();
-  const previousPath = useRef(pathname);
-  const seenKey = user?.id ? `hg_push_soft_prompt_seen:${user.id}` : null;
+  const { user, isLoading } = useHolyGrill();
+  const { gateOpen } = useCampus();
+  const userId = user?.id || null;
+  const seenKey = `hg_push_prompt_v2:${userId || 'guest'}`;
+  const currentKey = useRef(seenKey); currentKey.current = seenKey;
+  const titleId = useId();
   const [show, setShow] = useState(false);
+  const [preparing, setPreparing] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
-  useEffect(() => { setShow(false); setDismissed(false); }, [seenKey, campusId]);
+  const [error, setError] = useState('');
+  const enabling = useRef(false);
+  const adopting = useRef<string | null>(null);
+
+  useEffect(() => { setShow(false); setError(''); setBusy(false); }, [seenKey]);
+  useEffect(() => {
+    if (isLoading || !userId || !isPushSupported() || Notification.permission !== 'granted' || adopting.current === userId) return;
+    const consentAt = Number(localStore.getItem(GUEST_CONSENT) || 0);
+    if (!consentAt || Date.now() - consentAt >= COOLDOWN) return;
+    adopting.current = userId;
+    // Carry the guest's explicit device opt-in into the newly signed-in
+    // account once. Existing account opt-outs are untouched without that tap.
+    subscribeToWebPush(userId).then(ok => {
+      if (currentKey.current !== seenKey) return;
+      if (ok) { localStore.removeItem(GUEST_CONSENT); localStore.setItem(seenKey, String(Date.now())); }
+      else { setError(msg('FE_PUSH_NOT_REGISTERED', 'Notifications are not enabled yet. Please retry.')); setShow(true); }
+    }).catch(failure => { if (currentKey.current === seenKey) { setError(failure.message); setShow(true); } });
+  }, [userId, isLoading, seenKey]);
 
   useEffect(() => {
-    const arrivedAfterCheckout = previousPath.current !== pathname && pathname.startsWith('/order-confirmation/');
-    previousPath.current = pathname;
-    // Browsing or reloading a page never triggers a permission/soft prompt.
-    // The optional suggestion follows an in-app checkout transition only.
-    if (!arrivedAfterCheckout || !seenKey || !campusId || gateOpen || typeof Notification === 'undefined' || Notification.permission === 'denied' || isPushRegistered()) return;
-    if (localStore.getItem(seenKey)) return;
-    const timer = setTimeout(() => setShow(true), 3000);
-    return () => clearTimeout(timer);
-  }, [pathname, seenKey, campusId, gateOpen]);
+    if (isLoading || gateOpen || AUTH_PAGES.has(pathname) || !APP_CONFIG.onesignal.appId || !isPushSupported()
+        || Notification.permission !== 'default' || isPushRegistered()) return;
+    if (Date.now() - Number(localStore.getItem(seenKey) || 0) < COOLDOWN) return;
+    let active = true;
+    const openedAt = Date.now();
+    const timer = setInterval(() => {
+      if (Date.now() - openedAt < 3000 || !getConsent() || document.visibilityState === 'hidden'
+          || document.querySelector('[aria-modal="true"]')) return;
+      clearInterval(timer);
+      if (Notification.permission !== 'default' || isPushRegistered()) return;
+      setShow(true); setPreparing(true);
+      // Warm the existing SDK without asking permission. The Allow gesture can
+      // then reach the native browser request without waiting for a CDN load.
+      ensurePushReady(userId).catch(failure => { if (active) setError(failure.message); })
+        .finally(() => { if (active) setPreparing(false); });
+    }, 500);
+    return () => { active = false; clearInterval(timer); };
+  }, [seenKey, userId, pathname, isLoading, gateOpen]);
 
-  const handleEnable = async () => {
-    setBusy(true);
+  const dismiss = () => {
+    if (enabling.current) return;
+    localStore.setItem(seenKey, String(Date.now())); setShow(false);
+  };
+  const enable = async () => {
+    if (enabling.current) return;
+    enabling.current = true; setBusy(true); setError('');
+    const key = seenKey;
     try {
-      // Pass the signed-in id so the tap can start SDK init itself and then wait
-      // for it, instead of racing a slow load.
-      const ok = await subscribeToWebPush(user?.id ?? null);
-      if (ok) {
-        toast({
-          title: msg('FE_INSTALL_PUSH_BONUSES_PUSH_ENABLED', '🔔 Push enabled!'),
-          description: msg('FE_INSTALL_PUSH_BONUSES_YOU_LL_RECEIVE_ALERTS_ON_THIS_DEVICE', "You'll receive alerts on this device."),
-        });
-
-        if (seenKey) localStore.setItem(seenKey, 'true');
-        setShow(false);
-      } else {
-        toast({ title: msg('FE_PUSH_NOT_REGISTERED', 'Notifications are not enabled yet. Please retry.'), variant: 'destructive' });
-      }
-    } catch (error) {
-      toast({
-        title: msg('FE_INSTALL_PUSH_BONUSES_COULD_NOT_ENABLE_PUSH', 'Could not enable push'),
-        description: error.message || msg('FE_PUSH_SOFT_RETRY_SETTINGS', 'You can enable it later in notification settings.'),
-        variant: 'destructive',
-      });
-
-    }
-    finally {
-      setBusy(false);
-    }
+      const ok = await subscribeToWebPush(userId);
+      if (currentKey.current !== key) return;
+      if (ok || Notification.permission === 'denied') {
+        if (ok && !userId) localStore.setItem(GUEST_CONSENT, String(Date.now()));
+        if (ok && userId) localStore.removeItem(GUEST_CONSENT);
+        localStore.setItem(key, String(Date.now())); setShow(false);
+      } else setError(msg('FE_PUSH_NOT_REGISTERED', 'Notifications are not enabled yet. Please retry.'));
+    } catch (failure) { if (currentKey.current === key) setError(failure.message || msg('FE_PUSH_SOFT_RETRY_SETTINGS', 'You can enable it later in notification settings.')); }
+    finally { enabling.current = false; if (currentKey.current === key) setBusy(false); }
   };
 
-  const handleDismiss = () => {
-    if (seenKey) localStore.setItem(seenKey, 'true');
-    setDismissed(true);
-    setTimeout(() => setShow(false), 300);
-  };
-
-  if (!user?.id || !campusId || gateOpen || typeof Notification === 'undefined') {
-    return null;
-  }
-
+  if (!show || gateOpen || isLoading || AUTH_PAGES.has(pathname) || !isPushSupported() || Notification.permission === 'denied') return null;
   return (
-    <AnimatePresence>
-      {show && !dismissed && (
-        <motion.div
-          initial={{ opacity: 0, y: 50, scale: 0.95 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 20, scale: 0.95 }}
-          transition={{ duration: 0.3, ease: 'easeOut' }}
-          className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 z-50"
-        >
-          <div className="bg-card border border-border rounded-2xl shadow-lg p-4 relative">
-            <button
-              onClick={handleDismiss}
-              className="absolute top-3 right-3 p-1 rounded-full hover:bg-muted transition"
-              aria-label={msg('FE_PUSH_SOFT_DISMISS', 'Dismiss')}
-            >
-              <X className="w-4 h-4 text-muted-foreground" />
-            </button>
-
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <Bell className="w-5 h-5 text-primary" />
-              </div>
-
-              <div className="flex-1 pr-6">
-                <h3 className="font-bold text-sm text-foreground mb-1">
-                  {msg('FE_PUSH_SOFT_TITLE', 'Never miss an update')}
-                </h3>
-                <p className="text-xs text-muted-foreground leading-relaxed mb-3">
-                  {msg('FE_PUSH_SOFT_BODY', 'Get instant alerts when your order is on the way, when you earn HP, and when rewards are available.')}
-                </p>
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleEnable}
-                    disabled={busy}
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-gradient-cta text-white text-xs font-bold active:scale-95 transition disabled:opacity-50"
-                  >
-                    {busy ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Bell className="w-3.5 h-3.5" />
-                    )}
-                    {msg('FE_PUSH_SOFT_ENABLE', 'Enable notifications')}
-                  </button>
-                  <button
-                    onClick={handleDismiss}
-                    className="px-3.5 py-2 rounded-full text-xs font-bold text-muted-foreground hover:text-foreground transition"
-                  >
-                    {msg('FE_PUSH_SOFT_LATER', 'Maybe later')}
-                  </button>
-                </div>
-              </div>
-            </div>
+    <section role="dialog" aria-labelledby={titleId} className="fixed bottom-28 left-4 right-4 z-50 rounded-2xl border border-border bg-card p-4 shadow-xl md:bottom-5 md:left-auto md:w-96">
+      <button type="button" onClick={dismiss} disabled={busy} className="absolute right-3 top-3 rounded-full p-1 hover:bg-muted disabled:opacity-50" aria-label={msg('FE_PUSH_SOFT_DISMISS', 'Dismiss')}><X className="h-4 w-4" /></button>
+      <div className="flex items-start gap-3 pr-5">
+        <div className="rounded-xl bg-primary/10 p-2.5"><Bell className="h-5 w-5 text-primary" /></div>
+        <div className="min-w-0 flex-1">
+          <h2 id={titleId} className="text-sm font-bold">{msg('FE_PUSH_SOFT_TITLE', 'Never miss an update')}</h2>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{msg('FE_PUSH_GUEST_BODY', 'Allow Holy Grills notifications on this device. You can change this in your browser settings.')}</p>
+          {error && <p role="alert" className="mt-2 text-xs text-destructive">{error}</p>}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={enable} disabled={preparing || busy} className="flex items-center gap-1.5 rounded-full bg-gradient-cta px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{(preparing || busy) && <Loader2 className="h-3.5 w-3.5 animate-spin" />}{msg('FE_PUSH_ALLOW', 'Allow notifications')}</button>
+            <button type="button" onClick={dismiss} disabled={busy} className="rounded-full px-3 py-2 text-xs font-bold text-muted-foreground disabled:opacity-50">{msg('FE_PUSH_SOFT_LATER', 'Maybe later')}</button>
           </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+        </div>
+      </div>
+    </section>
   );
 }

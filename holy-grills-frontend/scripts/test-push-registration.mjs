@@ -105,7 +105,7 @@ try {
   assert.equal(first.counts.optOut, 1);
   await module.logoutOneSignal();
   assert.equal(first.counts.logout, 1);
-  await assert.rejects(module.requestPushPermission(), /still loading/);
+  assert.equal(await module.requestPushPermission(), false, 'logged-out denied browser stays denied');
 
   // ── 2. Ready gate: the Enable tap waits for a slow SDK instead of racing it ──
   const slow = makeSdk();
@@ -139,9 +139,39 @@ try {
     await assert.rejects(stalledModule.ensurePushReady('stalled-user', 30), /couldn’t load/i);
     await assert.rejects(stalledModule.requestPushPermission(), /still loading/);
 
-    // ── 4. Not signed in: say so instead of blaming the SDK ─────────────────
+    // ── 4. Guests register anonymously, then login adopts that subscription ──
+    const guest = makeSdk();
+    globalThis.window.OneSignalDeferred = { push: (fn) => queueMicrotask(() => fn(guest.sdk)) };
     const guestModule = await import(`${pathToFileURL(output).href}?guest`);
-    await assert.rejects(guestModule.ensurePushReady(null, 30), /Sign in to enable push/i);
+    const beforeGuest = registrations.length, beforePrefs = prefs.length;
+    Notification.permission = 'default';
+    await guestModule.ensurePushReady(null, 30);
+    assert.equal(guest.counts.init, 1); assert.equal(guest.counts.login, 0);
+    assert.equal(guest.counts.permission, 0, 'warming an anonymous SDK never prompts');
+    guest.sub.id = 'guest-subscription';
+    guest.sdk.Notifications.requestPermission = async () => {
+      guest.counts.permission++; Notification.permission = 'granted'; guest.sub.optedIn = true;
+    };
+    assert.equal(await guestModule.requestPushPermission(), true);
+    assert.equal(guestModule.isPushRegistered(), true);
+    assert.equal(guest.counts.permission, 1);
+    assert.equal(registrations.length, beforeGuest, 'guest never calls account device-token endpoint');
+    assert.equal(prefs.length, beforePrefs, 'guest never changes account preferences');
+    await guestModule.initOneSignal('new-member');
+    assert.equal(guest.counts.login, 1);
+    assert.equal(registrations.at(-1).token, 'guest-subscription');
+    assert.equal(await guestModule.requestPushPermission(), true);
+    assert.equal(guest.counts.permission, 1, 'login does not ask native permission again');
+    assert.equal(prefs.length, beforePrefs + 1);
+    let releaseLogout;
+    guest.sdk.logout = () => new Promise(resolve => { releaseLogout = resolve; });
+    const logout = guestModule.logoutOneSignal();
+    let guestReady = false;
+    const waitGuest = guestModule.ensurePushReady(null, 30).then(() => { guestReady = true; });
+    await new Promise(resolve => realSetTimeout(resolve, 0));
+    assert.equal(guestReady, false, 'anonymous enable waits for old identity logout');
+    releaseLogout(); await logout; await waitGuest;
+    assert.equal(guestModule.isPushRegistered(), true);
 
     // ── 5. www alias: never initialize the SDK on the wrong origin ──────────
     globalThis.__redirectedTo = null;
@@ -180,7 +210,7 @@ try {
 
   console.log('PASS v16 single-flight, verified identity, no automatic permission, permission-only refusal, '
     + 'backend registration failure, denied permission, cleanup, v16 opt-out, logout, bounded stalled SDK, '
-    + 'ready gate before the prompt, guest message, no SDK init on the www alias, and no redirect loop when the host bounces back');
+    + 'ready gate before the prompt, anonymous guest registration without private writes, login adoption, serialized guest logout, no SDK init on the www alias, and no redirect loop when the host bounces back');
 } finally {
   await rm(temp, { recursive: true, force: true });
 }
