@@ -1,13 +1,27 @@
 """
 Tier service: per-tier perks, resource access checks, and monthly perk claims."""
 import json
-from datetime import datetime, timezone
 from flask import current_app
 from app.db import get_db, get_user_client
 
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def ensure_initial_student_tier(profile, db=None):
+    """Fill a missing student tier without resetting points or an existing tier.
+
+    Staff roles are not loyalty-tier members. The conditional update also
+    avoids overwriting a concurrent earned upgrade during account restoration.
+    """
+    if not profile or profile.get('role') != 'student' or profile.get('current_tier_id') or profile.get('is_active') is False:
+        return profile
+    db = db or get_db()
+    receipt = db.rpc("hg_recalculate_tier_atomic", {"p_user": profile["id"]})
+    tier = receipt.get("tier") if isinstance(receipt, dict) else None
+    return {**profile, "current_tier_id": tier["id"]} if tier and tier.get("id") else profile
+
 
 
 # Finalized Holy Grills Loyalty & Rewards System spec (scope item 6c), values taken as-is from the
@@ -88,8 +102,8 @@ def can_access_tier_resource(user_id: str, min_tier_id: str) -> bool:
         return False
 
 
-def resolve_perk(user_id: str, perk_key: str):
-    db = get_db()
+def resolve_perk(user_id: str, perk_key: str, *, strict=False, db=None):
+    db = db or get_db()
     slug = "ember"
     try:
         prof = db.table("profiles").select("current_tier_id").eq("id", user_id).single().execute()
@@ -98,6 +112,8 @@ def resolve_perk(user_id: str, perk_key: str):
             if t_row and t_row.get("slug"):
                 slug = str(t_row["slug"]).lower()
     except Exception as exc:
+        if strict:
+            raise
         logger.warning("resolve_perk: could not resolve the tier for %s — falling back to the default perk: %s",
                         user_id, exc)
 
@@ -118,34 +134,8 @@ def resolve_perk(user_id: str, perk_key: str):
             except Exception:
                 return val
     except Exception:
-        pass
+        if strict:
+            raise
 
     default_perks = get_tier_perks(slug)
     return default_perks.get(perk_key, False if perk_key == "monthly_free_delivery" else 0)
-
-
-def try_claim_monthly_free_delivery(user_id: str, order_id: str = None) -> bool:
-    """
-    hg_claim_tier_monthly_perk is service_role-only (no EXECUTE grant for authenticated/anon -- confirmed
-    live) and carries no per-caller ownership check, matching every other atomic RPC in this schema
-    (credit_wallet_atomic, debit_wallet_atomic, hg_adjust_stock_balance): the trust boundary is the GRANT
-    plus this function's own resolve_perk() eligibility check, not a client-supplied user id. Call it via
-    get_db() -- get_user_client() would carry no EXECUTE privilege at all and every claim would fail with
-    "permission denied for function" (confirmed live).
-    """
-    if not resolve_perk(user_id, "monthly_free_delivery"):
-        return False
-    db = get_db()
-    curr_month = datetime.now(timezone.utc).strftime("%Y-%m")
-    try:
-        res = db.rpc("hg_claim_tier_monthly_perk", {
-            "p_user_id": user_id,
-            "p_month": curr_month,
-            "p_perk_key": "monthly_free_delivery",
-            "p_order_id": order_id,
-        }).execute()
-        if isinstance(res, dict):
-            return bool(res.get("claimed"))
-        return False
-    except Exception:
-        return False

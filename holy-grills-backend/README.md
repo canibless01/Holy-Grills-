@@ -93,16 +93,17 @@ Copy `.env.example` to `.env` and fill in every **REQUIRED** value before starti
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `APP_NAME` | `Holy Grills` | App name shown in emails and responses |
-| `APP_TAGLINE` | `Holy Grills FUTA` | Tagline used in email footers |
+| `APP_TAGLINE` | `Made with more than flame ❤️‍🔥` | Fallback tagline for email template data and notification payloads; the fixed email sign-off renders two lines: "Made with more than flame ❤️‍🔥," then "Holy Grills Team." |
+| `AMBASSADOR_SYSTEM_ACTOR_ID` | *(unset)* | Admin profile id authorizing ambassador milestone auto-issue grants |
 | `FLASK_ENV` | `development` | `development` or `production` |
 | `FLASK_DEBUG` | `false` | Enable Flask debug mode |
-| `FRONTEND_URL` | `http://localhost:3000` | Frontend URL for CORS and password-reset links |
-| `CORS_ORIGINS` | `*` | Comma-separated allowed CORS origins |
+| `FRONTEND_URL` | `http://localhost:3000` | Frontend URL: password-reset links, and added to `Config.CORS_ORIGINS` |
+| `CORS_ORIGINS` | *(unset)* | Comma-separated allowed CORS origins. **Not enforced yet** — `app/__init__.py` registers `CORS(app, origins="*")`; set this and switch that call before deploying |
 | `JWT_ACCESS_TOKEN_EXPIRES` | `3600` | Access token TTL in seconds (1 hour) |
 | `JWT_REFRESH_TOKEN_EXPIRES` | `2592000` | Refresh token TTL in seconds (30 days) |
 | `JWT_REFRESH_WINDOW_MINUTES` | `5` | Silent-rotation window — token is refreshed when fewer than this many minutes remain before expiry |
 | `PAYSTACK_PREFERRED_BANK` | `wema-bank` | Bank for dedicated virtual accounts |
-| `EMAIL_FROM` | `noreply@holygrills.ng` | Sender email address |
+| `EMAIL_FROM` | `noreply@holygrills.online` | Sender email address |
 | `EMAIL_FROM_NAME` | `Holy Grills` | Sender display name |
 | `HP_PER_NAIRA_FOOD` | `0.1` | HP earned per ₦1 spent on food (1 HP / ₦10) |
 | `HP_LIABILITY_VALUE` | `0.185` | ₦ value of 1 HP (used for HP-discount maths) |

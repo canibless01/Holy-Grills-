@@ -1,0 +1,28 @@
+{
+  "case": "real deployed first-install navigation lifecycle; query/token omitted",
+  "navigations": [
+    "/track-orders",
+    "/track-orders",
+    "/track-orders",
+    "/orders/0795cf9f-902e-4bee-871d-a23288aa0488"
+  ],
+  "lifecycle": [
+    {
+      "type": "document",
+      "path": "/track-orders"
+    },
+    {
+      "type": "controllerchange",
+      "path": "/track-orders"
+    },
+    {
+      "type": "pagehide",
+      "path": "/track-orders"
+    },
+    {
+      "type": "document",
+      "path": "/track-orders"
+    }
+  ],
+  "final_path": "/orders/0795cf9f-902e-4bee-871d-a23288aa0488"
+}

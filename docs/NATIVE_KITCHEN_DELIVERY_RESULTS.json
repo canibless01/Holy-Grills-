@@ -1,0 +1,26 @@
+{
+  "cases": {
+    "two_wallet_orders_debited_exact_total": true,
+    "native_kitchen_prepares_both_and_auto_groups_same_gate_window": true,
+    "native_admin_assigns_entire_staged_group": true,
+    "native_partial_split_changes_effective_rider": true,
+    "both_native_riders_pick_up_deliver_and_see_food_addon_ticket": true,
+    "food_and_addon_hp_paid_once_delivery_fees_excluded": true
+  },
+  "payout": [
+    {
+      "food_spend": 1500,
+      "global_addon_spend": 500,
+      "delivery_fee_excluded": 250.0,
+      "food_hp": 150,
+      "three_payout_replays_no_duplicate": true
+    },
+    {
+      "food_spend": 1500,
+      "global_addon_spend": 500,
+      "delivery_fee_excluded": 150.0,
+      "food_hp": 150,
+      "three_payout_replays_no_duplicate": true
+    }
+  ]
+}

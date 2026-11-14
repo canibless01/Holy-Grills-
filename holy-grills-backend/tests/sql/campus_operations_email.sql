@@ -1,0 +1,65 @@
+-- Fixtures, customer notifications and mail intents roll back; no provider call.
+BEGIN;
+SET LOCAL request.jwt.claims='{"role":"service_role"}';
+CREATE FUNCTION pg_temp.ops_assert(ok boolean,label text) RETURNS void LANGUAGE plpgsql AS $$BEGIN IF ok IS DISTINCT FROM true THEN RAISE EXCEPTION 'Operations acceptance: %',label;END IF;END$$;
+CREATE FUNCTION pg_temp.ops_person(c uuid,r text DEFAULT 'student') RETURNS uuid LANGUAGE plpgsql AS $$DECLARE u uuid:=gen_random_uuid();BEGIN
+ INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES(u,'audit-ops-'||u||'@example.invalid','{"full_name":"[AUDIT rollback] Operations"}');
+ UPDATE public.profiles SET campus_id=c,last_seen_at=NULL,role=(jsonb_populate_record(NULL::public.profiles,jsonb_build_object('role',r))).role,push_enabled=false,email_notifications=true WHERE id=u;
+ RETURN u;
+END$$;
+DO $test$
+DECLARE c uuid:=gen_random_uuid();sa uuid;student uuid;cart_owner uuid;real_order uuid:=gen_random_uuid();test_order uuid:=gen_random_uuid();pending uuid:=gen_random_uuid();cart uuid:=gen_random_uuid();
+ r jsonb;batch jsonb;mail jsonb;next_mail jsonb;cfg jsonb;today date:=(now() AT TIME ZONE 'Africa/Lagos')::date;amount_before numeric;count_before integer;
+BEGIN
+ INSERT INTO campuses(id,name,slug) VALUES(c,'[AUDIT rollback] Operations','audit-ops-'||c);
+ sa:=pg_temp.ops_person(c,'super_admin');student:=pg_temp.ops_person(c);cart_owner:=pg_temp.ops_person(c);
+ cfg:='{"recipients":["ops@example.invalid","OPS@example.invalid"],"paid_order_alerts":true,"abandoned_cart_alerts":true,"daily_report":true,"weekly_report":true,"abandoned_minutes":30}';
+ INSERT INTO system_settings(key,campus_id,value,is_public,updated_at) VALUES('campus_operations_email',c,cfg,false,now()-interval '2 days');
+ INSERT INTO feature_flags(feature_name,campus_id,is_active) VALUES('abandoned_cart_nudge',c,true);
+ INSERT INTO orders(id,user_id,campus_id,payment_status,total_amount,is_test) VALUES(real_order,student,c,'paid',2000,true),(test_order,sa,c,'paid',9000,false);
+ PERFORM pg_temp.ops_assert((SELECT NOT is_test FROM orders WHERE id=real_order),'real customer cannot forge test flag');
+ PERFORM pg_temp.ops_assert((SELECT is_test FROM orders WHERE id=test_order),'super-admin derived flag');
+ UPDATE orders SET is_test=false WHERE id=test_order;
+ PERFORM pg_temp.ops_assert((SELECT is_test FROM orders WHERE id=test_order),'test flag immutable');
+ PERFORM pg_temp.ops_assert((SELECT count(*)=1 FROM reporting_orders WHERE campus_id=c),'test order excluded');
+ PERFORM pg_temp.ops_assert((SELECT count(*)=1 FROM hg_internal.operations_emails WHERE campus_id=c),'only real paid order alert; addresses folded');
+ PERFORM pg_temp.ops_assert(hg_auto_assign_order_to_batch(test_order) IS NULL,'test order no delivery batch');
+ INSERT INTO orders(guest_email,campus_id,payment_status,total_amount) VALUES('guest@example.invalid',c,'paid',1000);
+ PERFORM pg_temp.ops_assert((SELECT count(*)=2 FROM reporting_orders WHERE campus_id=c),'guest orders retained');
+ INSERT INTO orders(id,user_id,campus_id,payment_status,total_amount,created_at) VALUES(pending,cart_owner,c,'pending',3000,now()-interval '40 minutes');
+ INSERT INTO abandoned_carts(id,user_id,campus_id,last_active_at,cart_payload,recovery_attempts)
+ VALUES(cart,cart_owner,c,now()-interval '40 minutes',jsonb_build_object('pending_order_id',pending),27);
+ PERFORM pg_temp.ops_assert((SELECT NOT is_recovered FROM abandoned_carts WHERE id=cart),'unpaid checkout not recovery');
+ r:=hg_capture_cart_recovery_step(cart,0,now()+interval '1 hour');
+ PERFORM pg_temp.ops_assert((r->>'saved')::boolean AND jsonb_array_length(r->'notification_ids')=2,'email and inbox queued even without push');
+ PERFORM pg_temp.ops_assert((SELECT count(*)=1 FROM notifications WHERE reference_id=cart AND channel='email'),'email channel actually saved');
+ PERFORM pg_temp.ops_assert((SELECT count(*)=1 FROM notification_deliveries d JOIN notifications n ON n.id=d.notification_id WHERE n.reference_id=cart AND d.channel='email' AND d.status='queued'),'email durable dispatch captured');
+ r:=hg_capture_cart_recovery_step(cart,0,now()+interval '1 hour');
+ PERFORM pg_temp.ops_assert(NOT (r->>'saved')::boolean,'same step not repeated');
+ PERFORM pg_temp.ops_assert((SELECT recovery_attempts=1 FROM abandoned_carts WHERE id=cart),'27 attempts replaced by one genuine saved step');
+ r:=hg_capture_cart_recovery_step(cart,1,now()-interval '1 second',30,30,48);
+ PERFORM pg_temp.ops_assert(NOT (r->>'saved')::boolean,'preparation cutoff blocks reminders');
+ PERFORM hg_capture_operations_emails(c);
+ SELECT count(*) INTO count_before FROM hg_internal.operations_emails WHERE campus_id=c;
+ PERFORM hg_capture_operations_emails(c);
+ PERFORM pg_temp.ops_assert((SELECT count(*)=count_before FROM hg_internal.operations_emails WHERE campus_id=c),'repeated scan no duplicate mail');
+ PERFORM pg_temp.ops_assert((SELECT count(*)=1 FROM hg_internal.operations_emails WHERE campus_id=c AND kind='abandoned_cart'),'staff cart alert once');
+ UPDATE orders SET payment_status='paid' WHERE id=pending;
+ PERFORM pg_temp.ops_assert((SELECT is_recovered AND recovered_at IS NOT NULL FROM abandoned_carts WHERE id=cart),'payment atomically recovers cart');
+ r:=hg_capture_cart_recovery_step(cart,1,now()+interval '1 hour',30,30,48);
+ PERFORM pg_temp.ops_assert(NOT (r->>'saved')::boolean,'paid order stops future reminders');
+ r:=hg_operations_summary(c,today-1,today);
+ PERFORM pg_temp.ops_assert((r->>'paid_orders')::integer=3 AND (r->>'order_value')::numeric=6000 AND (r->>'signups')::integer=2,'summary excludes SA across orders and signups');
+ batch:=hg_operations_email_outbox('claim',NULL,NULL,jsonb_build_object('campus_id',c));mail:=batch->0;next_mail:=batch->1;
+ PERFORM pg_temp.ops_assert(jsonb_array_length(hg_operations_email_outbox('claim',NULL,NULL,jsonb_build_object('campus_id',c)))=0,'exclusive dispatch claim');
+ PERFORM pg_temp.ops_assert(hg_operations_email_outbox('begin',(mail->>'id')::uuid,gen_random_uuid()) IS NULL,'wrong token denied');
+ PERFORM pg_temp.ops_assert(hg_operations_email_outbox('begin',(mail->>'id')::uuid,(mail->>'token')::uuid) IS NOT NULL,'claimed send starts once');
+ UPDATE hg_internal.operations_emails SET lease_until=now()-interval '1 second' WHERE id=(mail->>'id')::uuid;
+ PERFORM hg_operations_email_outbox('claim',NULL,NULL,jsonb_build_object('campus_id',c));
+ PERFORM pg_temp.ops_assert((SELECT state='uncertain' FROM hg_internal.operations_emails WHERE id=(mail->>'id')::uuid),'interrupted send held, no blind resend');
+ UPDATE system_settings SET value=jsonb_set(cfg,'{recipients}','[]') WHERE key='campus_operations_email' AND campus_id=c;
+ PERFORM pg_temp.ops_assert(hg_operations_email_outbox('begin',(next_mail->>'id')::uuid,(next_mail->>'token')::uuid) IS NULL,'removed recipient never sent');
+ PERFORM pg_temp.ops_assert(NOT has_function_privilege('authenticated','public.hg_operations_email_outbox(text,uuid,uuid,jsonb)','execute'),'outbox service only');
+ RAISE NOTICE 'PASS operations: test/customer/guest scope, payment recovery, actual email/inbox capture, reminder dedupe/stop, report totals, lease interruption and recipient removal';
+END $test$;
+ROLLBACK;

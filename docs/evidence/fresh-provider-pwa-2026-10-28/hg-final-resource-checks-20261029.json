@@ -1,0 +1,26 @@
+{
+  "mode": "real read-only provider endpoints; no emails, grants, subscriptions or provider settings changed",
+  "auth": {
+    "http_status": 200,
+    "email_enabled": true,
+    "signup_confirmation_required": false,
+    "mailer_autoconfirm": true,
+    "signup_disabled": false,
+    "verification_email_test": "not applicable to current auto-confirm signup configuration; no new signup or setting change"
+  },
+  "onesignal": {
+    "http_status": 200,
+    "chrome_web_origin": "https://holygrills.online",
+    "safari_site_origin": "https://holygrills.online",
+    "canonical_site_origin": "https://www.holygrills.online",
+    "organization_key_bound": false,
+    "previous_update_result": 401,
+    "repeat_denied_write_not_attempted": true
+  },
+  "monthly_job": {
+    "http_status": 200,
+    "events": [],
+    "job_not_run_by_audit": true,
+    "scheduler_not_deployed": true
+  }
+}

@@ -1,10 +1,13 @@
 """
 Analytics routes — admin-only reporting and insights.
 """
-from flask import Blueprint, request, jsonify, current_app, Response
+from flask import Blueprint, request, jsonify, current_app, Response, g
 from app.middleware.auth import require_role, resolve_scoped_campus_id
-from app.db import get_user_client
+from app.db import get_db, SupabaseError
+from app.services.activity_scope import get_reporting_client as get_user_client
+from app.services.reporting_money import retained_order_amount, retained_food_amount, delivered_revenue, retained_payment_channels, allocate_food_revenue
 from app.messages import MSG
+from app.utils.settings import setting_or_config
 from datetime import date, datetime, timezone, timedelta
 from dateutil.parser import isoparse
 from app.utils.tz import today_wat, WAT_OFFSET
@@ -28,8 +31,17 @@ def _wat_window(from_date: str, to_date: str):
     if not (validate_date(from_date) and validate_date(to_date)):
         raise ValueError("date")
     start = datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=_WAT)
-    end = datetime.strptime(to_date, "%Y-%m-%d").replace(tzinfo=_WAT) + timedelta(days=1)
-    return start.astimezone(timezone.utc).isoformat(), end.astimezone(timezone.utc).isoformat()
+    last = datetime.strptime(to_date, "%Y-%m-%d").replace(tzinfo=_WAT)
+    if last < start:
+        raise ValueError("date")
+    try:
+        end = last + timedelta(days=1)
+    except OverflowError as exc:
+        raise ValueError("date") from exc
+    try:
+        return start.astimezone(timezone.utc).isoformat(), end.astimezone(timezone.utc).isoformat()
+    except OverflowError as exc:
+        raise ValueError("date") from exc
 
 
 def _date_range(default_days: int = 30):
@@ -136,8 +148,9 @@ def sales_analytics():
     order_count = len(delivered)
     aov = total_revenue / order_count if order_count > 0 else 0
 
-    wallet_revenue = sum(max(float(o.get("wallet_amount_used") or 0) - float(o.get("wallet_refund_total") or 0), 0.0) for o in delivered)
-    card_revenue = sum(max(float(o.get("card_amount_used") or 0) - float(o.get("card_refund_total") or 0), 0.0) for o in delivered)
+    channels = [retained_payment_channels(o) for o in delivered]
+    wallet_revenue = float(sum(wallet for wallet, _ in channels))
+    card_revenue = float(sum(card for _, card in channels))
 
     payment_method_breakdown = {"split": 0, "wallet": 0, "card": 0, "hp_or_free": 0}
     payment_method_revenue = {"split": 0.0, "wallet": 0.0, "card": 0.0, "hp_or_free": 0.0}
@@ -371,7 +384,7 @@ def delivery_location_analytics():
 
     q = (
         db.table("orders")
-        .select("id,delivery_type,delivery_location_id,total_amount,status")
+        .select("id,delivery_type,delivery_location_id,total_amount,status,payment_status,card_refund_total,wallet_refund_total")
         .gte("created_at", start_utc)
         .lt("created_at", end_utc)
         .neq("status", "cancelled")
@@ -411,7 +424,7 @@ def delivery_location_analytics():
             loc_name = f"Unspecified ({dtype})"
 
         locations[loc_name]["order_count"] += 1
-        locations[loc_name]["revenue"] += float(o.get("total_amount") or 0)
+        locations[loc_name]["revenue"] += float(delivered_revenue(o))
         locations[loc_name]["delivery_type"] = dtype
 
     breakdown = [
@@ -506,7 +519,7 @@ def demographics_analytics():
 
     q = (
         db.table("orders")
-        .select("id,user_id,total_amount,status")
+        .select("id,user_id,total_amount,status,payment_status,card_refund_total,wallet_refund_total")
         .gte("created_at", start_utc)
         .lt("created_at", end_utc)
         .neq("status", "cancelled")
@@ -555,7 +568,7 @@ def demographics_analytics():
         dept = prof.get("department") or "Unspecified"
         fac = prof.get("resolved_faculty") or "Unspecified"
         level = prof.get("academic_level") or "Unspecified"
-        amt = float(o.get("total_amount") or 0)
+        amt = float(delivered_revenue(o))
 
         by_dept[dept]["order_count"] += 1
         by_dept[dept]["revenue"] += amt
@@ -763,10 +776,13 @@ def hp_analytics():
     hp_txns = q.execute() or []
 
     # hp_transactions.amount is always positive (CHECK amount > 0); the direction lives in `type`.
-    earned = sum(t["amount"] for t in hp_txns if t.get("type") == "earn")
-    spent = sum(t["amount"] for t in hp_txns if t.get("type") == "spend")
+    # B-9: exclude hp_transfer_received from earned and hp_transfer_sent from spent, report transfers separately
+    earned = sum(t["amount"] for t in hp_txns if t.get("type") == "earn" and t.get("source") != "hp_transfer_received")
+    spent = sum(t["amount"] for t in hp_txns if t.get("type") == "spend" and t.get("source") != "hp_transfer_sent")
     expired = sum(t["amount"] for t in hp_txns if t.get("type") == "expire")
     pending = sum(t["amount"] for t in hp_txns if t.get("status") == "pending" and t["amount"] > 0)
+    transfer_received = sum(t["amount"] for t in hp_txns if t.get("source") == "hp_transfer_received")
+    transfer_sent = sum(t["amount"] for t in hp_txns if t.get("source") == "hp_transfer_sent")
 
     # All 4 Tiers check
     tiers = db.table("hp_tiers").select("id,name,slug,min_points").order("sort_order").execute() or []
@@ -798,6 +814,8 @@ def hp_analytics():
         "hp_spent": spent,
         "hp_expired": expired,
         "hp_pending": pending,
+        "hp_transfer_received": transfer_received,
+        "hp_transfer_sent": transfer_sent,
         "hp_in_circulation": earned - spent - expired,
         "redemption_rate": round(spent / earned * 100, 1) if earned > 0 else 0,
         "tier_distribution": tier_distribution,
@@ -828,7 +846,7 @@ def items_analytics():
 
     q = (
         db.table("orders")
-        .select("id,subtotal")
+        .select("id,total_amount,delivery_fee,payment_status,card_refund_total,wallet_refund_total")
         .eq("status", "delivered")
         .gte("delivered_at", start_utc)
         .lt("delivered_at", end_utc)
@@ -851,7 +869,7 @@ def items_analytics():
         chunk = order_ids[i:i + chunk_size]
         rows = (
             db.table("order_items")
-            .select("name_snapshot,quantity,price_snapshot")
+            .select("id,order_id,name_snapshot,quantity,price_snapshot,line_total")
             .in_("order_id", chunk)
             .execute()
         ) or []
@@ -859,12 +877,14 @@ def items_analytics():
 
     from collections import defaultdict
     agg = defaultdict(lambda: {"qty": 0, "revenue": 0.0})
+    by_order = defaultdict(list)
     for item in all_items:
-        name = item.get("name_snapshot") or "Unknown"
-        qty = int(item.get("quantity") or 1)
-        price = float(item.get("price_snapshot") or 0)
-        agg[name]["qty"] += qty
-        agg[name]["revenue"] += price * qty
+        by_order[item.get('order_id')].append(item)
+    for order in orders:
+        for item, retained in allocate_food_revenue(order, by_order[order['id']]):
+            name = item.get('name_snapshot') or 'Unknown'
+            agg[name]['qty'] += int(item.get('quantity') or 0)
+            agg[name]['revenue'] += float(retained)
 
     sorted_items = sorted(agg.items(), key=lambda x: x[1]["qty"], reverse=True)[:limit]
     result = [
@@ -906,7 +926,7 @@ def academic_calendar_analytics():
         p_start, p_end = _wat_window(str(s_date)[:10], str(e_date)[:10])
         oq = (
             db.table("orders")
-            .select("id,total_amount")
+            .select("id,total_amount,status,payment_status,card_refund_total,wallet_refund_total")
             .gte("created_at", p_start)
             .lt("created_at", p_end)
             .neq("status", "cancelled")
@@ -914,7 +934,7 @@ def academic_calendar_analytics():
         if campus_id:
             oq = oq.eq("campus_id", campus_id)
         p_orders = oq.execute() or []
-        tot_rev = sum(float(o.get("total_amount") or 0) for o in p_orders)
+        tot_rev = float(sum(delivered_revenue(o) for o in p_orders))
 
         period_stats.append({
             "id": p["id"],
@@ -945,7 +965,7 @@ def academic_calendar_analytics():
     b_start, b_end = _wat_window(base_from.isoformat(), base_to.isoformat())
     bq = (
         db.table("orders")
-        .select("id,total_amount,created_at")
+        .select("id,total_amount,status,payment_status,card_refund_total,wallet_refund_total,created_at")
         .gte("created_at", b_start)
         .lt("created_at", b_end)
         .neq("status", "cancelled")
@@ -961,7 +981,7 @@ def academic_calendar_analytics():
             logger.warning("academic-calendar: unparseable created_at %r skipped", o.get("created_at"))
             continue
         orders_by_day[day] += 1
-        revenue_by_day[day] += float(o.get("total_amount") or 0)
+        revenue_by_day[day] += float(delivered_revenue(o))
     n_normal = len(normal_days)
     baseline = {
         "window_days": 90,
@@ -992,7 +1012,7 @@ def order_sources_analytics():
 
     q = (
         db.table("orders")
-        .select("id,order_source,total_amount,status")
+        .select("id,order_source,total_amount,status,payment_status,card_refund_total,wallet_refund_total")
         .gte("created_at", start_utc)
         .lt("created_at", end_utc)
         .neq("status", "cancelled")
@@ -1012,7 +1032,7 @@ def order_sources_analytics():
     for o in orders:
         src = o.get("order_source") or "unspecified"
         sources[src] += 1
-        revenue[src] += float(o.get("total_amount") or 0)
+        revenue[src] += float(delivered_revenue(o))
 
     total_orders = len(orders)
     breakdown = [
@@ -1174,6 +1194,7 @@ def dashboard_summary():
     q = (
         db.table("orders")
         .select("id,status,total_amount,payment_status,delivery_window_id,batch_id,created_at,wallet_amount_used,card_amount_used,card_refund_total,wallet_refund_total")
+        .in_("payment_status", ["paid", "partially_refunded", "refunded"])
         .gte("created_at", today_start)
         .lt("created_at", today_end)
     )
@@ -1375,6 +1396,10 @@ def export_csv():
     db = get_user_client(paginate=True)
     export_type = request.args.get("type", "").lower()
     try:
+        row_limit = _int_arg("limit", 5000, 1, 10000)
+    except ValueError:
+        return jsonify({"error": MSG.ANALYTICS_INVALID_NUMBER.format(param="limit")}), 400
+    try:
         from_date, to_date, start_utc, end_utc = _date_range(30)
     except ValueError:
         return jsonify({"error": MSG.ANALYTICS_INVALID_DATE}), 400
@@ -1387,7 +1412,7 @@ def export_csv():
     if export_type == "orders":
         q = (
             db.table("orders")
-            .select("id,status,payment_status,total_amount,subtotal,delivery_fee,discount_amount,wallet_amount_used,card_amount_used,created_at,user_id,guest_phone")
+            .select("id,status,payment_status,total_amount,subtotal,delivery_fee,discount_amount,wallet_amount_used,card_amount_used,card_refund_total,wallet_refund_total,created_at,user_id,guest_phone")
             .gte("created_at", start_utc)
             .lt("created_at", end_utc)
         )
@@ -1395,6 +1420,8 @@ def export_csv():
             q = q.eq("campus_id", campus_id)
         rows = q.order("created_at.desc,id", ascending=False).execute() or []  # id: tiebreaker for a deterministic page sweep
         fieldnames = ["id", "status", "payment_status", "total_amount", "subtotal", "delivery_fee", "discount_amount", "wallet_amount_used", "card_amount_used", "user_id", "guest_phone", "created_at"]
+        fieldnames.extend(['card_refund_total', 'wallet_refund_total', 'retained_paid_amount', 'retained_food_amount', 'delivered_order_revenue'])
+        rows = [dict(row, retained_paid_amount=float(retained_order_amount(row)), retained_food_amount=float(retained_food_amount(row)), delivered_order_revenue=float(delivered_revenue(row))) for row in rows]
         filename = f"orders_{from_date}_{to_date}.csv"
 
     elif export_type == "hp_transactions":
@@ -1434,10 +1461,6 @@ def export_csv():
     else:
         return jsonify({"error": MSG.ANALYTICS_UNKNOWN_EXPORT.format(export_type=export_type)}), 400
 
-    try:
-        row_limit = _int_arg("limit", 5000, 1, 10000)
-    except ValueError:
-        return jsonify({"error": MSG.ANALYTICS_INVALID_NUMBER.format(param="limit")}), 400
     capped_rows = rows[:row_limit] if isinstance(rows, list) else rows
 
     def _csv_safe(value):
@@ -1548,7 +1571,11 @@ def marketplace_analytics():
         q_l = q_l.eq("campus_id", campus_id)
     listings = q_l.execute() or []
     low_stock = []
-    low_stock_threshold = current_app.config.get("LOW_CODE_INVENTORY_THRESHOLD", 5)
+    low_stock_threshold = setting_or_config(
+        db, "low_code_inventory_threshold",
+        current_app.config.get("LOW_CODE_INVENTORY_THRESHOLD", 5),
+        minimum=0, maximum=10000,
+    )
     for l in listings:
         if l.get("listing_type") in _CODE_LISTING_TYPES:
             codes = db.table("marketplace_access_codes").select("id").eq("listing_id", l["id"]).eq("status", "available").execute() or []
@@ -1756,3 +1783,32 @@ def retention_analytics():
         })
 
     return jsonify({"cohorts": cohorts, "weeks": weeks}), 200
+
+
+@analytics_bp.route('/wallet', methods=['GET'])
+@require_role('admin')
+def wallet_funding_analytics():
+    """One service-only aggregate; never return saved payment authorizations."""
+    try:
+        campus = _scoped_campus()
+        from_date, to_date, _, _ = _date_range(29)
+        if (date.fromisoformat(to_date) - date.fromisoformat(from_date)).days > 365:
+            raise ValueError('date')
+    except ValueError as exc:
+        return jsonify({'error': MSG.ANALYTICS_INVALID_CAMPUS if str(exc) == 'campus' else MSG.ANALYTICS_INVALID_DATE}), 400
+    try:
+        result = get_db().rpc('hg_wallet_funding_analytics', {
+            'p_actor': g.user_id, 'p_campus': campus, 'p_from': from_date, 'p_to': to_date})
+        if not isinstance(result, dict) or not result.get('as_of'):
+            raise RuntimeError('Wallet analytics result unavailable')
+        return jsonify(result), 200
+    except SupabaseError as exc:
+        code = (exc.details or {}).get('message') or str(exc)
+        if code == 'wallet_analytics_forbidden':
+            return jsonify({'error': MSG.ROLE_NOT_PERMITTED}), 403
+        if code in ('wallet_analytics_date_invalid', 'wallet_analytics_campus_invalid'):
+            return jsonify({'error': MSG.ANALYTICS_INVALID_CAMPUS if code.endswith('campus_invalid') else MSG.ANALYTICS_INVALID_DATE}), 400
+        logger.warning('Wallet analytics unavailable: %s', type(exc).__name__)
+    except Exception as exc:
+        logger.warning('Wallet analytics unavailable: %s', type(exc).__name__)
+    return jsonify({'error': 'Wallet analytics could not be loaded. Please try again.'}), 503

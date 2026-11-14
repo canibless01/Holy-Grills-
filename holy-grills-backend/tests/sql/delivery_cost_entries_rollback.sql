@@ -1,0 +1,63 @@
+BEGIN;
+SET LOCAL request.jwt.claims='{"role":"service_role"}';
+CREATE FUNCTION pg_temp.dc_assert(ok boolean,label text) RETURNS void LANGUAGE plpgsql AS $$BEGIN IF ok IS DISTINCT FROM true THEN RAISE EXCEPTION 'Delivery costs: %',label;END IF;END$$;
+DO $$
+DECLARE c uuid:=gen_random_uuid();other_c uuid:=gen_random_uuid();actor uuid:=gen_random_uuid();outsider uuid:=gen_random_uuid();student uuid:=gen_random_uuid();cat uuid:=gen_random_uuid();meal uuid:=gen_random_uuid();gate uuid:=gen_random_uuid();other_gate uuid:=gen_random_uuid();o uuid;ids uuid[]:='{}';req uuid:=gen_random_uuid();entry uuid:=gen_random_uuid();payload jsonb;res jsonb;replay jsonb;i integer;
+BEGIN
+ INSERT INTO campuses(id,name,slug) VALUES(c,'[AUDIT rollback] Costs','audit-cost-'||c),(other_c,'[AUDIT rollback] Other','audit-cost-'||other_c);
+ INSERT INTO gates(id,name,campus_id) VALUES(gate,'[AUDIT rollback] Gate',c),(other_gate,'[AUDIT rollback] Other',c);
+ INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES(actor,'audit-cost-'||actor||'@example.invalid','{"full_name":"[AUDIT rollback] Admin"}'),(outsider,'audit-cost-'||outsider||'@example.invalid','{"full_name":"[AUDIT rollback] Other"}'),(student,'audit-cost-'||student||'@example.invalid','{"full_name":"[AUDIT rollback] Student"}');
+ UPDATE profiles SET role='admin',campus_id=c WHERE id=actor;
+ UPDATE profiles SET role='admin',campus_id=other_c WHERE id=outsider;
+ UPDATE profiles SET campus_id=c WHERE id=student;
+ INSERT INTO menu_categories(id,name,slug,campus_id) VALUES(cat,'[AUDIT rollback] Costs','audit-cost-'||cat,c);
+ INSERT INTO menu_items(id,category_id,name,slug,price,cushion_amount,campus_id) VALUES(meal,cat,'[AUDIT rollback] Meal','audit-cost-'||meal,3500,500,c);
+ SET CONSTRAINTS sync_delivery_subsidy IMMEDIATE;
+ FOR i IN 1..3 LOOP
+  SET CONSTRAINTS sync_delivery_subsidy DEFERRED;
+  o:=gen_random_uuid();ids:=array_append(ids,o);
+  INSERT INTO orders(id,campus_id,guest_email,claim_token,status,payment_status,subtotal,delivery_fee,total_amount,card_amount_used,delivery_location_id)
+  VALUES(o,c,'audit-cost-'||o||'@example.invalid',gen_random_uuid(),'received','paid',3500,500,4000,4000,gate);
+  INSERT INTO order_items(order_id,menu_item_id,campus_id,name_snapshot,price_snapshot,line_total,quantity) VALUES(o,meal,c,'[AUDIT rollback] Meal',3500,3500,1);
+  SET CONSTRAINTS sync_delivery_subsidy IMMEDIATE;
+  UPDATE orders SET status='preparing' WHERE id=o;UPDATE orders SET status='ready' WHERE id=o;
+  UPDATE orders SET status='out_for_delivery',out_for_delivery_at=now() WHERE id=o;
+  UPDATE orders SET status='delivered',delivered_at=now() WHERE id=o;
+ END LOOP;
+ payload:=jsonb_build_object('request_id',req,'entry_id',entry,'version',0,'kind','trip','date',(now() AT TIME ZONE 'Africa/Lagos')::date,'total_cost',1000,'order_ids',to_jsonb(ids));
+ PERFORM set_config('role','service_role',true);
+ res:=public.hg_delivery_costs(actor,c,'save',payload);
+ PERFORM set_config('role','none',true);
+ PERFORM pg_temp.dc_assert((SELECT sum(amount)=1000 AND max(amount)-min(amount)=0.01 FROM hg_internal.delivery_cost_allocations WHERE entry_id=entry),'exact 1000 split across three orders');
+ replay:=public.hg_delivery_costs(actor,c,'save',payload);
+ PERFORM pg_temp.dc_assert(res=replay AND (SELECT count(*)=1 FROM hg_internal.delivery_cost_audit WHERE entry_id=entry),'retry returns receipt without duplicate');
+ BEGIN PERFORM public.hg_delivery_costs(actor,c,'save',payload||'{"total_cost":1001}');RAISE EXCEPTION 'missing conflict';EXCEPTION WHEN serialization_failure THEN NULL;END;
+ BEGIN PERFORM public.hg_delivery_costs(outsider,c,'list',payload);RAISE EXCEPTION 'missing campus denial';EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+ BEGIN PERFORM public.hg_delivery_costs(student,c,'list',payload);RAISE EXCEPTION 'missing student denial';EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+ BEGIN PERFORM public.hg_delivery_costs(actor,c,'save',payload||jsonb_build_object('request_id',gen_random_uuid(),'entry_id',gen_random_uuid(),'kind','order','order_ids',jsonb_build_array(ids[1])));RAISE EXCEPTION 'missing overlap conflict';EXCEPTION WHEN serialization_failure THEN NULL;END;
+ payload:=payload||jsonb_build_object('request_id',gen_random_uuid(),'version',1,'total_cost',3600);
+ PERFORM public.hg_delivery_costs(actor,c,'save',payload);
+ PERFORM pg_temp.dc_assert((SELECT count(*)=2 FROM hg_internal.delivery_cost_audit WHERE entry_id=entry),'edits retain both audit versions');
+ PERFORM pg_temp.dc_assert((SELECT sum(net_effect)=-600 FROM hg_internal.delivery_subsidy_ledger WHERE order_id=ANY(ids)),'negative pool balance is supported');
+ BEGIN PERFORM public.hg_delivery_costs(actor,c,'save',payload||jsonb_build_object('request_id',gen_random_uuid()));RAISE EXCEPTION 'missing stale conflict';EXCEPTION WHEN serialization_failure THEN NULL;END;
+ PERFORM pg_temp.dc_assert(jsonb_array_length(public.hg_delivery_costs(actor,c,'list',payload)->'orders')=3,'daily rows include all orders and customer charges');
+ PERFORM pg_temp.dc_assert(jsonb_array_length(public.hg_delivery_costs(actor,c,'history',jsonb_build_object('entry_id',entry)))=2,'history is available');
+ -- Reporting must agree with the ledger and carry an opening balance through each WAT day.
+ res:=public.hg_delivery_pool_report(actor,c,(now() AT TIME ZONE 'Africa/Lagos')::date-2,(now() AT TIME ZONE 'Africa/Lagos')::date);
+ PERFORM pg_temp.dc_assert((res->>'balance')::numeric=-600 AND (res->'trend'->-1->>'balance')::numeric=-600 AND jsonb_array_length(res->'trend')=3,'dashboard and running trend conserve the negative balance');
+ PERFORM pg_temp.dc_assert((res->'changes'->>'today')::numeric=-600 AND (res->'gates'->0->>'balance')::numeric=-600,'today and per-gate changes agree');
+ res:=public.hg_delivery_pool_report(actor,c,(now() AT TIME ZONE 'Africa/Lagos')::date,(now() AT TIME ZONE 'Africa/Lagos')::date,true);
+ PERFORM pg_temp.dc_assert(jsonb_array_length(res->'rows')=3 AND (res->'rows'->0->>'customer_delivery_fee')::numeric=500,'CSV contains actual customer delivery fee');
+ res:=public.hg_delivery_pool_budget(actor,c);
+ PERFORM pg_temp.dc_assert((res->0->>'floor')::numeric=0 AND (res->0->>'version')::integer=0,'floor defaults to zero without seeding');
+ res:=public.hg_delivery_pool_budget(actor,c,30000,0);
+ PERFORM pg_temp.dc_assert((res->0->>'floor')::numeric=30000 AND (res->0->>'balance')::numeric=-600,'private floor is editable without changing funds');
+ PERFORM public.hg_delivery_pool_budget(actor,c,30000,0);
+ BEGIN PERFORM public.hg_delivery_pool_budget(actor,c,500,0);RAISE EXCEPTION 'missing stale floor conflict';EXCEPTION WHEN serialization_failure THEN NULL;END;
+ BEGIN PERFORM public.hg_delivery_pool_report(outsider,c,current_date,current_date);RAISE EXCEPTION 'missing reporting denial';EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+ BEGIN PERFORM public.hg_delivery_pool_budget(student,c,0,1);RAISE EXCEPTION 'missing floor denial';EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+ PERFORM pg_temp.dc_assert(NOT has_function_privilege('authenticated','public.hg_delivery_costs(uuid,uuid,text,jsonb)','EXECUTE'),'backend-only RPC');
+ PERFORM pg_temp.dc_assert((SELECT sum(delta) FROM hg_internal.delivery_subsidy_movements WHERE campus_id=c)=(SELECT sum(net_effect) FROM hg_internal.delivery_subsidy_ledger WHERE campus_id=c),'journal conservation after edits');
+END$$;
+ROLLBACK;
+SELECT 'passed: precise trip split, retries, conflicts, role/campus permissions, editing history, negative balance and journal conservation; fixtures rolled back' evidence;

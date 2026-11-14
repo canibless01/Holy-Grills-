@@ -156,6 +156,9 @@ def _get_hp_multiplier(campus_id: str = None) -> float:
     silently ignored while the broadcast told users it was live. The expiry is read at the same scope
     as the multiplier row that won. Returns 1.0 if disabled, expired, or invalid.
     """
+    from app.services.feature_flags import is_feature_enabled
+    if not is_feature_enabled("hp_multiplier", campus_id):
+        return 1.0
     try:
         db = get_db()
         scope, raw = None, None
@@ -240,7 +243,7 @@ def _tier_multiplier_for_slug(tier_slug) -> float:
         return 1.0
 
 
-def calculate_delivery_hp(order_total, tier_slug, order_items, user_id: str = None, campus_id: str = None) -> int:
+def calculate_delivery_hp(order_total, tier_slug, order_items, user_id: str = None, campus_id: str = None, *, include_addons=False, net_food_spend=None) -> int:
     """Pure calculation — no DB writes. Extracted from award_food_order_hp."""
     tier_multiplier = 1.0
     if user_id:
@@ -257,27 +260,9 @@ def calculate_delivery_hp(order_total, tier_slug, order_items, user_id: str = No
     menu_multiplier = _get_menu_multiplier(campus_id)
 
     if order_items:
-        base_hp = 0
-        multiplied_base_hp = 0
-        total_hp = 0
-        for item in order_items:
-            if item.get("is_addon") or not item.get("price_snapshot"):
-                continue
-            line_base_hp = int(
-                float(item.get("price_snapshot") or 0)
-                * int(item.get("quantity") or 1)
-                * food_earn_rate
-            )
-            base_hp += line_base_hp
-            try:
-                item_multiplier = float(item.get("hp_multiplier_snapshot") or 1.0)
-            except (TypeError, ValueError):
-                item_multiplier = 1.0
-            if item_multiplier not in (0.5, 1.0, 2.0):
-                item_multiplier = 1.0
-            multiplied_line_hp = round(line_base_hp * item_multiplier * event_multiplier * menu_multiplier)
-            multiplied_base_hp += multiplied_line_hp
-            total_hp += round(multiplied_line_hp * tier_multiplier)
+        from app.services.food_hp_plan import food_hp_lines
+        lines = food_hp_lines(order_items, food_earn_rate, include_addons=include_addons, net_food_spend=net_food_spend)
+        total_hp = sum(round(round(line['base_hp'] * line['hp_multiplier'] * event_multiplier * menu_multiplier) * tier_multiplier) for line in lines)
     else:
         # Same order of operations as the per-item branch (event x menu first, tier on top). This branch used to
         # skip the menu multiplier and add the tier bonus to the unmultiplied base, so the two paths disagreed
@@ -309,7 +294,8 @@ def unlock_pending_hp(user_id: str, order_id: str, food_spend: float) -> dict:
 
     if isinstance(res, dict) and res.get("error"):
         logger.warning("unlock_pending_hp failed: %s", res["error"])
-        return {"unlocked": 0}
+        from app.messages import MSG
+        raise RuntimeError(MSG.ORDER_DELIVERY_HP_PENDING)
 
     unlocked_amount = res.get("unlocked_amount", 0) if isinstance(res, dict) else 0
 
@@ -544,6 +530,7 @@ def award_signup_bonus(user_id: str) -> dict:
     )
     if already:
         return {"awarded": 0, "reason": "Already received"}
+    profile = db.table('profiles').select('campus_id').eq('id', user_id).single().execute() or {}
     return award_active_hp(
         user_id=user_id,
         amount=amount,
@@ -551,6 +538,8 @@ def award_signup_bonus(user_id: str) -> dict:
         reference_id=user_id,
         reference_type="signup_bonus",
         source_type="signup",
+        apply_multiplier=False,
+        campus_id=profile.get('campus_id'),
         notes=f"Welcome to {current_app.config.get('APP_NAME', 'Holy Grills')} — {amount} HP signup gift",
     )
 
@@ -621,75 +610,17 @@ def get_user_tier(user_id: str, campus_id: str = None) -> dict:
 
 
 def recalculate_tier(user_id: str, campus_id: str = None) -> dict:
-    """
-    Compare hp_earned_120day against tier thresholds (min_points column in hp_tiers).
-    Uses the rolling 120-day earned HP — not the current balance — to determine tier.
-    Updates profiles.current_tier_id and logs to user_tiers (event log).
-    """
-    db = get_db()
-    try:
-        profile = (
-            db.table("profiles")
-            .select("hp_earned_120day,current_tier_id")
-            .eq("id", user_id)
-            .single()
-            .execute()
-        )
-        hp_earned_120day = int(profile.get("hp_earned_120day") or 0)
-        current_tier_id = profile.get("current_tier_id")
-    except Exception:
-        hp_earned_120day = 0
-        current_tier_id = None
-
-    tiers_raw = (
-        db.table("hp_tiers")
-        .select("*")
-        .eq("is_active", "true")
-        .order("sort_order", ascending=False)
-        .execute()
-    )
-    tiers = sorted(tiers_raw or [], key=lambda t: int(t.get("min_points") or 0), reverse=True)
-    new_tier = None
-    for tier in tiers:
-        if hp_earned_120day >= int(tier.get("min_points") or 0):
-            new_tier = tier
-            break
-    if not new_tier and tiers:
-        new_tier = tiers[-1]
-
-    if not new_tier:
-        return {"tier": None, "changed": False}
-
-    if current_tier_id == new_tier["id"]:
-        return {"tier": new_tier, "changed": False}
-
-    event = "upgraded" if (not current_tier_id or _tier_sort_order(new_tier) > _tier_sort_order_by_id(current_tier_id, tiers_raw)) else "downgraded"
-
-    if event == "downgraded":
-        # Downgrades are handled exclusively by the tier_grace_period_check
-        # scheduled task, which respects the maintenance_points threshold and
-        # the 7-day grace window. Applying a downgrade here would skip both.
-        return {"tier": new_tier, "changed": False, "event": "downgrade_deferred_to_grace_job"}
-
-    try:
-        db.table("user_tiers").insert({
-            "user_id": user_id,
-            "tier_id": new_tier["id"],
-            "previous_tier_id": current_tier_id,
-            "event": event,
-            "hp_at_event": hp_earned_120day,
-        }).execute()
-    except Exception as exc:
-        logger.warning("recalculate_tier: could not record the tier history row for %s: %s",
-                        user_id, exc)
-
-    try:
-        db.table("profiles").eq("id", user_id).update({"current_tier_id": new_tier["id"]}).execute()
-    except Exception as exc:
-        logger.error("recalculate_tier: could not persist the new tier on the profile for %s — the user keeps the old tier: %s",
-                      user_id, exc)
-
-    return {"tier": new_tier, "changed": True, "previous_tier_id": current_tier_id, "event": event}
+    """Tier state, valid history event and notification receipts commit together."""
+    result = get_db().rpc("hg_recalculate_tier_atomic", {"p_user": user_id})
+    if not isinstance(result, dict) or result.get("error"):
+        raise RuntimeError("Tier recalculation remains pending")
+    if result.get("reference_id"):
+        try:
+            from app.services.notification_outbox import start_reference_dispatch
+            start_reference_dispatch("tier_" + result["event"], result["reference_id"])
+        except Exception:
+            logger.warning("Tier notification wake deferred", exc_info=True)
+    return result
 
 
 def _tier_sort_order(tier: dict) -> int:

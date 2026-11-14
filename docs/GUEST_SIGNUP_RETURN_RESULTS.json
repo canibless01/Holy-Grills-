@@ -1,0 +1,4 @@
+{
+  "guest_order_return_and_token_preserved_through_signup_to_login": true,
+  "external_return_destination_not_propagated": true
+}

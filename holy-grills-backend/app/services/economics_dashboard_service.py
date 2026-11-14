@@ -3,16 +3,18 @@ Economics Dashboard Service — aggregation queries for admin economics reportin
 """
 
 from app.services.economics_service import _get_econ_setting, get_hp_value
+from app.services.reporting_money import ORDER_MONEY_COLUMNS, retained_food_amount
 
 # What counts as "HP issued": food-order earning, the FIFO unlock of pending HP, and (per the tier
 # rewards spec) each tier's flat monthly HP perk -- it's real liability the moment it's credited,
 # same as order-earned HP, even though no order caused it. Renamed from _HP_ISSUED_SOURCES now that
 # it covers a non-order source too.
-_HP_ISSUED_SOURCES = ("food_order", "order_earn", "unlock", "tier_monthly_hp")
+# B-9: include squad splits, claimed splits, and bonus so economics reflects squad orders
+_HP_ISSUED_SOURCES = ("food_order", "order_earn", "unlock", "tier_monthly_hp", "squad_split", "squad_split_claimed", "squad_bonus")
 
 
 def get_economics_overview(db, start_date: str = None, end_date: str = None, campus_id: str = None) -> dict:
-    orders_q = db.table("orders").select("subtotal").eq("status", "delivered")
+    orders_q = db.table("orders").select(ORDER_MONEY_COLUMNS).eq("status", "delivered")
     if start_date:
         orders_q = orders_q.gte("created_at", start_date)
     if end_date:
@@ -20,7 +22,7 @@ def get_economics_overview(db, start_date: str = None, end_date: str = None, cam
     if campus_id:
         orders_q = orders_q.eq("campus_id", campus_id)
     orders = orders_q.execute() or []
-    food_revenue = sum(float(o["subtotal"] or 0) for o in orders)
+    food_revenue = float(sum(retained_food_amount(o) for o in orders))
 
     hp_tx_q = db.table("hp_transactions").select("amount,type,source")
     if start_date:
@@ -30,8 +32,11 @@ def get_economics_overview(db, start_date: str = None, end_date: str = None, cam
     if campus_id:
         hp_tx_q = hp_tx_q.eq("campus_id", campus_id)
     hp_tx = hp_tx_q.execute() or []
-    hp_issued = sum(t["amount"] for t in hp_tx if t.get("type") == "earn" and t.get("source") in _HP_ISSUED_SOURCES)
-    hp_redeemed = sum(t["amount"] for t in hp_tx if t.get("type") == "spend")
+    # B-9: exclude transfers from earned/spent, report separately
+    hp_issued = sum(t["amount"] for t in hp_tx if t.get("type") == "earn" and t.get("source") in _HP_ISSUED_SOURCES and t.get("source") != "hp_transfer_received")
+    hp_redeemed = sum(t["amount"] for t in hp_tx if t.get("type") == "spend" and t.get("source") != "hp_transfer_sent")
+    hp_transfer_received = sum(t["amount"] for t in hp_tx if t.get("source") == "hp_transfer_received")
+    hp_transfer_sent = sum(t["amount"] for t in hp_tx if t.get("source") == "hp_transfer_sent")
 
     # [B-14] Spendable HP = profiles.hp_balance (kept current by every HP RPC). hp_transactions.remaining_amount is
     # NOT reliable: record_hp_transaction_atomic never sets it and spends never reduce it.
@@ -66,6 +71,8 @@ def get_economics_overview(db, start_date: str = None, end_date: str = None, cam
         "pending_hp": pending_hp,
         "active_hp": active_hp,
         "hp_redeemed": hp_redeemed,
+        "hp_transfer_received": hp_transfer_received,
+        "hp_transfer_sent": hp_transfer_sent,
         "hp_outstanding": hp_outstanding,
         "theoretical_liability": theoretical_liability,
         "actual_redemption_cost": round(actual_cost, 2),
@@ -97,13 +104,15 @@ def get_tier_breakdown(db, start_date: str = None, end_date: str = None, campus_
             continue
 
         def _orders(chunk):
-            q = db.table("orders").select("subtotal").eq("status", "delivered").in_("user_id", chunk)
+            q = db.table("orders").select(ORDER_MONEY_COLUMNS).eq("status", "delivered").in_("user_id", chunk)
             if start_date:
                 q = q.gte("created_at", start_date)
             if end_date:
                 q = q.lt("created_at", end_date)
+            if campus_id:
+                q = q.eq("campus_id", campus_id)
             return q
-        revenue = sum(float(o["subtotal"] or 0) for o in _in_chunks(_orders, user_ids))
+        revenue = float(sum(retained_food_amount(o) for o in _in_chunks(_orders, user_ids)))
 
         def _hp(chunk):
             q = db.table("hp_transactions").select("amount,type,source").in_("user_id", chunk)
@@ -111,10 +120,12 @@ def get_tier_breakdown(db, start_date: str = None, end_date: str = None, campus_
                 q = q.gte("created_at", start_date)
             if end_date:
                 q = q.lt("created_at", end_date)
+            if campus_id:
+                q = q.eq("campus_id", campus_id)
             return q
         hp_tx = _in_chunks(_hp, user_ids)
-        hp_issued = sum(t["amount"] for t in hp_tx if t.get("type") == "earn" and t.get("source") in _HP_ISSUED_SOURCES)
-        hp_redeemed = sum(t["amount"] for t in hp_tx if t.get("type") == "spend")
+        hp_issued = sum(t["amount"] for t in hp_tx if t.get("type") == "earn" and t.get("source") in _HP_ISSUED_SOURCES and t.get("source") != "hp_transfer_received")
+        hp_redeemed = sum(t["amount"] for t in hp_tx if t.get("type") == "spend" and t.get("source") != "hp_transfer_sent")
 
         def _cost(chunk):
             q = db.table("redemption_cost_log").select("actual_cost").in_("user_id", chunk)
@@ -122,6 +133,8 @@ def get_tier_breakdown(db, start_date: str = None, end_date: str = None, campus_
                 q = q.gte("created_at", start_date)
             if end_date:
                 q = q.lt("created_at", end_date)
+            if campus_id:
+                q = q.eq("campus_id", campus_id)
             return q
         actual_cost = sum(float(c["actual_cost"] or 0) for c in _in_chunks(_cost, user_ids))
 

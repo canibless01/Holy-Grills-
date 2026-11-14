@@ -1,6 +1,8 @@
 """Squad routes: persistent squad entity, roster, and squad order history."""
+import re
+import uuid
 from flask import Blueprint, request, jsonify, g, current_app
-from app.db import get_user_client
+from app.db import get_user_client, get_db
 from app.middleware.auth import require_auth
 from app.messages import MSG
 from app.services.squad_service import resolve_display_names_batch
@@ -30,17 +32,37 @@ def create_squad():
     name = (data.get("name") or "").strip()
     if not name:
         return jsonify({"error": MSG.SQUAD_NAME_REQUIRED}), 400
-    emails = [e.strip().lower() for e in (data.get("emails") or []) if e and e.strip()]
+    raw_emails = data.get("emails") or []
+    raw_ids = data.get("member_user_ids") or []
+    if not isinstance(raw_emails, list) or not all(isinstance(email, str) for email in raw_emails) or not isinstance(raw_ids, list):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    emails = list(dict.fromkeys(email.strip().lower() for email in raw_emails if email.strip()))
+    if any(not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email) for email in emails):
+        return jsonify({"error": MSG.SQUAD_EMAIL_REQUIRED}), 400
+    selected_profiles = []
+    if raw_ids:
+        try:
+            selected_ids = list(dict.fromkeys(str(uuid.UUID(value)) for value in raw_ids))
+        except (ValueError, TypeError, AttributeError):
+            return jsonify({"error": MSG.INVALID_INPUT}), 400
+        if len(selected_ids) > int(current_app.config.get("SQUAD_MAX_MEMBERS", 20)) or not campus_id or g.user_id in selected_ids:
+            return jsonify({"error": MSG.INVALID_INPUT}), 400
+        selected_profiles = (get_db().table("profiles").select("id,email,campus_id")
+                             .in_("id", selected_ids).eq("role", "student")
+                             .eq("is_active", True).eq("campus_id", campus_id).execute()) or []
+        if len(selected_profiles) != len(selected_ids):
+            return jsonify({"error": MSG.SQUAD_CROSS_CAMPUS_BLOCKED}), 400
+        emails = list(dict.fromkeys(emails + [profile["email"].strip().lower() for profile in selected_profiles]))
 
     max_members = int(current_app.config.get("SQUAD_MAX_MEMBERS", 20))
     if len(emails) > max_members:
         return jsonify({"error": MSG.SQUAD_MAX_MEMBERS_REACHED}), 400
 
     # Cross-campus block: every invited email must belong to the same campus.
-    by_email = {}
+    by_email = {profile["email"].strip().lower(): profile for profile in selected_profiles}
     if emails:
         member_profiles = db.table("profiles").select("id,email,campus_id").in_("email", emails).execute() or []
-        by_email = {p["email"]: p for p in member_profiles}
+        by_email.update({p["email"]: p for p in member_profiles})
         for email in emails:
             prof = by_email.get(email)
             if prof and campus_id and prof.get("campus_id") and prof["campus_id"] != campus_id:
@@ -149,9 +171,31 @@ def add_roster_member(squad_id):
     if squad["creator_id"] != g.user_id:
         return jsonify({"error": MSG.SQUAD_ORGANIZER_ONLY}), 403
 
-    data = request.get_json(force=True) or {}
-    email = (data.get("email") or "").strip().lower()
-    if not email:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400
+    selected_profile = None
+    if data.get("user_id"):
+        try:
+            selected_id = str(uuid.UUID(data["user_id"]))
+        except (ValueError, TypeError, AttributeError):
+            return jsonify({"error": MSG.INVALID_INPUT}), 400
+        # Search returns identities, never other students' email addresses.
+        # Resolve contact server-side under the same campus/student boundary.
+        if not squad.get("campus_id"):
+            return jsonify({"error": MSG.SQUAD_CROSS_CAMPUS_BLOCKED}), 400
+        selected_profile = (get_db().table("profiles").select("id,email,campus_id")
+                            .eq("id", selected_id).eq("role", "student").eq("is_active", True)
+                            .eq("campus_id", squad.get("campus_id")).single().execute())
+        if not selected_profile or selected_id == g.user_id:
+            return jsonify({"error": MSG.SQUAD_CROSS_CAMPUS_BLOCKED}), 400
+        email = (selected_profile.get("email") or "").strip().lower()
+    else:
+        email = data.get("email")
+        if not isinstance(email, str):
+            return jsonify({"error": MSG.SQUAD_EMAIL_REQUIRED}), 400
+        email = email.strip().lower()
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
         return jsonify({"error": MSG.SQUAD_EMAIL_REQUIRED}), 400
 
     current_count = db.table("squad_roster").select("id", count="exact").eq("squad_id", squad_id).eq("is_active", True).execute()
@@ -160,7 +204,7 @@ def add_roster_member(squad_id):
     if roster_count >= max_members:
         return jsonify({"error": MSG.SQUAD_MAX_MEMBERS_REACHED}), 400
 
-    profile = db.table("profiles").select("id,campus_id").eq("email", email).single().execute()
+    profile = selected_profile or db.table("profiles").select("id,campus_id").eq("email", email).single().execute()
     if profile and squad.get("campus_id") and profile.get("campus_id") and profile["campus_id"] != squad["campus_id"]:
         return jsonify({"error": MSG.SQUAD_CROSS_CAMPUS_BLOCKED}), 400
 

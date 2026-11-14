@@ -1,0 +1,51 @@
+BEGIN;
+SET LOCAL request.jwt.claims='{"role":"service_role"}';
+DO $$
+DECLARE c uuid:=gen_random_uuid();other_c uuid:=gen_random_uuid();u uuid:=gen_random_uuid();base uuid:=gen_random_uuid();mid uuid:=gen_random_uuid();top uuid:=gen_random_uuid();foreign_tier uuid:=gen_random_uuid();r jsonb;history_count integer;notice_count integer;v_balance integer;grace_notice uuid;lease jsonb;began boolean;
+BEGIN
+ INSERT INTO campuses(id,name,slug) VALUES(c,'[AUDIT rollback] Tiers','audit-tier-'||c),(other_c,'[AUDIT rollback] Other','audit-tier-'||other_c);
+ INSERT INTO hp_tiers(id,name,slug,min_points,maintenance_points,sort_order,campus_id,is_active) VALUES
+ (base,'Audit base '||c,'audit-base-'||c,0,0,0,c,true),(mid,'Audit mid '||c,'audit-mid-'||c,100,70,1,c,true),(top,'Audit top '||c,'audit-top-'||c,200,150,2,c,true),(foreign_tier,'Audit foreign '||c,'audit-foreign-'||c,1,1,99,other_c,true);
+ INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES(u,'audit-tier-'||u||'@example.invalid','{"full_name":"[AUDIT rollback] Tier"}');
+ UPDATE profiles SET campus_id=c,role='student',is_active=true,current_tier_id=base,hp_earned_120day=120,push_enabled=true,email_notifications=true WHERE id=u;
+ INSERT INTO notification_preferences(user_id,hp_updates,push_enabled,email_enabled) VALUES(u,true,true,true) ON CONFLICT(user_id) DO UPDATE SET hp_updates=true,push_enabled=true,email_enabled=true;
+ SELECT hp_balance INTO v_balance FROM profiles WHERE id=u;
+ BEGIN PERFORM hg_recalculate_tier_atomic(u);RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='simulate process abort';EXCEPTION WHEN no_data_found THEN NULL;END;
+ IF (SELECT current_tier_id FROM profiles WHERE id=u)<>base OR EXISTS(SELECT 1 FROM user_tiers WHERE user_id=u) OR EXISTS(SELECT 1 FROM notifications WHERE user_id=u) THEN RAISE EXCEPTION 'interruption leaked tier effects';END IF;
+ r:=hg_recalculate_tier_atomic(u);
+ IF r->>'event'<>'upgrade' OR (r->'tier'->>'id')::uuid<>mid THEN RAISE EXCEPTION 'wrong campus tier upgrade: %',r;END IF;
+ r:=hg_recalculate_tier_atomic(u);
+ IF (r->>'changed')::boolean OR (SELECT count(*) FROM user_tiers WHERE user_id=u)<>1 OR (SELECT count(*) FROM notifications WHERE user_id=u)<>3 THEN RAISE EXCEPTION 'upgrade replay duplicated history/receipts';END IF;
+ UPDATE profiles SET hp_earned_120day=60 WHERE id=u;
+ r:=hg_recalculate_tier_atomic(u);
+ IF (r->>'changed')::boolean OR (SELECT current_tier_id FROM profiles WHERE id=u)<>mid THEN RAISE EXCEPTION 'upgrade skipped grace';END IF;
+ r:=hg_recalculate_tier_atomic(u,'grace',7);
+ IF r->>'event'<>'grace' OR (SELECT tier_grace_ends_at FROM profiles WHERE id=u)<>now()+interval '7 days' THEN RAISE EXCEPTION 'grace not started';END IF;
+ r:=hg_recalculate_tier_atomic(u,'grace',7);
+ IF r->>'event'<>'grace_pending' OR (SELECT count(*) FROM user_tiers WHERE user_id=u AND event='grace')<>1 THEN RAISE EXCEPTION 'grace replay';END IF;
+ SELECT id INTO grace_notice FROM notifications WHERE user_id=u AND type='tier_grace_period' AND channel='push' ORDER BY created_at DESC LIMIT 1;
+ IF NOT hg_tier_notice_valid(grace_notice) THEN RAISE EXCEPTION 'current grace receipt invalid';END IF;
+ UPDATE profiles SET hp_earned_120day=70 WHERE id=u;r:=hg_recalculate_tier_atomic(u,'grace',7);
+ IF r->>'event'<>'maintained' OR (SELECT tier_grace_ends_at FROM profiles WHERE id=u) IS NOT NULL THEN RAISE EXCEPTION 'maintenance equality failed';END IF;
+ IF hg_tier_notice_valid(grace_notice) THEN RAISE EXCEPTION 'recovered grace still valid';END IF;
+ lease:=hg_claim_notification_dispatch_v2(grace_notice);began:=hg_begin_notification_dispatch(grace_notice,(lease->>'token')::uuid,'{}');
+ IF began OR (SELECT status FROM notification_deliveries WHERE id=grace_notice)<>'skipped' THEN RAISE EXCEPTION 'stale grace reached provider';END IF;
+ UPDATE profiles SET hp_earned_120day=60 WHERE id=u;r:=hg_recalculate_tier_atomic(u,'grace',7);
+ UPDATE profiles SET tier_grace_ends_at=now()-interval '1 second' WHERE id=u;r:=hg_recalculate_tier_atomic(u,'grace',7);
+ IF r->>'event'<>'downgrade' OR (SELECT current_tier_id FROM profiles WHERE id=u)<>base OR (SELECT tier_grace_ends_at FROM profiles WHERE id=u) IS NOT NULL THEN RAISE EXCEPTION 'expired grace did not downgrade';END IF;
+ SELECT count(*) INTO history_count FROM user_tiers WHERE user_id=u;SELECT count(*) INTO notice_count FROM notifications WHERE user_id=u;
+ r:=hg_recalculate_tier_atomic(u,'grace',7);
+ IF (SELECT count(*) FROM user_tiers WHERE user_id=u)<>history_count OR (SELECT count(*) FROM notifications WHERE user_id=u)<>notice_count THEN RAISE EXCEPTION 'downgrade replay changed effects';END IF;
+ -- A ledger larger than a REST page must be summed in the DB, without pending/old/cross-campus HP.
+ UPDATE notification_preferences SET hp_updates=false WHERE user_id=u;
+ INSERT INTO hp_transactions(user_id,type,status,amount,balance_after,source,campus_id,created_at) VALUES(u,'earn','active',8000,0,'audit_tier',c,now()-interval '121 days');
+ IF (SELECT current_tier_id FROM profiles WHERE id=u)<>base OR (SELECT hp_earned_120day FROM profiles WHERE id=u)<>0 THEN RAISE EXCEPTION 'old spendable HP state: %, expected base %', (SELECT row_to_json(p) FROM (SELECT current_tier_id,hp_earned_120day,hp_balance FROM profiles WHERE id=u) p),base;END IF;
+ INSERT INTO hp_transactions(user_id,type,status,amount,balance_after,source,campus_id,created_at) SELECT u,'earn','active',1,0,'audit_tier',c,now() FROM generate_series(1,1100);
+ INSERT INTO hp_transactions(user_id,type,status,amount,balance_after,source,campus_id,created_at) VALUES(u,'earn','pending',100,0,'audit_tier',c,now());
+ r:=hg_tier_maintenance_batch(c,'refresh',NULL,200,7);
+ IF (r->>'errors')::integer<>0 OR (SELECT hp_earned_120day FROM profiles WHERE id=u)<>1100 OR (SELECT current_tier_id FROM profiles WHERE id=u)<>top THEN RAISE EXCEPTION 'rolling DB total/upgrade failed: %',r;END IF;
+ IF (SELECT count(*) FROM notifications WHERE user_id=u)<>notice_count THEN RAISE EXCEPTION 'HP opt-out ignored';END IF;
+ IF has_function_privilege('authenticated','public.hg_recalculate_tier_atomic(uuid,text,integer)','execute') OR has_function_privilege('anon','public.hg_tier_maintenance_batch(uuid,text,uuid,integer,integer)','execute') THEN RAISE EXCEPTION 'public tier mutation';END IF;
+END$$;
+ROLLBACK;
+SELECT 'passed: scoped upgrades, atomic history/notices, interruption/replay, grace start/pending/recovery/expiry, maintenance boundary, 1100-row rolling sum, pending/old exclusions, preferences and permissions; fixtures rolled back' evidence;

@@ -1,0 +1,7 @@
+{
+  "transient_profile_retry_restores_session_once_without_clearing_token": true,
+  "public_home_stays_mounted_with_retry_notice_during_account_outage": true,
+  "private_page_stays_blocked_until_explicit_successful_retry": true,
+  "restored_user_redirects_from_login_without_campus_prompt": true,
+  "saved_session_menu_keeps_campus_hint_and_header_recovery_state": true
+}

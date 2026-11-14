@@ -1,0 +1,21 @@
+{
+  "mode": "real external browser navigation; no native apps or recipients; no messages sent",
+  "cases": [
+    {
+      "case": "rider_maps",
+      "http_status": 200,
+      "final_host": "www.google.com",
+      "final_path": "/maps/dir/",
+      "page_title": "Google Maps",
+      "native_app_receipt_verified": false
+    },
+    {
+      "case": "whatsapp_prefill",
+      "http_status": 200,
+      "final_host": "api.whatsapp.com",
+      "final_path": "/send/",
+      "page_title": "Share on WhatsApp",
+      "native_app_receipt_verified": false
+    }
+  ]
+}

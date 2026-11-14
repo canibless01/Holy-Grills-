@@ -1,0 +1,8 @@
+{
+  "mode": "actual production boot and real service worker activation; controlled API reads, SDK-style query registration, no subscription/send",
+  "document_preserved_on_sdk_registration": true,
+  "controller_after_sdk": "http://127.0.0.1:4175/service-worker.js?appId=471bd695-2342-4521-aa0f-8c93d7ce805f&sdkVersion=160610",
+  "controller_on_return": "http://127.0.0.1:4175/service-worker.js?appId=471bd695-2342-4521-aa0f-8c93d7ce805f&sdkVersion=160610",
+  "return_document_preserved": true,
+  "pass": true
+}

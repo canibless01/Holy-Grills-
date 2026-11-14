@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-15",
+  "environment": "local frontend/backend connected to Test Two",
+  "fixtures": "isolated owned audit customer and campus; four fulfilment receipts seeded directly for chooser testing",
+  "cases": {
+    "native_lists_two_each_and_defaults_save": true,
+    "native_choose_specific_later_rewards": true,
+    "lost_commit_hard_reload_recovery_same_request_one_debit": {
+      "order_id": "6f0064e9-ee58-4463-a2f8-bc3298163d77",
+      "deduction": 2100.0
+    },
+    "native_rewards_reservation_links_order": true,
+    "native_cancel_releases_hp_delivery_and_wallet": true,
+    "four_competing_api_intents_one_reservation_one_debit": {
+      "statuses": [
+        400,
+        400,
+        201,
+        400
+      ]
+    },
+    "explicit_save_order_preserves_all_receipts": true
+  },
+  "cleanup": {
+    "wallet_before": 190500,
+    "wallet_after": 190500,
+    "owned_orders_reconciled": 3,
+    "seeded_receipts_removed": 4,
+    "original_flag_window_and_profile_values_restored": true
+  },
+  "limits": [
+    "This run did not create prizes through the admin spin UI; that prior flow has separate evidence.",
+    "No new native rider-delivery payout or later-preparation refund proof.",
+    "No real Paystack/email/push provider delivery."
+  ]
+}

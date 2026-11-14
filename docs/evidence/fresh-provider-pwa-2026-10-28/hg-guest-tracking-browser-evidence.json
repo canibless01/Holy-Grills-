@@ -1,0 +1,19 @@
+{
+  "mode": "actual application email link and real tracking APIs; signed URLs omitted",
+  "profiles": [
+    {
+      "origin": "http://127.0.0.1:5250",
+      "fresh_profile": true,
+      "expected_order_opened": true,
+      "not_found_visible": false,
+      "final_path": "/orders/0795cf9f-902e-4bee-871d-a23288aa0488"
+    },
+    {
+      "origin": "https://holygrills.online",
+      "fresh_profile": true,
+      "expected_order_opened": true,
+      "not_found_visible": false,
+      "final_path": "/track-orders"
+    }
+  ]
+}

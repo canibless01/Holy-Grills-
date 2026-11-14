@@ -1,0 +1,27 @@
+[
+  {
+    "check": "paystack-test",
+    "http_status": 200
+  },
+  {
+    "check": "onesignal-app",
+    "http_status": 200,
+    "chrome_web_origin": "https://holygrills.online",
+    "safari_site_origin": "https://holygrills.online"
+  },
+  {
+    "check": "resend-domains",
+    "http_status": 200,
+    "verified_sender_domain": true
+  },
+  {
+    "check": "supabase-auth-settings",
+    "http_status": 200,
+    "mailer_autoconfirm": true,
+    "disable_signup": false
+  },
+  {
+    "check": "backend-health",
+    "http_status": 200
+  }
+]

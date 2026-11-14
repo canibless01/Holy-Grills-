@@ -207,6 +207,12 @@ class TableQuery:
         return self
 
     @staticmethod
+    def _scalar_val(value):
+        # requests encodes the parameter. Quotes in a simple eq/ilike value are
+        # literal text in PostgREST, unlike the quoted literals inside in.(...).
+        return str(value).lower() if isinstance(value, bool) else str(value)
+
+    @staticmethod
     def _escape_val(v) -> str:
         """Format filter values for PostgREST query parameters."""
         if v is None:
@@ -222,34 +228,34 @@ class TableQuery:
         if value is None:
             self._filters.append(f"{column}=is.null")
         else:
-            self._filters.append(f"{column}=eq.{self._escape_val(value)}")
+            self._filters.append(f"{column}=eq.{self._scalar_val(value)}")
         return self
 
     def neq(self, column: str, value) -> "TableQuery":
         if value is None:
             self._filters.append(f"{column}=is.not.null")
         else:
-            self._filters.append(f"{column}=neq.{self._escape_val(value)}")
+            self._filters.append(f"{column}=neq.{self._scalar_val(value)}")
         return self
 
     def gt(self, column: str, value) -> "TableQuery":
-        self._filters.append(f"{column}=gt.{self._escape_val(value)}")
+        self._filters.append(f"{column}=gt.{self._scalar_val(value)}")
         return self
 
     def gte(self, column: str, value) -> "TableQuery":
-        self._filters.append(f"{column}=gte.{self._escape_val(value)}")
+        self._filters.append(f"{column}=gte.{self._scalar_val(value)}")
         return self
 
     def lt(self, column: str, value) -> "TableQuery":
-        self._filters.append(f"{column}=lt.{self._escape_val(value)}")
+        self._filters.append(f"{column}=lt.{self._scalar_val(value)}")
         return self
 
     def lte(self, column: str, value) -> "TableQuery":
-        self._filters.append(f"{column}=lte.{self._escape_val(value)}")
+        self._filters.append(f"{column}=lte.{self._scalar_val(value)}")
         return self
 
     def ilike(self, column: str, pattern: str) -> "TableQuery":
-        self._filters.append(f"{column}=ilike.{self._escape_val(pattern)}")
+        self._filters.append(f"{column}=ilike.{self._scalar_val(pattern)}")
         return self
 
     def in_(self, column: str, values: list) -> "TableQuery":
@@ -267,7 +273,8 @@ class TableQuery:
 
     def order(self, column: str, ascending: bool = True) -> "TableQuery":
         direction = "asc" if ascending else "desc"
-        self._order = f"{column}.{direction}"
+        term = f"{column}.{direction}"
+        self._order = f"{self._order},{term}" if self._order else term
         return self
 
     def limit(self, n: int) -> "TableQuery":
@@ -312,7 +319,11 @@ class TableQuery:
 
     def _build_params(self) -> dict:
         """Build PostgREST query parameters from select, filters, ordering, and limit/offset."""
-        params = {"select": self._select}
+        selection = self._select
+        if getattr(self, '_use_user_headers', False) or self._user_jwt:
+            from app.services.cushion_privacy import public_projection
+            selection = public_projection(self._table, selection)
+        params = {"select": selection}
         params.update(self._filter_params())
         if self._order:
             params["order"] = self._order
@@ -409,7 +420,8 @@ class TableQuery:
 
     def insert(self, data: dict | list) -> list | dict:
         url = f"{self._client.url}/rest/v1/{self._table}"
-        resp = self._client._session.post(url, headers=self._headers(), json=data, timeout=self._client.timeout)
+        returning = self._public_returning()
+        resp = self._client._session.post(url, headers=self._headers(), json=data, timeout=self._client.timeout, **({'params': returning} if returning else {}))
         _raise_for_status(resp)
         return _wrap_result(resp.json()) if resp.content else QueryResultList()
 
@@ -417,6 +429,7 @@ class TableQuery:
         url = f"{self._client.url}/rest/v1/{self._table}"
         self._require_filter("update")
         params = self._filter_params()
+        params.update(self._public_returning())
         resp = self._client._session.patch(url, headers=self._headers(), json=data, params=params, timeout=self._client.timeout)
         _raise_for_status(resp)
         return _wrap_result(resp.json()) if resp.content else QueryResultList()
@@ -425,6 +438,7 @@ class TableQuery:
         url = f"{self._client.url}/rest/v1/{self._table}"
         self._require_filter("delete")
         params = self._filter_params()
+        params.update(self._public_returning())
         resp = self._client._session.delete(url, headers=self._headers(), params=params, timeout=self._client.timeout)
         _raise_for_status(resp)
         return _wrap_result(resp.json()) if resp.content else QueryResultList()
@@ -433,9 +447,16 @@ class TableQuery:
         url = f"{self._client.url}/rest/v1/{self._table}"
         headers = self._headers()
         headers["Prefer"] = "resolution=merge-duplicates,return=representation"
-        resp = self._client._session.post(url, headers=headers, json=data, params={"on_conflict": on_conflict}, timeout=self._client.timeout)
+        resp = self._client._session.post(url, headers=headers, json=data, params={"on_conflict": on_conflict, **self._public_returning()}, timeout=self._client.timeout)
         _raise_for_status(resp)
         return _wrap_result(resp.json()) if resp.content else QueryResultList()
+
+    def _public_returning(self):
+        if getattr(self, '_use_user_headers', False) or self._user_jwt:
+            from app.services.cushion_privacy import PUBLIC_COLUMNS
+            if self._table in PUBLIC_COLUMNS:
+                return {'select': PUBLIC_COLUMNS[self._table]}
+        return {}
 
 
 class _NotProxy:
@@ -453,7 +474,7 @@ class _NotProxy:
         if value is None:
             self._query._filters.append(f"{column}=not.is.null")
         else:
-            self._query._filters.append(f"{column}=not.eq.{TableQuery._escape_val(value)}")
+            self._query._filters.append(f"{column}=not.eq.{TableQuery._scalar_val(value)}")
         return self._query
 
     def in_(self, column: str, values: list) -> "TableQuery":

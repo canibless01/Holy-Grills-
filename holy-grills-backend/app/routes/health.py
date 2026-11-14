@@ -31,6 +31,25 @@ from app.messages import MSG
 health_bp = Blueprint("health", __name__)
 
 
+def _detail(exc, kind: str = "unreachable") -> str:
+    """Reason for a failed check, without leaking internals to the public.
+
+    `/api/health` is unauthenticated, and driver messages carry hostnames, ports and
+    occasionally credentials from the URL. In production only the failure class is
+    reported; DEBUG/TESTING keeps the full text because a developer is reading it.
+    """
+    if current_app.config.get("DEBUG") or current_app.config.get("TESTING"):
+        return f"{kind}:{str(exc)[:80]}"
+    text = str(exc).lower()
+    if "refused" in text:
+        return f"{kind}:connection_refused"
+    if "name or service not known" in text or "nodename nor servname" in text:
+        return f"{kind}:dns_failure"
+    if "timed out" in text or "timeout" in text:
+        return f"{kind}:timeout"
+    return f"{kind}:error"
+
+
 @health_bp.route("/health")
 def health():
     """
@@ -61,7 +80,7 @@ def health():
         )
         checks["supabase"] = MSG.HEALTH_CONNECTED if r.status_code < 400 else f"error:{r.status_code}"
     except Exception as exc:
-        checks["supabase"] = f"unreachable:{str(exc)[:80]}"
+        checks["supabase"] = _detail(exc)
 
     # ── Supabase Auth ─────────────────────────────────────────────────────────
     # Same project, different service: PostgREST can be up while GoTrue (auth) is
@@ -73,10 +92,16 @@ def health():
         r = _req.get(f"{url}/auth/v1/health", headers={"apikey": key}, timeout=5)
         checks["supabase_auth"] = MSG.HEALTH_CONNECTED if r.status_code < 400 else f"error:{r.status_code}"
     except Exception as exc:
-        checks["supabase_auth"] = f"unreachable:{str(exc)[:80]}"
+        checks["supabase_auth"] = _detail(exc)
 
     # ── Redis ─────────────────────────────────────────────────────────────────
-    redis_url = os.environ.get("REDIS_URL", "")
+    # Normalised first: redis-py rejects anything without redis:// | rediss:// | unix:
+    # with a long library ValueError, and a bare host:port (what Railway's Connect tab
+    # shows for the public proxy) is the usual cause. Repairing it here means the check
+    # reports whether Redis actually answers, not how the string was pasted.
+    from app.utils.redis_url import normalize_redis_url
+    raw_redis = os.environ.get("REDIS_URL", "")
+    redis_url = normalize_redis_url(raw_redis)
     if redis_url:
         try:
             import redis as _redis
@@ -84,7 +109,10 @@ def health():
             client.ping()
             checks["redis"] = MSG.HEALTH_CONNECTED
         except Exception as exc:
-            checks["redis"] = f"error:{str(exc)[:80]}"
+            checks["redis"] = _detail(exc, "error")
+    elif raw_redis.strip():
+        # Set, but nothing usable: say so instead of reporting "not configured".
+        checks["redis"] = "error:invalid_url_missing_redis_scheme"
     else:
         checks["redis"] = MSG.HEALTH_NOT_CONFIGURED
 
@@ -96,5 +124,6 @@ def health():
         "status": overall,
         "api": current_app.config.get("APP_NAME", "Holy Grills"),
         "version": MSG.API_VERSION,
+        "revision": os.environ.get("RAILWAY_GIT_COMMIT_SHA") or os.environ.get("RENDER_GIT_COMMIT"),
         "checks": checks,
     }), 200

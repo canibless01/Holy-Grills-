@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, request, jsonify
-from app.db import get_user_client
+from app.services.activity_scope import get_reporting_client as get_user_client
 from app.messages import MSG
 from app.middleware.auth import require_role, resolve_scoped_campus_id
 from app.services import economics_dashboard_service
@@ -31,11 +31,19 @@ def _econ_window():
     if s:
         if not validate_date(s):
             raise ValueError("start_date")
-        start = datetime.strptime(s, "%Y-%m-%d").replace(tzinfo=_WAT).astimezone(timezone.utc).isoformat()
+        try:
+            start = datetime.strptime(s, "%Y-%m-%d").replace(tzinfo=_WAT).astimezone(timezone.utc).isoformat()
+        except OverflowError as exc:
+            raise ValueError("date") from exc
     if e:
         if not validate_date(e):
             raise ValueError("end_date")
-        end = (datetime.strptime(e, "%Y-%m-%d").replace(tzinfo=_WAT) + timedelta(days=1)).astimezone(timezone.utc).isoformat()
+        try:
+            end = (datetime.strptime(e, "%Y-%m-%d").replace(tzinfo=_WAT) + timedelta(days=1)).astimezone(timezone.utc).isoformat()
+        except OverflowError as exc:
+            raise ValueError("date") from exc
+    if start and end and start >= end:
+        raise ValueError("date")
     return start, end
 
 

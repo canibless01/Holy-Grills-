@@ -12,8 +12,25 @@ from app.utils.logger import get_logger
 from app.utils.tz import today_wat
 from app.utils.settings import get_validated_setting
 from app.messages import MSG
+import os
+import socket
 
 logger = get_logger(__name__)
+
+
+@celery_app.task(name="app.tasks.scheduled.notify_wallet_transfer", ignore_result=True)
+def notify_wallet_transfer(transfer_id):
+    from app.services.wallet_transfers import rpc, dispatch_receipt
+    row = rpc('notice', transfer_id=transfer_id)
+    if row:
+        dispatch_receipt({**row, 'amount': row['amount_kobo'] / 100})
+
+
+@celery_app.task(name="app.tasks.scheduled.dispatch_cart_recovery", ignore_result=True)
+def dispatch_cart_recovery(notification_ids):
+    from app.services.notification_outbox import dispatch_notification
+    for notice_id in notification_ids[:3]:
+        dispatch_notification(notice_id)
 
 
 def _log_cron_execution(job_name: str, status: str, result: dict = None, error: str = None):
@@ -26,7 +43,9 @@ def _log_cron_execution(job_name: str, status: str, result: dict = None, error: 
             "entity_type": "cron_jobs",
             "entity_id": job_name,
             "action": f"scheduled_execution_{status}",
-            "after_value": {"status": status, "result": result, "error": error},
+            "after_value": {"status": status, "result": result, "error": error,
+                            "revision": os.environ.get("RAILWAY_GIT_COMMIT_SHA") or os.environ.get("RENDER_GIT_COMMIT"),
+                            "worker_node": socket.gethostname()},
         }).execute()
     except Exception as e:
         logger.warning("_log_cron_execution failed for %s: %s", job_name, e)
@@ -40,7 +59,11 @@ def with_cron_logging(job_name: str):
         def wrapper(*args, **kwargs):
             try:
                 res = func(*args, **kwargs)
-                if isinstance(res, dict) and res.get("skipped"):
+                failed = isinstance(res, dict) and (res.get("error") or any(
+                    isinstance(value, dict) and value.get("error") for value in res.values()))
+                if failed:
+                    _log_cron_execution(job_name, "failed", result=res)
+                elif isinstance(res, dict) and res.get("skipped"):
                     _log_cron_execution(job_name, "skipped", result=res)
                 else:
                     _log_cron_execution(job_name, "success", result=res if isinstance(res, dict) else {"result": str(res)})
@@ -52,640 +75,221 @@ def with_cron_logging(job_name: str):
     return decorator
 
 
-@celery_app.task(name="app.tasks.scheduled.reset_weekly_leaderboard", bind=True, max_retries=3)
+@celery_app.task(name="app.tasks.scheduled.automatic_wallet_funding", ignore_result=True)
+@with_cron_logging("automatic-wallet-funding")
+def automatic_wallet_funding():
+    # Shared worker/beat, one indexed bounded scan. No per-user cron tasks.
+    # The DB hands out each charge exactly once, including overlapping workers.
+    from app.services.auto_funding import sweep
+    return sweep()
+
+
+def _completed_period(now, kind):
+    """UTC query bounds and the completed period's WAT label."""
+    from app.services.delivery_window_schedule import WAT
+    local = now.astimezone(WAT)
+    if kind == "weekly":
+        end = (local - timedelta(days=local.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+        start = end - timedelta(days=7)
+        key = start.date().isoformat()
+    else:
+        end = local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        start = (end - timedelta(days=1)).replace(day=1)
+        key = start.strftime("%Y-%m")
+    return key, start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+
+
+def _rollover_pages(factory):
+    rows, offset = [], 0
+    while True:
+        page = factory().limit(1000).offset(offset).execute() or []
+        rows.extend(page)
+        if len(page) < 1000:
+            return rows
+        offset += len(page)
+
+
+def _period_student_entries(db, campus_id, start, end):
+    """Same eligible students/earnings as the live board, without a page truncation."""
+    profiles = _rollover_pages(lambda: db.table("profiles").select(
+        "id,nickname,full_name,email,department,campus_id,leaderboard_show_full_name")
+        .eq("campus_id", campus_id).eq("role", "student").eq("is_active", True).order("id"))
+    valid = {profile["id"] for profile in profiles}
+    transactions = _rollover_pages(lambda: db.table("hp_transactions").select("id,user_id,amount")
+        .eq("campus_id", campus_id).eq("type", "earn")
+        .or_("reference_type.is.null,reference_type.neq.hp_transfer")
+        .gte("created_at", start.isoformat()).lt("created_at", end.isoformat()).order("id"))
+    totals = {}
+    for row in transactions:
+        if row.get("user_id") in valid and (row.get("amount") or 0) > 0:
+            uid = row["user_id"]
+            totals[uid] = totals.get(uid, 0) + row["amount"]
+    winners = sorted(totals, key=lambda uid: (-totals[uid], uid))[:10]
+    from app.services.squad_service import resolve_leaderboard_names_batch
+    names = resolve_leaderboard_names_batch([row for row in profiles if row["id"] in winners])
+    return [{"rank": index + 1, "user_id": uid, "full_name": names.get(uid),
+             "hp_earned": totals[uid], "campus_id": campus_id} for index, uid in enumerate(winners)]
+
+
+@celery_app.task(name="app.tasks.scheduled.reset_weekly_leaderboard", bind=True, max_retries=3,
+                 autoretry_for=(Exception,), retry_backoff=60, retry_jitter=True)
 @with_cron_logging("reset-weekly-leaderboard")
 def reset_weekly_leaderboard(self):
-    """
-    Runs: Every Monday at 00:01 WAT.
-    Creates a leaderboard snapshot (ranking_type='weekly') for the
-    previous week (Mon-Sun), per campus, ranked by HP earned that week.
-    """
+    """Archive last Monday–Sunday at 00:01 WAT on Monday; live HP stays unchanged."""
     db = get_db()
-    try:
-        lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "reset_weekly_leaderboard"})
-    except Exception as e:
-        logger.error("reset_weekly_leaderboard: lock RPC failed, skipping run to be safe: %s", e)
-        lock_acquired = False
-    if not lock_acquired:
+    if not db.rpc("try_acquire_cron_lock", {"p_job_name": "reset_weekly_leaderboard"}):
         return {"skipped": "Lock not acquired"}
-
     try:
-        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        period, start, end = _completed_period(datetime.now(timezone.utc), "weekly")
         results = {}
-        for campus in (campuses if isinstance(campuses, list) else []):
+        for campus in db.table("campuses").select("id").eq("is_active", True).execute() or []:
             campus_id = campus["id"]
-            from app.utils.tz import WAT_OFFSET
-            now = datetime.now(timezone.utc)
-            now_wat = now + WAT_OFFSET
-            this_week_start = (now_wat - timedelta(days=now_wat.weekday())).replace(
-                hour=0, minute=0, second=0, microsecond=0
-            ) - WAT_OFFSET  # convert the WAT-computed boundary back to its UTC instant for the query range
-            last_week_start = this_week_start - timedelta(days=7)
-            last_week_end = this_week_start
-            period = (this_week_start + WAT_OFFSET).date().isoformat()  # label the period using the WAT calendar date
-
-            # Duplicate-run guard: check if snapshot already created for this period & campus
-            existing_snap = (
-                db.table("leaderboard_snapshots")
-                .select("id")
-                .eq("ranking_type", "weekly")
-                .eq("period_key", period)
-                .eq("campus_id", campus_id)
-                .execute()
-            ) or []
-            if existing_snap:
+            existing = (db.table("leaderboard_snapshots").select("id").eq("ranking_type", "weekly")
+                        .eq("period_key", period).eq("campus_id", campus_id).execute())
+            if existing:
                 results[campus_id] = {"period": period, "skipped": "Snapshot already exists for period"}
                 continue
-
-            EARN_TYPES = ["earn_order", "earn_first_order", "earn_referral", "earn_event_checkin",
-                          "earn_review", "earn_birthday", "earn_challenge", "earn_admin_grant",
-                          "earn_squad_bonus", "earn_streak", "earn"]
-            week_txns = (
-                db.table("hp_transactions")
-                .select("user_id,amount")
-                .in_("type", EARN_TYPES)
-                .gte("created_at", last_week_start.isoformat())
-                .lt("created_at", last_week_end.isoformat())
-                .eq("campus_id", campus_id)
-                .execute()
-            )
-
-            from collections import defaultdict
-            user_hp = defaultdict(int)
-            for t in (week_txns or []):
-                if t.get("amount", 0) > 0:
-                    user_hp[t["user_id"]] += t["amount"]
-
-            sorted_users = sorted(user_hp.items(), key=lambda x: x[1], reverse=True)[:10]
-
-            if sorted_users:
-                top_ids = [uid for uid, _ in sorted_users]
-                profiles_data = (
-                    db.table("profiles")
-                    .select("id,nickname,full_name,email,department,campus_id,leaderboard_show_full_name")
-                    .in_("id", top_ids)
-                    .eq("campus_id", campus_id)
-                    .execute()
-                )
-                from app.services.squad_service import resolve_leaderboard_names_batch
-                names = resolve_leaderboard_names_batch(profiles_data or [])
-
-                entries = [
-                    {"rank": i + 1, "user_id": uid, "full_name": names.get(uid),
-                     "hp_earned": hp, "campus_id": campus_id}
-                    for i, (uid, hp) in enumerate(sorted_users)
-                ]
-
-                try:
-                    db.table("leaderboard_snapshots").insert({
-                        "ranking_type": "weekly",
-                        "period_key": period,
-                        "entries": entries,
-                        "campus_id": campus_id,
-                    })
-                except Exception as e:
-                    logger.error("reset_weekly_leaderboard: snapshot insert failed for campus %s: %s", campus_id, e)
-
-                results[campus_id] = {"period": period, "entries": len(entries)}
-            else:
-                results[campus_id] = {"period": period, "entries": 0}
-
+            entries = _period_student_entries(db, campus_id, start, end)
+            db.table("leaderboard_snapshots").insert({"ranking_type": "weekly", "period_key": period,
+                                                      "entries": entries, "campus_id": campus_id})
+            results[campus_id] = {"period": period, "entries": len(entries)}
         return results
     finally:
-        try:
-            db.rpc("release_cron_lock", {"p_job_name": "reset_weekly_leaderboard"})
-        except Exception as exc:
-            # The job stays locked, so its next scheduled run may skip itself.
-            logger.warning("cron: could not release the job lock after this "
-                           "run (%s) — the job may be skipped next time", exc)
+        db.rpc("release_cron_lock", {"p_job_name": "reset_weekly_leaderboard"})
 
 
-@celery_app.task(name="app.tasks.scheduled.reset_monthly_leaderboard", bind=True, max_retries=3)
+def _monthly_options(db, campus_id):
+    """Read flags/settings in two calls. A read error must not finalize missing prizes."""
+    from flask import current_app
+    flags = db.table("feature_flags").select("feature_name,is_active,campus_id").in_(
+        "feature_name", ["hall_of_fame", "exclusive_spin", "leaderboard_prizes"]).or_(
+        f"campus_id.is.null,campus_id.eq.{campus_id}").execute() or []
+    enabled = {row["feature_name"]: bool(row["is_active"]) for row in flags if not row.get("campus_id")}
+    enabled.update({row["feature_name"]: bool(row["is_active"]) for row in flags if row.get("campus_id") == campus_id})
+    settings = db.table("system_settings").select("key,value").in_("key", [
+        "free_side_credits_validity_days", "exclusive_spin_validity_days"]).is_("campus_id", "null").execute() or []
+    values = {row["key"]: row["value"] for row in settings if row.get("value") is not None}
+    return {"p_hof": enabled.get("hall_of_fame", False), "p_spins": enabled.get("exclusive_spin", False),
+            "p_prizes": enabled.get("leaderboard_prizes", False),
+            "p_free_days": max(1, int(values.get("free_side_credits_validity_days", current_app.config.get("FREE_SIDE_CREDITS_VALIDITY_DAYS", 60)))),
+            "p_spin_days": max(1, int(values.get("exclusive_spin_validity_days", current_app.config.get("EXCLUSIVE_SPIN_VALIDITY_DAYS", 30))))}
+
+
+def _notify_monthly_result(entries, period, options, receipt):
+    """Notifications follow committed grants; a delivery failure cannot undo rewards."""
+    from app.services.notification_service import send_notification
+    import uuid
+    for entry in entries:
+        uid, rank = entry["user_id"], entry["rank"]
+        messages = [("leaderboard_rank", {"rank": rank, "hp": entry["hp_earned"], "period": period})]
+        if options["p_spins"] or options["p_prizes"]:
+            sides = ({1: 2, 2: 2, 3: 1}.get(rank, 0)) if options["p_prizes"] else 0
+            parts = ([f"{sides} free sides"] if sides else []) + (["1 exclusive spin"] if options["p_spins"] else [])
+            if parts:
+                messages.append(("leaderboard_prize", {"rank": rank, "prize": " + ".join(parts), "period": period}))
+        if uid in receipt.get("inducted", []):
+            messages.append(("hall_of_fame", {}))
+        for kind, data in messages:
+            try:
+                send_notification(user_id=uid, notif_type=kind, template_data=data,
+                    reference_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"holygrills:{kind}:{uid}:{period}")),
+                    reference_type="leaderboard", campus_id=entry["campus_id"])
+            except Exception:
+                logger.warning("Monthly rewards committed; %s notification failed for %s", kind, uid, exc_info=True)
+
+    if receipt.get("inducted"):
+        admins = (get_db().table("profiles").select("id").in_("role", ["admin", "super_admin"])
+                  .eq("campus_id", entries[0]["campus_id"]).eq("is_active", True).execute()) or []
+        for entry in entries:
+            if entry["user_id"] not in receipt["inducted"]:
+                continue
+            for admin in admins:
+                try:
+                    send_notification(user_id=admin["id"], notif_type="admin_hof_induction",
+                        template_data={"inducted_name": entry["full_name"], "user_id": entry["user_id"]},
+                        reference_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"holygrills:hof:{admin['id']}:{entry['user_id']}:{period}")),
+                        reference_type="leaderboard", campus_id=entry["campus_id"])
+                except Exception:
+                    logger.warning("HoF reward committed; admin notification failed", exc_info=True)
+
+
+@celery_app.task(name="app.tasks.scheduled.reset_monthly_leaderboard", bind=True, max_retries=3,
+                 autoretry_for=(Exception,), retry_backoff=60, retry_jitter=True)
 @with_cron_logging("reset-monthly-leaderboard")
 def reset_monthly_leaderboard(self):
-    """
-    Runs: 1st of each month at 00:01 WAT.
-    1. Archive top 10 of previous month to hall_of_fame (rank #1) and spin_win_entries (ranks 2-10)
-    2. Reset monthly_hp_earned to 0 for all users
-    3. Create leaderboard snapshot for previous month
-    """
+    """Archive the completed month and atomically grant its configured perks."""
     db = get_db()
-    try:
-        lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "reset_monthly_leaderboard"})
-    except Exception as e:
-        logger.error("reset_monthly_leaderboard: lock RPC failed, skipping run to be safe: %s", e)
-        lock_acquired = False
-    if not lock_acquired:
+    if not db.rpc("try_acquire_cron_lock", {"p_job_name": "reset_monthly_leaderboard"}):
         return {"skipped": "Lock not acquired"}
-
     try:
-        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        period, start, end = _completed_period(datetime.now(timezone.utc), "monthly")
         results = {}
-        for campus in (campuses if isinstance(campuses, list) else []):
+        for campus in db.table("campuses").select("id").eq("is_active", True).execute() or []:
             campus_id = campus["id"]
-            from app.services.feature_flags import is_feature_enabled
-            from app.utils.tz import WAT_OFFSET
-            now = datetime.now(timezone.utc)
-            now_wat = now + WAT_OFFSET
-            last_month = (now_wat.replace(day=1) - timedelta(days=1))
-            period = last_month.strftime("%Y-%m")
-
-            # Duplicate-run guard: check if snapshot already created for this period & campus
-            existing_snap = (
-                db.table("leaderboard_snapshots")
-                .select("id")
-                .eq("ranking_type", "monthly")
-                .eq("period_key", period)
-                .eq("campus_id", campus_id)
-                .execute()
-            ) or []
-            if existing_snap:
+            existing = (db.table("leaderboard_snapshots").select("id").eq("ranking_type", "monthly")
+                        .eq("period_key", period).eq("campus_id", campus_id).execute())
+            if existing:
                 results[campus_id] = {"period": period, "skipped": "Snapshot already exists for period"}
                 continue
-
-            month_start = last_month.replace(day=1, hour=0, minute=0, second=0, microsecond=0) - WAT_OFFSET
-            month_end = now_wat.replace(day=1, hour=0, minute=0, second=0, microsecond=0) - WAT_OFFSET
-
-            EARN_TYPES = ["earn_order", "earn_first_order", "earn_referral", "earn_event_checkin",
-                          "earn_review", "earn_birthday", "earn_challenge", "earn_admin_grant",
-                          "earn_squad_bonus", "earn_streak", "earn"]
-            month_txns = (
-                db.table("hp_transactions")
-                .select("user_id,amount")
-                .in_("type", EARN_TYPES)
-                .gte("created_at", month_start.isoformat())
-                .lt("created_at", month_end.isoformat())
-                .eq("campus_id", campus_id)
-                .execute()
-            )
-
-            from collections import defaultdict
-            user_hp = defaultdict(int)
-            for t in (month_txns or []):
-                if t.get("amount", 0) > 0:
-                    user_hp[t["user_id"]] += t["amount"]
-
-            sorted_users = sorted(user_hp.items(), key=lambda x: x[1], reverse=True)[:10]
-
-            if sorted_users:
-                top_ids = [uid for uid, _ in sorted_users]
-                profiles_data = (
-                    db.table("profiles")
-                    .select("id,nickname,full_name,email,department,campus_id,leaderboard_show_full_name")
-                    .in_("id", top_ids)
-                    .eq("campus_id", campus_id)
-                    .execute()
-                )
-                from app.services.squad_service import resolve_leaderboard_names_batch
-                names = resolve_leaderboard_names_batch(profiles_data or [])
-
-                entries = []
-                for i, (user_id, hp_earned) in enumerate(sorted_users):
-                    entries.append({
-                        "rank": i + 1,
-                        "user_id": user_id,
-                        "full_name": names.get(user_id),
-                        "hp_earned": hp_earned,
-                        "campus_id": campus_id,
-                    })
-
-                try:
-                    db.table("leaderboard_snapshots").insert({
-                        "ranking_type": "monthly",
-                        "period_key": period,
-                        "entries": entries,
-                        "campus_id": campus_id,
-                    })
-                except Exception as e:
-                    logger.error("reset_monthly_leaderboard: snapshot insert failed for campus %s: %s", campus_id, e)
-
-                from app.services.notification_service import send_notification
-                for entry in entries[:10]:
-                    uid = entry.get("user_id")
-                    rank = entry.get("rank", "?")
-                    hp = entry.get("hp_earned", 0)
-                    if not uid:
-                        continue
-                    try:
-                        send_notification(
-                            user_id=uid,
-                            notif_type="leaderboard_rank",
-                            template_data={"rank": rank, "hp": hp, "period": period},
-                        )
-                    except Exception as e:
-                        logger.warning("reset_monthly_leaderboard: notify failed for user %s: %s", uid, e)
-
-                top4_ids = [uid for uid, _ in sorted_users[:4]]
-                if is_feature_enabled("hall_of_fame", campus_id):
-                    for uid in top4_ids:
-                        try:
-                            profile = db.table("profiles").select("top4_finish_count").eq("id", uid).eq("campus_id", campus_id).single().execute()
-                            current_count = int((profile or {}).get("top4_finish_count") or 0)
-                            new_count = current_count + 1
-                            db.table("profiles").eq("id", uid).update({"top4_finish_count": new_count})
-                            if new_count == 3:
-                                try:
-                                    _hof_profile = db.table("profiles").select(
-                                        "id,nickname,full_name,email,department,campus_id,leaderboard_show_full_name,current_tier_id"
-                                    ).eq("id", uid).single().execute() or {}
-                                    from app.services.squad_service import resolve_leaderboard_name
-                                    _display_name = resolve_leaderboard_name(_hof_profile) if _hof_profile else "Platform Member"
-                                    _tier_name = None
-                                    _tier_id = _hof_profile.get("current_tier_id")
-                                    if _tier_id:
-                                        try:
-                                            _tier_row = db.table("hp_tiers").select("name").eq("id", _tier_id).single().execute()
-                                            _tier_name = (_tier_row or {}).get("name")
-                                        except Exception:
-                                            _tier_name = None
-
-                                    db.table("hall_of_fame_inductees").insert({
-                                        "user_id": uid,
-                                        "inducted_at": now.isoformat(),
-                                        "full_name": _display_name,
-                                        "tier_at_induction": _tier_name or "Unknown",
-                                        "top4_finish_count": new_count,
-                                        "campus_id": campus_id,
-                                    })
-                                    try:
-                                        db.table("hall_of_fame_rewards").insert({
-                                            "user_id": uid,
-                                            "inducted_at": now.isoformat(),
-                                            "status": "pending",
-                                            "campus_id": campus_id,
-                                        })
-                                    except Exception as _hofr:
-                                        logger.warning("reset_monthly_leaderboard: hall_of_fame_rewards record failed for %s: %s", uid, _hofr)
-                                except Exception as _hof_err:
-                                    logger.warning("reset_monthly_leaderboard: hall_of_fame insert failed for %s: %s", uid, _hof_err)
-                                try:
-                                    send_notification(
-                                        user_id=uid,
-                                        notif_type="hall_of_fame",
-                                        template_data={},
-                                    )
-                                except Exception:
-                                    pass
-                                try:
-                                    from app.constants import ADMIN_ROLES
-                                    _admin_ids = db.table("profiles").select("id").in_("role", list(ADMIN_ROLES)).eq("campus_id", campus_id).execute() or []
-                                    _admin_prof = db.table("profiles").select("id,nickname,full_name,email,department,campus_id").eq("id", uid).single().execute() or {}
-                                    from app.services.squad_service import resolve_display_name
-                                    _hof_name = resolve_display_name(profile=_admin_prof) if _admin_prof else "A user"
-                                    for _adm in _admin_ids:
-                                        try:
-                                            send_notification(
-                                                user_id=_adm["id"],
-                                                notif_type="admin_hof_induction",
-                                                template_data={"inducted_name": _hof_name, "user_id": uid},
-                                            )
-                                        except Exception:
-                                            pass
-                                except Exception:
-                                    pass
-                        except Exception as e:
-                            logger.warning("reset_monthly_leaderboard: top4 tracking failed for %s: %s", uid, e)
-
-                try:
-                    from flask import current_app as _capp
-                    try:
-                        _rows = db.table("system_settings").select("key,value").in_("key", ["free_side_credits_validity_days", "exclusive_spin_validity_days"]).execute() or []
-                        _vals = {r["key"]: r["value"] for r in _rows if r.get("value") is not None}
-                    except Exception:
-                        _vals = {}
-                    _free_days = int(_vals.get("free_side_credits_validity_days", _capp.config.get("FREE_SIDE_CREDITS_VALIDITY_DAYS", 60)))
-                    _spin_days  = int(_vals.get("exclusive_spin_validity_days", _capp.config.get("EXCLUSIVE_SPIN_VALIDITY_DAYS", 30)))
-                    from datetime import timezone as _tz
-                    _now = datetime.now(_tz.utc)
-                    _free_expires = (_now + timedelta(days=_free_days)).isoformat()
-                    _spin_expires  = (_now + timedelta(days=_spin_days)).isoformat()
-
-                    FREE_SIDE_COUNTS = {1: 2, 2: 2, 3: 1}  # Rewards system spec: #1/#2 = 2 credits, #3 = 1 credit, #4-10 = spin only
-
-                    _spin_on = is_feature_enabled("exclusive_spin", campus_id)
-                    _prizes_on = is_feature_enabled("leaderboard_prizes", campus_id)
-                    for entry in entries[:10]:
-                        _uid = entry.get("user_id")
-                        _rank = entry.get("rank", 0)
-                        if not _uid:
-                            continue
-
-                        if _spin_on:
-                            try:
-                                db.table("exclusive_spins").insert({
-                                    "user_id": _uid,
-                                    "spin_count": 1,
-                                    "source": "leaderboard_prize",
-                                    "month": period,
-                                    "expires_at": _spin_expires,
-                                    "campus_id": campus_id,
-                                })
-                            except Exception as _es:
-                                logger.warning("reset_monthly_leaderboard: exclusive_spin insert failed for %s: %s", _uid, _es)
-
-                        if _prizes_on:
-                            _credits = FREE_SIDE_COUNTS.get(_rank, 0)
-                            if _credits > 0:
-                                try:
-                                    db.table("free_side_credits").insert({
-                                        "user_id": _uid,
-                                        "credits_remaining": _credits,
-                                        "source": "leaderboard_prize",
-                                        "month": period,
-                                        "expires_at": _free_expires,
-                                        "campus_id": campus_id,
-                                    })
-                                except Exception as _fsc:
-                                    logger.warning("reset_monthly_leaderboard: free_side_credits insert failed for %s: %s", _uid, _fsc)
-
-                            try:
-                                db.table("leaderboard_reward_fulfillments").insert({
-                                    "user_id": _uid,
-                                    "rank": _rank,
-                                    "month": period,
-                                    "reward_type": "leaderboard_prize",
-                                    "status": "pending",
-                                    "free_sides": _credits,      # what was granted above, so the admin list shows it
-                                    "free_spins": 1,
-                                    "campus_id": campus_id,
-                                })
-                            except Exception as _lbf:
-                                logger.warning("reset_monthly_leaderboard: fulfilment record failed for %s: %s", _uid, _lbf)
-
-                        if _spin_on or _prizes_on:
-                            try:
-                                _prize_desc = f"{FREE_SIDE_COUNTS.get(_rank, 0)} free sides + 1 exclusive spin" if _rank <= 3 else "1 exclusive spin"
-                                send_notification(
-                                    user_id=_uid,
-                                    notif_type="leaderboard_prize",
-                                    template_data={"rank": _rank, "prize": _prize_desc, "period": period},
-                                )
-                            except Exception:
-                                pass
-                except Exception as _prize_err:
-                    logger.warning("reset_monthly_leaderboard: prize assignment failed: %s", _prize_err)
-            else:
-                entries = []
-
-            # Hall of Fame recurring perk ("1 Free Side every month", per the finalized rewards
-            # spec): applies to EVERY existing inductee, not just this cycle's top-4, and runs
-            # even when this campus has no leaderboard entries this month - permanent HoF
-            # membership doesn't depend on this month's leaderboard activity. Stacks with the
-            # tier perk grant (grant_monthly_tier_perks) and the leaderboard-prize credits above
-            # since each uses its own "source" value on an independent free_side_credits row.
-            if is_feature_enabled("hall_of_fame", campus_id):
-                try:
-                    _hof_members = db.table("hall_of_fame_inductees").select("user_id").eq("campus_id", campus_id).execute() or []
-                    if _hof_members:
-                        from flask import current_app as _capp2
-                        try:
-                            _hof_row = db.table("system_settings").select("value").eq("key", "free_side_credits_validity_days").is_("campus_id", "null").single().execute()
-                            _hof_free_days = int(_hof_row["value"]) if _hof_row and _hof_row.get("value") is not None else _capp2.config.get("FREE_SIDE_CREDITS_VALIDITY_DAYS", 60)
-                        except Exception:
-                            _hof_free_days = _capp2.config.get("FREE_SIDE_CREDITS_VALIDITY_DAYS", 60)
-                        _hof_expires = (now + timedelta(days=_hof_free_days)).isoformat()
-                        for _member in _hof_members:
-                            _huid = _member.get("user_id")
-                            if not _huid:
-                                continue
-                            try:
-                                _already_hof = db.table("free_side_credits").select("id").eq("user_id", _huid).eq("source", "hall_of_fame_monthly").eq("month", period).execute()
-                                if _already_hof:
-                                    continue  # already granted this month - don't double-grant on a cron re-run
-                                db.table("free_side_credits").insert({
-                                    "user_id": _huid,
-                                    "credits_remaining": 1,
-                                    "source": "hall_of_fame_monthly",
-                                    "month": period,
-                                    "expires_at": _hof_expires,
-                                    "campus_id": campus_id,
-                                })
-                            except Exception as _hofm:
-                                logger.warning("reset_monthly_leaderboard: hall_of_fame monthly free side failed for %s: %s", _huid, _hofm)
-                except Exception as _hof_list_err:
-                    logger.warning("reset_monthly_leaderboard: hall_of_fame member list failed for campus %s: %s", campus_id, _hof_list_err)
-
-            results[campus_id] = {"period": period, "top_count": len(entries)}
-
+            entries = _period_student_entries(db, campus_id, start, end)
+            options = _monthly_options(db, campus_id)
+            receipt = db.rpc("hg_finalize_monthly_leaderboard", {"p_campus_id": campus_id,
+                "p_period": period, "p_entries": entries, **options})
+            if not isinstance(receipt, dict):
+                raise RuntimeError("Monthly finalization returned no receipt")
+            if not receipt.get("idempotent"):
+                _notify_monthly_result(entries, period, options, receipt)
+            results[campus_id] = receipt
         return results
     finally:
-        try:
-            db.rpc("release_cron_lock", {"p_job_name": "reset_monthly_leaderboard"})
-        except Exception as exc:
-            # The job stays locked, so its next scheduled run may skip itself.
-            logger.warning("cron: could not release the job lock after this "
-                           "run (%s) — the job may be skipped next time", exc)
+        db.rpc("release_cron_lock", {"p_job_name": "reset_monthly_leaderboard"})
 
 
-@celery_app.task(name="app.tasks.scheduled.recalculate_120day_hp", bind=True, max_retries=3)
+def _run_tier_maintenance(mode):
+    """Bounded DB batches avoid per-user ledger HTTP reads and 1,000-row truncation."""
+    from flask import current_app
+    db = get_db()
+    job = "recalculate_120day_hp" if mode == "refresh" else "tier_grace_period_check"
+    if not db.rpc("try_acquire_cron_lock", {"p_job_name": job}):
+        return {"skipped": "Lock not acquired"}
+    try:
+        results = {}
+        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        for campus in campuses:
+            cursor = None; summary = {"updated": 0, "errors": 0, "started_grace": 0, "dropped_tier": 0}
+            while True:
+                result = db.rpc("hg_tier_maintenance_batch", {"p_campus": campus["id"], "p_mode": mode,
+                    "p_after": cursor, "p_limit": 200, "p_grace_days": int(current_app.config.get("TIER_GRACE_PERIOD_DAYS", 7))})
+                if not isinstance(result, dict) or "checked" not in result:
+                    raise RuntimeError("Tier maintenance returned no receipt")
+                summary["updated"] += int(result["checked"]) - int(result.get("errors") or 0)
+                for key in ("errors", "started_grace", "dropped_tier"):
+                    summary[key] += int(result.get(key) or 0)
+                if not result.get("has_more"):
+                    break
+                if not result.get("next_after") or result["next_after"] == cursor:
+                    raise RuntimeError("Tier maintenance cursor did not advance")
+                cursor = result["next_after"]
+            results[campus["id"]] = summary
+        if any(result["errors"] for result in results.values()):
+            raise RuntimeError("Some tier transitions need retry or configuration review")
+        return results
+    finally:
+        db.rpc("release_cron_lock", {"p_job_name": job})
+
+
+@celery_app.task(name="app.tasks.scheduled.recalculate_120day_hp", bind=True, max_retries=3, autoretry_for=(Exception,), retry_backoff=60)
 @with_cron_logging("recalculate-120day-hp")
 def recalculate_120day_hp(self):
-    """
-    Runs: Daily at 02:00 WAT.
-    Recalculates hp_earned_120day for all active users from hp_transactions
-    where created_at >= now() - 120 days and type='earn' and status='active'.
-    Persists the result to profiles.hp_earned_120day and triggers tier recalculation.
-    """
-    db = get_db()
-    try:
-        lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "recalculate_120day_hp"})
-    except Exception as e:
-        logger.error("recalculate_120day_hp: lock RPC failed, skipping run to be safe: %s", e)
-        lock_acquired = False
-    if not lock_acquired:
-        return {"skipped": "Lock not acquired"}
-
-    try:
-        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
-        results = {}
-        from app.services.hp_service import recalculate_tier
-        EARN_TYPES = ["earn_order", "earn_first_order", "earn_referral", "earn_event_checkin",
-                      "earn_review", "earn_birthday", "earn_challenge", "earn_admin_grant",
-                      "earn_squad_bonus", "earn_streak", "earn"]
-
-        for campus in (campuses if isinstance(campuses, list) else []):
-            campus_id = campus["id"]
-            cutoff = (datetime.now(timezone.utc) - timedelta(days=120)).isoformat()
-            profiles = db.table("profiles").select("id").eq("is_active", "true").eq("campus_id", campus_id).execute()
-            updated = 0
-
-            for profile in (profiles or []):
-                user_id = profile["id"]
-                try:
-                    txns = (
-                        db.table("hp_transactions")
-                        .select("amount")
-                        .eq("user_id", user_id)
-                        .eq("campus_id", campus_id)
-                        .in_("type", EARN_TYPES)
-                        .eq("status", "active")
-                        .gte("created_at", cutoff)
-                        .execute()
-                    )
-                    earned_120 = sum(t["amount"] for t in (txns or []) if t.get("amount", 0) > 0)
-
-                    try:
-                        db.table("profiles").eq("id", user_id).update({
-                            "hp_earned_120day": earned_120,
-                        })
-                    except Exception as e:
-                        logger.warning("recalculate_120day_hp: profile update failed for user %s: %s", user_id, e)
-
-                    try:
-                        recalculate_tier(user_id)
-                    except Exception as e:
-                        logger.warning("recalculate_120day_hp: tier recalc failed for user %s: %s", user_id, e)
-
-                    updated += 1
-                except Exception as e:
-                    logger.error("recalculate_120day_hp: failed for user %s: %s", user_id, e)
-
-            results[campus_id] = {"updated": updated}
-
-        return results
-    finally:
-        try:
-            db.rpc("release_cron_lock", {"p_job_name": "recalculate_120day_hp"})
-        except Exception as exc:
-            # The job stays locked, so its next scheduled run may skip itself.
-            logger.warning("cron: could not release the job lock after this "
-                           "run (%s) — the job may be skipped next time", exc)
+    """Existing 02:00 WAT rolling-earned refresh and upgrade job."""
+    return _run_tier_maintenance("refresh")
 
 
-@celery_app.task(name="app.tasks.scheduled.tier_grace_period_check", bind=True, max_retries=3)
+@celery_app.task(name="app.tasks.scheduled.tier_grace_period_check", bind=True, max_retries=3, autoretry_for=(Exception,), retry_backoff=60)
 @with_cron_logging("tier-grace-period-check")
 def tier_grace_period_check(self):
-    """
-    Runs: Daily at 03:00 WAT.
-    1. Find users whose hp_earned_120day is below their current tier threshold
-    2. Start 7-day grace period if not already in one
-    3. Drop tier if grace period has elapsed
-    """
-    db = get_db()
-    try:
-        lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "tier_grace_period_check"})
-    except Exception as e:
-        logger.error("tier_grace_period_check: lock RPC failed, skipping run to be safe: %s", e)
-        lock_acquired = False
-    if not lock_acquired:
-        return {"skipped": "Lock not acquired"}
-
-    try:
-        from flask import current_app
-        from app.services.notification_service import send_notification
-        now = datetime.now(timezone.utc)
-        grace_days = current_app.config.get("TIER_GRACE_PERIOD_DAYS", 7)
-
-        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
-        results = {}
-
-        for campus in (campuses if isinstance(campuses, list) else []):
-            campus_id = campus["id"]
-            tiers = db.table("hp_tiers").select("*").eq("campus_id", campus_id).order("sort_order").execute() or []
-            if not tiers:
-                # Intentional global-tier fallback: if a campus has no campus-specific hp_tiers
-                # configured, fall back to global hp_tiers so grace period checks can proceed.
-                tiers = db.table("hp_tiers").select("*").order("sort_order").execute() or []
-            base_tier = tiers[0] if tiers else None
-            tier_map = {t["id"]: t for t in tiers}
-
-            profiles_in_tier = (
-                db.table("profiles")
-                .select("id,hp_earned_120day,current_tier_id,tier_grace_ends_at,tier_grace_started_at")
-                .eq("is_active", "true")
-                .eq("role", "student")
-                .eq("campus_id", campus_id)
-                .not_.is_("current_tier_id", "null")
-                .execute()
-            )
-
-            started_grace = 0
-            dropped_tier = 0
-
-            for profile in (profiles_in_tier or []):
-                user_id = profile["id"]
-                try:
-                    current_tier_id = profile.get("current_tier_id")
-                    tier = tier_map.get(current_tier_id, {})
-                    maintenance = tier.get("maintenance_points", 0)
-                    if maintenance == 0:
-                        continue
-
-                    hp_earned_120day = profile.get("hp_earned_120day", 0) or 0
-                    grace_ends = profile.get("tier_grace_ends_at")
-
-                    if hp_earned_120day >= maintenance:
-                        if grace_ends:
-                            db.table("profiles").eq("id", user_id).update({
-                                "tier_grace_started_at": None,
-                                "tier_grace_ends_at": None,
-                            })
-                        continue
-
-                    if grace_ends:
-                        if grace_ends < now.isoformat():
-                            new_tier = base_tier
-                            for t in reversed(tiers):
-                                if hp_earned_120day >= t.get("min_points", 0):
-                                    new_tier = t
-                                    break
-
-                            new_tier_id = new_tier["id"] if new_tier else None
-                            db.table("profiles").eq("id", user_id).update({
-                                "current_tier_id": new_tier_id,
-                                "tier_grace_started_at": None,
-                                "tier_grace_ends_at": None,
-                            })
-
-                            if new_tier_id:
-                                db.table("user_tiers").insert({
-                                    "user_id": user_id,
-                                    "tier_id": new_tier_id,
-                                    "previous_tier_id": current_tier_id,
-                                    "event": "downgrade",
-                                    "hp_at_event": hp_earned_120day,
-                                    "campus_id": campus_id,
-                                })
-
-                            send_notification(
-                                user_id=user_id,
-                                notif_type="tier_downgrade",
-                                template_data={
-                                    "from_tier": tier.get("name", "tier"),
-                                    "to_tier": new_tier.get("name", "") if new_tier else "Base",
-                                },
-                            )
-                            dropped_tier += 1
-                    else:
-                        grace_start = now.isoformat()
-                        grace_end = (now + timedelta(days=grace_days)).isoformat()
-                        db.table("profiles").eq("id", user_id).update({
-                            "tier_grace_started_at": grace_start,
-                            "tier_grace_ends_at": grace_end,
-                        })
-
-                        send_notification(
-                            user_id=user_id,
-                            notif_type="tier_grace_period",
-                            template_data={
-                                "grace_days": grace_days,
-                                "tier_name": tier.get("name", "your tier"),
-                            },
-                        )
-                        started_grace += 1
-                except Exception as e:
-                    logger.error("tier_grace_period_check: failed for user %s: %s", user_id, e)
-
-            results[campus_id] = {"started_grace": started_grace, "dropped_tier": dropped_tier}
-
-        return results
-    finally:
-        try:
-            db.rpc("release_cron_lock", {"p_job_name": "tier_grace_period_check"})
-        except Exception as exc:
-            # The job stays locked, so its next scheduled run may skip itself.
-            logger.warning("cron: could not release the job lock after this "
-                           "run (%s) — the job may be skipped next time", exc)
+    """Existing 03:00 WAT grace start/recovery/expiry job."""
+    return _run_tier_maintenance("grace")
 
 
 @celery_app.task(name="app.tasks.scheduled.birthday_hp_awards", bind=True, max_retries=3)
@@ -959,10 +563,9 @@ def monthly_birthday_report(self):
 def process_scheduled_orders(self):
     """
     Runs: Every 5 minutes.
-    Finds scheduled orders whose delivery window start time has arrived and
-    notifies kitchen/admin staff so they can begin preparation.
-    Orders are placed with is_scheduled=True; they stay at status='received'
-    but are hidden from the kitchen board until this task fires.
+    Notify kitchen/admin once per paid order on its WAT preparation date.
+    The live queue independently includes today's orders immediately; delivery
+    start time must not delay preparation. Older orders are left in history.
     """
     db = get_db()
     try:
@@ -974,8 +577,17 @@ def process_scheduled_orders(self):
         return {"skipped": "Lock not acquired"}
 
     try:
+        # Customer email/push receipts are captured by this existing scan. The
+        # existing notification-recovery job dispatches them; no extra scheduler.
+        try:
+            reminder_result = db.rpc("hg_queue_scheduled_order_reminders", {})
+            logger.info("Scheduled customer reminders queued: %s", (reminder_result or {}).get("orders", 0))
+        except Exception:
+            logger.warning("Scheduled customer reminder capture deferred", exc_info=True)
         now = datetime.now(timezone.utc)
         from app.services.notification_service import send_notification
+        day_start = today_wat().isoformat() + "T00:00:00+01:00"
+        day_end = (today_wat() + timedelta(days=1)).isoformat() + "T00:00:00+01:00"
 
         campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
         results = {}
@@ -987,9 +599,11 @@ def process_scheduled_orders(self):
                     db.table("orders")
                     .select("id,scheduled_for,delivery_window_id")
                     .eq("is_scheduled", "true")
-                    .eq("status", "received")
+                    .in_("status", ["received", "paid"])
+                    .eq("payment_status", "paid")
                     .eq("campus_id", campus_id)
-                    .lte("scheduled_for", now.isoformat())
+                    .gte("scheduled_for", day_start)
+                    .lt("scheduled_for", day_end)
                     .execute()
                 ) or []
             except Exception as e:
@@ -1014,7 +628,12 @@ def process_scheduled_orders(self):
             except Exception:
                 staff = []
 
-            dedup_cutoff = (now - timedelta(minutes=10)).isoformat()
+            # One lookup per campus, using durable order/user references. Never
+            # search an unselected body or remind staff again every ten minutes.
+            notices = (db.table("notifications").select("reference_id,user_id")
+                       .eq("type", "scheduled_order_due").eq("campus_id", campus_id)
+                       .in_("reference_id", [order["id"] for order in due_orders]).execute()) or []
+            notified = {(str(row.get("reference_id")), row.get("user_id")) for row in notices}
 
             processed = 0
             skipped = 0
@@ -1022,36 +641,24 @@ def process_scheduled_orders(self):
                 order_id = order["id"]
                 short_id = order_id[:8].upper()
 
-                try:
-                    already_sent = (
-                        db.table("notifications")
-                        .select("id")
-                        .eq("type", "scheduled_order_due")
-                        .eq("campus_id", campus_id)
-                        .gte("created_at", dedup_cutoff)
-                        .execute()
-                    )
-                    already_sent_for_order = any(
-                        short_id in str(n.get("body", "") or "")
-                        for n in (already_sent or [])
-                    )
-                except Exception:
-                    already_sent_for_order = False
-
-                if already_sent_for_order:
-                    skipped += 1
-                    continue
-
+                sent = False
                 for member in staff:
+                    if (str(order_id), member["id"]) in notified:
+                        continue
                     try:
                         send_notification(
                             user_id=member["id"],
                             notif_type="scheduled_order_due",
                             template_data={"order_id": short_id},
+                            reference_id=order_id, reference_type="order",
                             campus_id=campus_id,
                         )
+                        sent = True
                     except Exception as e:
                         logger.warning("process_scheduled_orders: notify failed for staff %s: %s", member["id"], e)
+                if not sent:
+                    skipped += 1
+                    continue
                 processed += 1
 
             results[campus_id] = {"processed": processed, "skipped": skipped, "checked_at": now.isoformat()}
@@ -1352,11 +959,10 @@ def check_order_locks(self):
                 days_until = (locked_date - today).days
 
                 if days_until < 0:
-                    db.table("order_locks").eq("id", lock["id"]).update({
-                        "status": "expired",
-                        "updated_at": now.isoformat(),
+                    changed = db.table('order_locks').eq('id', lock['id']).eq('status', 'active').eq('locked_date', lock['locked_date']).update({
+                        'status': 'expired', 'updated_at': now.isoformat(),
                     })
-                    expired += 1
+                    expired += len(changed or [])
                     continue
 
                 user_id = lock.get("user_id")
@@ -1428,7 +1034,7 @@ def check_order_locks(self):
                            "run (%s) — the job may be skipped next time", exc)
 
 
-@celery_app.task(name="app.tasks.scheduled.reset_monthly_hp_tracker", bind=True, max_retries=2)
+@celery_app.task(name="app.tasks.scheduled.reset_monthly_hp_tracker", bind=True, max_retries=2, autoretry_for=(Exception,), retry_backoff=60)
 @with_cron_logging("reset-monthly-hp-tracker")
 def reset_monthly_hp_tracker(self):
     """
@@ -1459,6 +1065,7 @@ def reset_monthly_hp_tracker(self):
                 db.table("monthly_hp_tracker").eq("month", prev_month).eq("campus_id", campus_id).delete()
             except Exception as e:
                 logger.warning("reset_monthly_hp_tracker: delete failed for campus %s: %s", campus_id, e)
+                raise
 
             results[campus_id] = {"reset_for_month": prev_month}
 
@@ -1472,140 +1079,84 @@ def reset_monthly_hp_tracker(self):
                            "run (%s) — the job may be skipped next time", exc)
 
 
-@celery_app.task(name="app.tasks.scheduled.membership_anniversary_awards", bind=True, max_retries=3)
+@celery_app.task(name="app.tasks.scheduled.membership_anniversary_awards", bind=True, max_retries=3, autoretry_for=(Exception,), retry_backoff=60)
 @with_cron_logging("membership-anniversary-awards")
 def membership_anniversary_awards(self):
-    """
-    Runs: Daily at 06:00 WAT.
-    Awards HP to users on their membership anniversary milestones
-    (3, 6, 12, 24, 36, 48, 60 months since created_at), using
-    the membership_rewards table seeded by the Phase 2 migration.
-    """
+    """Existing daily job: atomic configured awards and current-month outage catch-up."""
     db = get_db()
-    try:
-        lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "membership_anniversary_awards"})
-    except Exception as e:
-        logger.error("membership_anniversary_awards: lock RPC failed, skipping run to be safe: %s", e)
-        lock_acquired = False
-    if not lock_acquired:
+    if not db.rpc("try_acquire_cron_lock", {"p_job_name": "membership_anniversary_awards"}):
         return {"skipped": "Lock not acquired"}
-
+    failures = []
     try:
-        now = datetime.now(timezone.utc)
+        from calendar import monthrange
+        from app.utils.tz import WAT_OFFSET
+        from app.services.notification_outbox import start_reference_dispatch
         today = today_wat()
-
         campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
         results = {}
-        from app.services.hp_service import award_active_hp
-        from app.services.notification_service import send_notification
-
-        for campus in (campuses if isinstance(campuses, list) else []):
+        for campus in campuses:
             campus_id = campus["id"]
-            rewards = (
-                db.table("membership_rewards")
-                .select("months,hp_awarded")
-                .eq("campus_id", campus_id)
-                .execute()
-            ) or []
+            rewards = db.table("membership_rewards").select("months,is_active").eq("campus_id", campus_id).execute() or []
             if not rewards:
-                rewards = (
-                    db.table("membership_rewards")
-                    .select("months,hp_awarded")
-                    .is_("campus_id", "null")
-                    .execute()
-                ) or []
-
-            if not rewards:
-                results[campus_id] = {"skipped": "No membership_rewards configured"}
+                rewards = db.table("membership_rewards").select("months,is_active").is_("campus_id", "null").execute() or []
+            milestones = {int(row["months"]) for row in rewards if row.get("is_active") is not False}
+            if not milestones:
+                results[campus_id] = {"awarded": 0, "date": today.isoformat()}
                 continue
-
-            reward_map = {int(r["months"]): int(r["hp_awarded"]) for r in rewards}
-            month_milestones = set(reward_map.keys())
-
-            profiles = (
-                db.table("profiles")
-                .select("id,full_name,created_at")
-                .eq("is_active", "true")
-                .eq("role", "student")
-                .eq("campus_id", campus_id)
-                .execute()
-            ) or []
-
+            profiles = (db.table("profiles").select("id,created_at").eq("is_active", True)
+                        .eq("role", "student").eq("campus_id", campus_id).execute()) or []
             awarded = 0
             for profile in profiles:
-                created_at_str = profile.get("created_at")
-                if not created_at_str:
-                    continue
                 try:
-                    created_dt = datetime.fromisoformat(str(created_at_str).replace("Z", "+00:00"))
-                    months_member = (now.year - created_dt.year) * 12 + (now.month - created_dt.month)
+                    joined = (datetime.fromisoformat(str(profile["created_at"]).replace("Z", "+00:00")) + WAT_OFFSET).date()
+                    months = (today.year - joined.year) * 12 + today.month - joined.month
+                    due_day = min(joined.day, monthrange(today.year, today.month)[1])
+                    if months not in milestones or today.day < due_day:
+                        continue
+                    result = db.rpc("hg_award_membership_anniversary", {"p_user": profile["id"]})
+                    if not isinstance(result, dict) or not result.get("success"):
+                        raise RuntimeError("Membership anniversary remains pending")
+                    awarded += int(int(result.get("awarded") or 0) > 0)
+                    if result.get("reference_id"):
+                        try:
+                            from app.services.hp_service import recalculate_tier
+                            recalculate_tier(profile["id"])
+                        except Exception:
+                            logger.warning("Membership tier refresh deferred", exc_info=True)
+                        # Saved receipts survive a crash; wake failure does not undo a grant.
+                        try:
+                            start_reference_dispatch("membership_anniversary", result["reference_id"])
+                        except Exception:
+                            logger.warning("Membership notice wake deferred", exc_info=True)
                 except Exception:
-                    continue
-
-                if months_member not in month_milestones:
-                    continue
-
-                signup_day = created_dt.day
-                if today.day != signup_day:
-                    continue
-
-                hp_amount = reward_map[months_member]
-
-                already = (
-                    db.table("hp_transactions")
-                    .select("id")
-                    .eq("user_id", profile["id"])
-                    .eq("campus_id", campus_id)
-                    .eq("reference_type", "membership_anniversary")
-                    .gte("created_at", f"{today.year}-{today.month:02d}-01T00:00:00+00:00")
-                    .execute()
-                )
-                if already:
-                    continue
-
-                try:
-                    award_active_hp(
-                        user_id=profile["id"],
-                        amount=hp_amount,
-                        txn_type="earn_membership",
-                        reference_type="membership_anniversary",
-                        notes=f"Membership anniversary — {months_member} months",
-                        apply_multiplier=False,
-                        campus_id=campus_id,
-                    )
-                    from app.messages import MSG
-                    name = (profile.get("full_name") or "").split()[0] or MSG.ANNIVERSARY_FALLBACK_NAME
-                    send_notification(
-                        user_id=profile["id"],
-                        notif_type="membership_anniversary",
-                        template_data={"months": months_member, "name": name, "hp": hp_amount},
-                        campus_id=campus_id,
-                    )
-                    awarded += 1
-                except Exception as e:
-                    logger.warning("membership_anniversary_awards: failed for user %s: %s", profile["id"], e)
-
+                    failures.append(profile["id"])
+                    logger.warning("Membership anniversary retry required for %s", profile["id"], exc_info=True)
             results[campus_id] = {"awarded": awarded, "date": today.isoformat()}
-
+        if failures:
+            raise RuntimeError(f"Membership anniversary incomplete for {len(failures)} users")
         return results
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "membership_anniversary_awards"})
-        except Exception as exc:
-            # The job stays locked, so its next scheduled run may skip itself.
-            logger.warning("cron: could not release the job lock after this "
-                           "run (%s) — the job may be skipped next time", exc)
+        except Exception:
+            logger.warning("Membership anniversary cron lock release failed", exc_info=True)
 
 
 @celery_app.task(name="app.tasks.scheduled.send_scheduled_blasts", bind=True, max_retries=3)
 @with_cron_logging("send-scheduled-blasts")
-def send_scheduled_blasts(self):
+def send_scheduled_blasts(self, campus_id=None):
     """
     Runs: Every 15 minutes.
     System 1 Scheduled Marketing Engine:
     Queries notification_blasts where status = "scheduled" and scheduled_at <= now(),
     and calls send_blast(blast_id) to execute the campaign and set status = "sent".
     """
+    from app.services.notification_outbox import recover_due_notifications
+    recovery = recover_due_notifications()
+    from app.services.event_refunds import recover_due_event_refunds
+    refund_recovery = recover_due_event_refunds()
+    from app.services.wallet_transfers import recover as recover_wallet_transfers
+    wallet_transfer_recovery = recover_wallet_transfers()
     db = get_db()
     try:
         lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "send_scheduled_blasts"})
@@ -1613,17 +1164,21 @@ def send_scheduled_blasts(self):
         logger.error("send_scheduled_blasts: lock RPC failed, skipping run to be safe: %s", e)
         lock_acquired = False
     if not lock_acquired:
-        return {"skipped": "Lock not acquired"}
+        return {"skipped": "Lock not acquired", "notification_recovery": recovery, "refund_recovery": refund_recovery, "wallet_transfer_recovery": wallet_transfer_recovery}
 
     try:
         now = datetime.now(timezone.utc).isoformat()
-        blasts = (
+        query = (
             db.table("notification_blasts")
             .select("id")
-            .eq("status", "scheduled")
-            .lte("scheduled_at", now)
-            .execute()
-        ) or []
+            .in_("status", ["scheduled", "failed", "sending"])
+        )
+        if campus_id:
+            from app.utils.validators import validate_uuid
+            if not validate_uuid(campus_id):
+                raise ValueError("Invalid campus_id")
+            query = query.eq("campus_id", campus_id)
+        blasts = query.execute() or []
 
         processed = 0
         from app.services.notification_service import send_blast
@@ -1632,12 +1187,13 @@ def send_scheduled_blasts(self):
             if not blast_id:
                 continue
             try:
-                send_blast(blast_id)
-                processed += 1
+                outcome = send_blast(blast_id)
+                if not outcome.get("skipped"):
+                    processed += 1
             except Exception as e:
                 logger.error("send_scheduled_blasts: blast %s failed: %s", blast_id, e)
 
-        return {"processed": processed, "checked_at": now}
+        return {"processed": processed, "checked_at": now, "campus_id": campus_id, "notification_recovery": recovery, "refund_recovery": refund_recovery, "wallet_transfer_recovery": wallet_transfer_recovery}
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "send_scheduled_blasts"})
@@ -1821,44 +1377,12 @@ def send_scheduled_notifications(self):
                            "run (%s) — the job may be skipped next time", exc)
 
 
-def _sync_abandoned_carts_from_cart_items(db):
-    """Create or refresh abandoned_carts rows from cart_items. A cart is abandoned when its newest item is
-    older than 60 minutes. The row needs cart_payload (NOT NULL); the old version omitted it, so every run that
-    found a new abandoned cart failed."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=60)).isoformat()
-    items = (
-        db.table("cart_items")
-        .select("user_id,campus_id,menu_item_id,quantity,selected_variations,selected_addons,updated_at")
-        .limit(5000).execute()
-    ) or []
-    carts = {}
-    for it in items:
-        uid = it.get("user_id")
-        if not uid:
-            continue
-        c = carts.setdefault(uid, {"campus_id": it.get("campus_id"), "last": "", "items": []})
-        c["last"] = max(c["last"], it.get("updated_at") or "")
-        c["items"].append({k: it.get(k) for k in ("menu_item_id", "quantity", "selected_variations", "selected_addons")})
-    for uid, c in carts.items():
-        existing = (
-            db.table("abandoned_carts").select("id").eq("user_id", uid).eq("is_recovered", False).limit(1).execute()
-        )
-        payload = {"items": c["items"], "item_count": len(c["items"])}
-        if existing:
-            # keep the row current: a user who came back is no longer abandoned
-            db.table("abandoned_carts").eq("id", existing[0]["id"]).update({"cart_payload": payload, "last_active_at": c["last"]})
-        elif c["last"] and c["last"] < cutoff:
-            db.table("abandoned_carts").insert({
-                "user_id": uid, "campus_id": c["campus_id"], "cart_payload": payload, "last_active_at": c["last"],
-            })
-
-
 @celery_app.task(name="app.tasks.scheduled.scan_abandoned_carts", bind=True)
 @with_cron_logging("scan-abandoned-carts")
 def scan_abandoned_carts(self):
     """
-    Runs: Every 30 minutes.
-    Flags carts inactive for 60+ minutes as abandoned.
+    Operations: every 10 minutes; campus setting controls abandonment delay.
+    Customer reminders use their separate flag, timing setting and preparation cutoff.
     """
     db = get_db()
     try:
@@ -1870,63 +1394,10 @@ def scan_abandoned_carts(self):
         return {"skipped": "Lock not acquired"}
 
     try:
-        _sync_abandoned_carts_from_cart_items(db)
-        from datetime import datetime, timezone, timedelta
-        from flask import current_app
-        from app.services.notification_service import send_notification
-        now = datetime.now(timezone.utc)
-        cutoff = (now - timedelta(minutes=current_app.config.get("ABANDONED_CART_MINUTES", 60))).isoformat()
-
-        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
-        results = {}
-        from app.services.feature_flags import is_feature_enabled
-
-        for campus in (campuses if isinstance(campuses, list) else []):
-            campus_id = campus["id"]
-            if not is_feature_enabled("abandoned_cart_nudge", campus_id):
-                continue
-            abandoned = (
-                db.table("abandoned_carts")
-                .select("id,user_id,recovery_attempts")
-                .eq("is_recovered", False)
-                .eq("campus_id", campus_id)
-                .lt("last_active_at", cutoff)
-                .execute()
-            ) or []
-
-            notified = 0
-            for cart in abandoned:
-                user_id = cart.get("user_id")
-                if not user_id:
-                    continue
-
-                already_notified = (
-                    db.table("notifications")
-                    .select("id")
-                    .eq("user_id", user_id)
-                    .eq("type", "abandoned_cart")
-                    .gte("created_at", (now - timedelta(hours=24)).isoformat())
-                    .limit(1)
-                    .execute()
-                )
-                if already_notified:
-                    continue
-
-                send_notification(
-                    user_id=user_id,
-                    notif_type="abandoned_cart",
-                    template_data={},
-                    campus_id=campus_id,
-                )
-                db.table("abandoned_carts").eq("id", cart["id"]).update({
-                    "recovery_attempts": int(cart.get("recovery_attempts") or 0) + 1,
-                    "last_recovery_sent_at": now.isoformat(),
-                })
-                notified += 1
-
-            results[campus_id] = {"scanned": len(abandoned), "notified": notified, "cutoff": cutoff}
-
-        return results
+        from app.services.operations_email import capture_and_dispatch
+        operations = capture_and_dispatch()
+        from app.services.cart_recovery import scan
+        return {"operations": operations, "nudges": scan(db)}
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "scan_abandoned_carts"})
@@ -2041,7 +1512,7 @@ def check_post_delivery_nudges(self):
                            "run (%s) — the job may be skipped next time", exc)
 
 
-@celery_app.task(name="app.tasks.scheduled.grant_monthly_tier_perks", bind=True, max_retries=2)
+@celery_app.task(name="app.tasks.scheduled.grant_monthly_tier_perks", bind=True, max_retries=2, autoretry_for=(Exception,), retry_backoff=60)
 @with_cron_logging("grant-monthly-tier-perks")
 def grant_monthly_tier_perks(self):
     """
@@ -2067,6 +1538,9 @@ def grant_monthly_tier_perks(self):
         from app.services.hp_service import award_active_hp
         from flask import current_app
         import uuid
+        validity_days = int(get_validated_setting(db, "free_side_credits_validity_days",
+            default=current_app.config.get("FREE_SIDE_CREDITS_VALIDITY_DAYS", 60), minimum=1))
+        failures = []
 
         for u in users:
             uid = u["id"]
@@ -2076,14 +1550,14 @@ def grant_monthly_tier_perks(self):
                 already = db.table("free_side_credits").select("id").eq("user_id", uid).eq("source", "tier_grant").gte("created_at", month_start).execute()
                 if not already:
                     try:
-                        validity_days = int(current_app.config.get("FREE_SIDE_CREDIT_VALIDITY_DAYS", 30))
                         expires_at = (datetime.now(timezone.utc) + timedelta(days=validity_days)).isoformat()
                         db.table("free_side_credits").insert({
                             "user_id": uid, "credits_remaining": int(side_credits), "source": "tier_grant",
                             "month": curr_month, "expires_at": expires_at, "campus_id": campus_id,
-                        })
+                        }).execute()
                     except Exception as e:
                         logger.warning("grant_monthly_tier_perks side credits failed for user %s: %s", uid, e)
+                        failures.append(uid)
 
             bonus = resolve_perk(uid, "monthly_bonus_hp")
             if bonus and int(bonus) > 0:
@@ -2095,6 +1569,10 @@ def grant_monthly_tier_perks(self):
                     )
                 except Exception as e:
                     logger.warning("grant_monthly_tier_perks monthly bonus HP failed for user %s: %s", uid, e)
+                    failures.append(uid)
+        if failures:
+            raise RuntimeError(f"Monthly tier grants incomplete for {len(set(failures))} users; retry is safe")
+        return {"users_checked": len(users), "month": curr_month}
     finally:
         try:
             db.rpc("release_cron_lock", {"p_job_name": "grant_monthly_tier_perks"})
@@ -2102,6 +1580,42 @@ def grant_monthly_tier_perks(self):
             # The job stays locked, so its next scheduled run may skip itself.
             logger.warning("cron: could not release the job lock after this "
                            "run (%s) — the job may be skipped next time", exc)
+
+
+@celery_app.task(name="app.tasks.scheduled.sweep_pending_squad_hp", bind=True, max_retries=3)
+@with_cron_logging("sweep-pending-squad-hp")
+def sweep_pending_squad_hp(self):
+    """
+    Runs: Daily.
+    B-7b: Pays any pending_squad_hp row whose email now matches an existing account,
+    so a stuck row heals itself. Same claim logic as sign-up claim in auth_service.register.
+    """
+    db = get_db()
+    try:
+        lock_acquired = db.rpc("try_acquire_cron_lock", {"p_job_name": "sweep_pending_squad_hp"})
+    except Exception as e:
+        logger.error("sweep_pending_squad_hp: lock RPC failed, skipping run to be safe: %s", e)
+        lock_acquired = False
+    if not lock_acquired:
+        return {"skipped": "Lock not acquired"}
+
+    try:
+        from app.services.squad_service import sweep_pending_squad_hp as _sweep
+        campuses = db.table("campuses").select("id").eq("is_active", True).execute() or []
+        results = {}
+        for campus in (campuses if isinstance(campuses, list) else []):
+            campus_id = campus["id"]
+            res = _sweep(campus_id=campus_id)
+            results[campus_id] = res
+        # Also sweep global (no campus filter) for any rows without campus_id
+        res_global = _sweep(campus_id=None)
+        results["global"] = res_global
+        return results
+    finally:
+        try:
+            db.rpc("release_cron_lock", {"p_job_name": "sweep_pending_squad_hp"})
+        except Exception as exc:
+            logger.warning("cron: could not release the job lock after this run (%s) — the job may be skipped next time", exc)
 
 
 @celery_app.task(name="app.tasks.scheduled.send_newsletter_campaigns", bind=True, max_retries=3)

@@ -1,0 +1,34 @@
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { rmSync } from 'node:fs';
+import assert from 'node:assert/strict';
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const out = join(root, 'node_modules', '.cache-guest-orders.mjs');
+const storage = () => { const values = new Map(); return { getItem:k=>values.get(k)||null, setItem:(k,v)=>values.set(k,v), removeItem:k=>values.delete(k) }; };
+global.window = { localStorage: storage(), sessionStorage: storage() };
+execFileSync(join(root,'node_modules','.bin','esbuild'),[join(root,'src/lib/guestOrders.ts'),'--bundle','--format=esm',`--outfile=${out}`]);
+try {
+ const { saveGuestOrder, guestOrderToken, guestOrders, settleGuestCart, paymentReturnToken } = await import(out);
+ const order = { id:'one', claim_token:'private-proof', user_id:null, payment_status:'pending' };
+ const paidRow = {id:'one',quantity:1}, changedRow = {id:'two',quantity:2};
+ window.localStorage.setItem('hg_guest_orders_old_tab',JSON.stringify([order]));
+ assert.equal(guestOrderToken('one'),undefined);
+ saveGuestOrder(order,order.claim_token,[paidRow]);
+ assert.equal(guestOrderToken('one'),order.claim_token);
+ window.localStorage.setItem('hg_guest_cart',JSON.stringify([paidRow,changedRow]));
+ assert.equal(settleGuestCart(order),false);
+ assert.equal(JSON.parse(window.localStorage.getItem('hg_guest_cart')).length,2);
+ assert.equal(settleGuestCart({...order,payment_status:'paid'}),true);
+ assert.deepEqual(JSON.parse(window.localStorage.getItem('hg_guest_cart')),[changedRow]);
+ assert.equal(settleGuestCart({...order,payment_status:'paid'}),false);
+ saveGuestOrder({...order,id:'two'},'second',[changedRow]);
+ window.localStorage.setItem('hg_guest_cart',JSON.stringify([{...changedRow,quantity:3}]));
+ settleGuestCart({...order,id:'two',payment_status:'paid'});
+ assert.equal(JSON.parse(window.localStorage.getItem('hg_guest_cart'))[0].quantity,3);
+ assert.equal(paymentReturnToken('?payment_return=1','#claim_token=proof'),'proof');
+ window.sessionStorage=storage();
+ assert.equal(guestOrders().length,0);
+ assert.equal(guestOrderToken('one'),undefined);
+ console.log('PASS guest isolation, pending/paid settlement, callback proof, changed-cart preservation and replay');
+} finally { rmSync(out,{force:true}); delete global.window; }

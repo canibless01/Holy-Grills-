@@ -1,0 +1,13 @@
+# Checkout rewards and gate-pickup clarity — 13 November 2026
+
+Checkout now groups free sides, delivery rewards and Food HP into three colored tiles in one row on mobile and desktop. Counts, selected/added states, loading and failed reads remain distinct. Tapping opens the existing side picker or a focused reward dialog with eligibility/empty-state explanations and the existing choose/save controls. Free-side credits load alongside saved addresses rather than waiting for that request. Existing reward IDs, quote validation, side selection/removal and payment rules remain in place.
+
+Off-campus gate selection without a pin opens a gate-pickup notice and leaves a visible pickup summary. It explicitly says to meet the rider at the gate, with home/lodge delivery requiring a map pin. Manual gate-only selections prefill the gate meeting point; the address field is labeled as pickup instructions. Saved home pins retain the home-delivery explanation. A customer can explicitly switch a pinned address to gate pickup; this clears the pin/saved-address selection and reprices through the existing quote. Choosing home delivery from the notice clears the gate and awaits a new pin. Map failure copy describes the same options.
+
+Verification is recorded in the corresponding progress entry. Controlled browser fixtures never create an actual order, payment or production record.
+
+Verified: TypeScript and full client/SSR/prerender production build passed. Five built-app browser cases passed: mobile empty rewards; available rewards/free-side selection with reward IDs retained in quote requests; guest gate selection and GPS switch to home delivery; desktop saved pin, explicit gate-pickup switch and return to home selection; and failed free-side reads with Retry. The three tiles occupy one row without page overflow. The existing seven-case checkout-recovery/rider/kitchen/admin-address browser suite also passed. HTTP fixtures isolate all writes; no real customer/order/payment data was changed.
+
+## Owner follow-up: two boxes
+
+The checkout now has **Free sides** and one **Rewards** box. The Rewards dialog contains both delivery savings and Food HP explanations/choices together. The empty delivery-zones/fees information dropdown is removed from checkout; actual hostel/gate selectors and fee quotation remain. A stale/expired saved reward can be cleared even when its old selection prevents a successful quote; choosing a new unavailable option remains blocked until a valid quote. Six current mobile/desktop browser cases pass, including that expired-selection escape, plus the existing seven checkout/handoff regressions. Typecheck and full production build pass.

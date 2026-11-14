@@ -1,0 +1,31 @@
+> Complete consolidated remaining list: [remaining work master](REMAINING_WORK_MASTER_2026_11_14.md). This supersedes earlier next-step/backlog wording; completed evidence remains valid.
+
+> Latest continuation: [14 November admin checkpoint](ADMIN_CONTINUATION_CHECKPOINT_2026_11_14.md). Ambassador roster/milestone/distribution/review exceptions now have recorded evidence; the earlier next-priority wording below is historical.
+
+# Current audit checkpoint — 13 November 2026
+
+Updated 14 November after signup/referral and CMS continuation; previous shared-main reconciliation was `d7ad502`. This is the current summary; older dated open lists are historical and must be read with later closure evidence. The whole-site audit is **not complete**. This chat's recent order/reward/retention and legacy-recovery batches are closed for their recorded cases, not a certification of every possible site interaction.
+
+## This request's completed scope
+
+- Scheduled-order customer reminders: starting 10:00 WAT on the paid order's delivery date, existing scan/recovery jobs, member preferred email/push/inbox and guest transactional email/private tracking. Repeated, unpaid, test, cancelled, delivered and rescheduled-away orders are guarded.
+- Tier/grace: actual-campus active definitions, rolling earned HP, valid atomic history, saved notices, grace start/recovery/expiry, retry/concurrency and stale-warning suppression. Existing daily jobs use bounded DB batches, not per-user REST ledger reads.
+- Challenges/milestones: verified active/pending awards, period/cap/role/campus boundaries, immutable retry and legacy adoption; closed the completion/notification interruption gap. Native referral progression and weekly challenge retention pass.
+- Promotions: fresh stacked campaign/side/delivery/HP/promo/lock/squad/earned-physical reward refund/restoration matrices pass. Native campaign editing, changed-settings history, stale-write Reload and interrupted refresh preserve the grant. These bounded cases do not claim every theoretical combination was run.
+- Checkout: Free sides plus one Rewards box, delivery-saving versus food-HP explanations, no empty delivery-zones info dropdown, editable stale-reward selection, existing gate-pickup/pin distinction and contact flow preserved.
+
+## Still separate from whole-site sign-off
+
+1. Wider historical database/security inventory and configuration: the listed remaining public-helper grant/dependency check now has fresh role/SQL evidence in `DATABASE_PERMISSION_REVIEW_2026_11_14.md`; intentional predicates/aggregates retain their grants. Managed pg_net placement and leaked-password protection configuration remain open, as does any broader policy/unused-object certification.
+2. Remaining native administration/exception coverage, owned by the other admin auditor: ambassador roster/milestone administration and measurement/report/share exceptions, promo distribution and monthly review exceptions, with the requested CMS edit/sort/recovery follow-up now recorded in `CMS_EDIT_RECOVERY_2026_11_14.md`. Wider reporting/filter/export and settings cases remain limited to their recorded evidence; inventory alone is not certification. This is unverified breadth, not a list of reproduced defects. Newsletter controls, newsletter worker cancellation/unsubscribe/concurrent counters/interrupted dispatch, and Campaigns & Blasts composer/history/analytics/test/sync/recovery are now closed for their documented cases; do not keep listing those whole batches as unfinished.
+3. **Legacy recovery closed for the current launch configuration:** live inspection found no pending legacy gift/multiplier/cap/unsnapshotted records, and fresh legacy admission/refund/replay and earned-snapshot matrices pass. See `LEGACY_GIFT_RECOVERY_CLOSURE_2026_11_13.md`. The obsolete disabled hot-dog promotion is deferred feature work if reintroduced; it is not a current customer-recovery backlog.
+4. Operational observations: actual inbox/device receipt of the new scheduled reminder, subsequent nightly job receipts and any bank/provider settlement. SQL rollbacks and provider acceptance are not customer inbox confirmation.
+
+Previously owner-confirmed installation, GPS, push receipt and ordinary customer ordering are not reopened. Event implementation/acceptance remains with the other chat and its latest evidence. Deferred marketplace/subscription, group ticket buying and official ticket transfer are not silently enabled. No new periodic service/job, existing-price edit or retained production test fixture was introduced by this request.
+
+## Shared handoff and next priority
+
+- [Admin coverage index](ADMIN_AUDIT_COVERAGE_STATUS.md) and its latest [Campaigns & Blasts checkpoint](ADMIN_CAMPAIGNS_PAGE_2026_11_13.md) identify the other auditor's next native pages. [General progress](GENERAL_SITE_AUDIT_PROGRESS_2026_11_04.md) records both chats' completed batches.
+- [Historical ownership split](REMAINING_ECOSYSTEM_AUDIT_SPLIT.md) assigns database/security inventory to Workstream B as well as admin pages. Its old task descriptions and the October evidence matrix are not a current list of unfinished features.
+- [Latest database evidence](DATABASE_PERMISSION_REVIEW_2026_11_14.md) records the listed public-helper review and fresh role checks; wider historical inventory, pg_net placement and leaked-password protection configuration remain open. Backend-only no-policy tables require an explicit access decision, not automatic public policies. These are review/configuration items, not a claim of a reproduced exploit.
+- Recommended technical continuation: the other auditor completes ambassador exceptions and wider database/configuration inventory; the listed helper dependency and CMS edit/recovery batches now have 14 November evidence. Keep real scheduled-reminder receipt, later nightly receipts and provider settlement observations separate from code defects. No whole-site sign-off is recorded until these remaining categories have explicit evidence or documented deferral.
