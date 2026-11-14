@@ -177,6 +177,7 @@ const sectionPatch = (s: any, name: string, value: any) => {
 const blankSection = (type: string): SectionDraft => ({ section_type: type, draft_key: crypto.randomUUID(), title: '', subtitle: '', image_url: '', cta_text: '', cta_url: '', placement: 'home', sort_order: 0, testimonial_name: '', testimonial_review: '', testimonial_rating: 5, caption_template: '', badge: '', eyebrow: '', share_key: 'share_template', display_mode: 'text' });
 
 export default function AdminStorefront() {
+  const editLock = useRef(false);
   const sectionIntent = useCmsCreateIntent();
   const supporterIntent = useCmsCreateIntent();
   const campaignIntent = useCmsCreateIntent();
@@ -222,7 +223,7 @@ export default function AdminStorefront() {
     }catch{if(current===newsletterGeneration.current)setNewsletterError(true);}
     finally{if(current===newsletterGeneration.current)setNewsletterLoaded(true);}
   };
-  const load = async (refreshNewsletter = true) => {
+  const load = async (refreshNewsletter = false) => {
     const current=++loadGeneration.current;
     if(refreshNewsletter)void loadNewsletter();
     try {
@@ -235,7 +236,7 @@ export default function AdminStorefront() {
     setLoaded(true);
   };
   useEffect(() => { setLoaded(false); load(false); return () => { loadGeneration.current++; }; }, [campusId, adminCampusId]);
-  useEffect(() => { void loadNewsletter(); return () => { newsletterGeneration.current++; }; }, [campusId, adminCampusId, subscriberOffset, campaignOffset]);
+  useEffect(() => { if (tab === 'newsletter') void loadNewsletter(); return () => { newsletterGeneration.current++; }; }, [campusId, adminCampusId, subscriberOffset, campaignOffset, tab]);
 
   const activeTab = ALL_TABS.find((t) => t.id === tab);
   const isSectionType = SECTION_TAB_IDS.includes(tab);
@@ -244,6 +245,8 @@ export default function AdminStorefront() {
 
   const upd = (id, patch) => setSections((arr) => arr.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   const save = async (s) => {
+    if (editLock.current) return;
+    editLock.current = true;
     setBusy(s.id);
     try {
       // Clean payload: server fields (id, created_at, updated_at…) are
@@ -251,6 +254,7 @@ export default function AdminStorefront() {
       // ignores updates that carry them, which made saves not persist.
       const body = {
         key: keyFor(s),
+        expected_updated_at: s.updated_at ?? null,
         section_type: s.section_type,
         title: s.title ?? '',
         subtitle: sectionField(s, 'subtitle'),
@@ -264,8 +268,9 @@ export default function AdminStorefront() {
       };
       await mockApi.admin.updateStorefrontSection(s.id, body);
       toast({ title: msg('FE_ADMIN_STOREFRONT_SECTION_SAVED', '✅ Section saved') });
+      await load();
     } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_SAVE_FAILED', 'Save failed'), description: e.message, variant: 'destructive' }); }
-    setBusy(null); await load();
+    finally { editLock.current = false; setBusy(null); }
   };
   const move = async (s, dir) => {
     if (busy) return;
@@ -277,7 +282,7 @@ export default function AdminStorefront() {
     } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_REORDER_FAILED', 'Reorder failed'), description: e.message, variant: 'destructive' }); }
     finally { await load(); setBusy(null); }
   };
-  const toggleActive = async (s, v) => { setBusy(`act-${s.id}`); try { await mockApi.admin.updateStorefrontSection(s.id, { key: keyFor(s), is_active: v }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } setBusy(null); };
+  const toggleActive = async (s, v) => { setBusy(`act-${s.id}`); try { await mockApi.admin.updateStorefrontSection(s.id, { key: keyFor(s), is_active: v, expected_updated_at: s.updated_at ?? null }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } setBusy(null); };
   const del = async (id) => { if (!(await confirmAction({ title: "Delete this storefront section?", body: "It will be removed from the live homepage.", destructive: true, confirmLabel: "Delete" }))) return; try { await mockApi.admin.deleteStorefrontSection(id); toast({ title: msg('FE_ADMIN_STOREFRONT_DELETED', '✅ Deleted') }); await load(); } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_DELETE_FAILED', 'Delete failed'), description: e.message, variant: 'destructive' }); } };
 
   const create = async () => {
@@ -307,7 +312,8 @@ export default function AdminStorefront() {
         if (!proceed) return;
       }
     }
-    setBusy('create');
+    if (editLock.current) return;
+    editLock.current = true; setBusy('create');
     try {
       const body: SectionBody = { section_type: t, placement: newSection.placement || 'home', sort_order: Number(newSection.sort_order) || 0, is_active: true };
       // Key is required by the backend for every section — not just share templates.
@@ -321,13 +327,15 @@ export default function AdminStorefront() {
       sectionIntent.clear();
       setAddOpen(false); setNewSection(blankSection(t)); await load();
     } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_FAILED_TO_CREATE', 'Failed to create'), description: e.message, variant: 'destructive' }); }
-    setBusy(null);
+    editLock.current = false; setBusy(null);
   };
 
   // Backend create_early_supporter expects { name, photo_url, social_links, note, sort_order }
   // (NOT full_name). The list returns { id, name, photo_url, social_links, note, sort_order }.
   const addSupporter = async () => {
     if (!supporterName) { toast({ title: msg('FE_ADMIN_STOREFRONT_NAME_IS_REQUIRED', 'Name is required'), variant: 'destructive' }); return; }
+    if (editLock.current) return;
+    editLock.current = true; setBusy('create');
     try {
       await mockApi.admin.addEarlySupporter(supporterIntent.body({ name: supporterName, photo_url: supporterPhoto || undefined, note: supporterNote || undefined, social_links: supporterSocial ? { url: supporterSocial.trim() } : {}, sort_order: Number(supporterOrder) || 0 }));
       supporterIntent.clear();
@@ -335,25 +343,33 @@ export default function AdminStorefront() {
       setAddOpen(false); await load();
       toast({ title: msg('FE_ADMIN_STOREFRONT_EARLY_SUPPORTER_ADDED', '✅ Early supporter added') });
     } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
+    finally { editLock.current = false; setBusy(null); }
   };
   const saveSupporter = async () => {
-    if (!editSupporter) return;
+    if (!editSupporter || editLock.current) return;
+    editLock.current = true;
     setBusy(`sup-${editSupporter.id}`);
     try {
-      const body = { name: editSupporter.name, note: editSupporter.note || '', photo_url: editSupporter.photo_url || null, social_links: editSupporter.social_links ? { url: editSupporter.social_links.trim() } : {}, sort_order: Number(editSupporter.sort_order) || 0, is_active: editSupporter.is_active };
+      const body = { expected_updated_at: editSupporter.updated_at ?? null, name: editSupporter.name, note: editSupporter.note || '', photo_url: editSupporter.photo_url || null, social_links: editSupporter.social_links ? { url: editSupporter.social_links.trim() } : {}, sort_order: Number(editSupporter.sort_order) || 0, is_active: editSupporter.is_active };
       if (editSupporter.is_active !== undefined) body.is_active = editSupporter.is_active;
       await mockApi.admin.updateEarlySupporter(editSupporter.id, body);
       setEditSupporter(null);
       toast({ title: msg('FE_ADMIN_STOREFRONT_SUPPORTER_UPDATED', '✅ Supporter updated') });
       await load();
     } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_UPDATE_FAILED', 'Update failed'), description: e.message, variant: 'destructive' }); }
-    setBusy(null);
+    editLock.current = false; setBusy(null);
   };
-  const removeSupporter = async (id) => { if (!(await confirmAction({ title: "Remove this early supporter?", destructive: true, confirmLabel: "Remove" }))) return; await mockApi.admin.removeEarlySupporter(id); await load(); };
+  const removeSupporter = async (id) => {
+    if (editLock.current || !(await confirmAction({ title: "Remove this early supporter?", destructive: true, confirmLabel: "Remove" })) || editLock.current) return;
+    editLock.current = true; setBusy(`sup-${id}`);
+    try { await mockApi.admin.removeEarlySupporter(id); await load(); }
+    catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_DELETE_FAILED', 'Delete failed'), description: e.message, variant: 'destructive' }); }
+    finally { editLock.current = false; setBusy(null); }
+  };
   const unsubscribe = async (email) => {
     if(unsubscribeLock.current)return;
     unsubscribeLock.current=true;setBusy(email);
-    try{await mockApi.admin.unsubscribeNewsletter({email});await load();}
+    try{await mockApi.admin.unsubscribeNewsletter({email});await loadNewsletter();}
     catch(e){toast({title:msg('FE_NEWSLETTER_UNSUB_FAILED','Could not unsubscribe this address'),description:e.message,variant:'destructive'});}
     finally{unsubscribeLock.current=false;setBusy(null);}
   };
@@ -384,7 +400,7 @@ export default function AdminStorefront() {
       campaignIntent.clear();
       toast({title:msg('FE_NEWSLETTER_REQUEST_SAVED','Campaign request saved'),description:msg('FE_NEWSLETTER_REQUEST_HELP','Open the campaign to check its current delivery status.')});
       setCampaignForm(null);
-      await load();
+      await loadNewsletter();
     } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_COULD_NOT_QUEUE_CAMPAIGN', 'Could not queue campaign'), description: e.message, variant: 'destructive' }); }
     campaignLock.current=false;setCampaignBusy(null);
   };
@@ -396,7 +412,7 @@ export default function AdminStorefront() {
     try {
       await mockApi.storefront.cancelNewsletterCampaign(c.id);
       toast({ title: msg('FE_ADMIN_STOREFRONT_CAMPAIGN_CANCELLED', 'Campaign cancelled') });
-      await load();
+      await loadNewsletter();
     } catch (e) { toast({ title: msg('FE_ADMIN_STOREFRONT_COULD_NOT_CANCEL', 'Could not cancel'), description: e.message, variant: 'destructive' }); }
     campaignLock.current=false;setCampaignBusy(null);
   };
@@ -418,6 +434,7 @@ export default function AdminStorefront() {
 
   return (
     <div className="space-y-4">
+      <button type="button" disabled={!!busy} onClick={() => void load()} className="text-xs font-bold text-primary disabled:opacity-50">{msg('FE_CMS_RELOAD_CONTENT', 'Reload saved content')}</button>
       {/* Grouped segment chips — each group is a labelled row so the admin
           always knows which surface (carousel / CMS / community / ops) they're on. */}
       <div className="space-y-2">
@@ -467,7 +484,7 @@ export default function AdminStorefront() {
           ) : visible.map((s) => (
             <Card key={s.id}>
               {!isSuperAdmin && !s.campus_id && <p className="text-xs text-muted-foreground mb-2">{msg('FE_ADMIN_STOREFRONT_GLOBAL_READ_ONLY', 'Global content is managed by super admins.')}</p>}
-              <fieldset disabled={!isSuperAdmin && !s.campus_id}>
+              <fieldset disabled={!!busy || (!isSuperAdmin && !s.campus_id)}>
               <div className="flex items-center gap-2 mb-2">
                 <Pill tone="blue">{(s.section_type || 'banner').toUpperCase()}</Pill>
                 <span className="text-[10px] text-muted-foreground">{s.campus_id ? (campuses.find((campus) => campus.id === s.campus_id)?.name || msg('FE_ADMIN_STOREFRONT_CAMPUS_CONTENT', 'Campus content')) : msg('FE_ADMIN_STOREFRONT_GLOBAL_CONTENT', 'Global content')}</span>
@@ -551,7 +568,7 @@ export default function AdminStorefront() {
       {tab === 'hours' && <AdminOperatingHours />}
 
       {tab === 'newsletter' && !newsletterLoaded && <StaffPanelSkeleton />}
-      {tab === 'newsletter' && newsletterLoaded && newsletterError && <Card><p role="alert" className="text-sm text-destructive">Newsletter reports could not be loaded. Retry before making changes.</p><button onClick={()=>void load()} className="mt-3 font-bold text-primary">Retry</button></Card>}
+      {tab === 'newsletter' && newsletterLoaded && newsletterError && <Card><p role="alert" className="text-sm text-destructive">Newsletter reports could not be loaded. Retry before making changes.</p><button onClick={()=>void loadNewsletter()} className="mt-3 font-bold text-primary">Retry</button></Card>}
       {tab === 'newsletter' && newsletterLoaded && !newsletterError && (
         <div className="space-y-2">
           {/* Campaigns — plain-text sends (storefront.py newsletter_campaigns_*). */}
@@ -641,7 +658,7 @@ export default function AdminStorefront() {
         )}
       </Modal>
 
-      <Modal open={addOpen && isSectionType} onClose={() => setAddOpen(false)} title={`Create ${tab.replace(/_/g, ' ')} section`}>
+      <Modal open={addOpen && isSectionType} onClose={() => { if (!busy) setAddOpen(false); }} title={`Create ${tab.replace(/_/g, ' ')} section`}>
         <div className="space-y-3">
           <AdminScopeBadge />
           {newSection.section_type === 'testimonial' ? (
@@ -692,7 +709,7 @@ export default function AdminStorefront() {
         </div>
       </Modal>
 
-      <Modal open={addOpen && tab === 'early_supporter'} onClose={() => setAddOpen(false)} title="Add Early Supporter">
+      <Modal open={addOpen && tab === 'early_supporter'} onClose={() => { if (!busy) setAddOpen(false); }} title="Add Early Supporter">
         <div className="space-y-3">
           <Field label="Name (required)"><TextInput value={supporterName} onChange={(e) => setSupporterName(e.target.value)} placeholder="Jane Doe" /></Field>
           <Field label="Photo"><ImageUploader value={supporterPhoto} onChange={setSupporterPhoto} folder="early_supporters" label="photo" /></Field>
@@ -703,7 +720,7 @@ export default function AdminStorefront() {
         </div>
       </Modal>
 
-      <Modal open={!!editSupporter} onClose={() => setEditSupporter(null)} title="Edit Early Supporter">
+      <Modal open={!!editSupporter} onClose={() => { if (!busy) setEditSupporter(null); }} title="Edit Early Supporter">
         {editSupporter && (
           <div className="space-y-3">
             <Field label="Name"><TextInput value={editSupporter.name || ''} onChange={(e) => setEditSupporter({ ...editSupporter, name: e.target.value })} /></Field>

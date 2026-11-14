@@ -1,0 +1,37 @@
+BEGIN;
+SET LOCAL request.jwt.claims='{"role":"service_role"}';
+DO $$
+DECLARE ca uuid:=gen_random_uuid();cb uuid:=gen_random_uuid();a uuid:=gen_random_uuid();s uuid:=gen_random_uuid();u uuid:=gen_random_uuid(); n integer; result jsonb;
+BEGIN
+ INSERT INTO campuses(id,name,slug,is_active) VALUES(ca,'[AUDIT rollback] Helper A','audit-'||ca,true),(cb,'[AUDIT rollback] Helper B','audit-'||cb,true);
+ INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES(a,'audit-helper-'||a||'@example.invalid','{}'),(s,'audit-helper-'||s||'@example.invalid','{}'),(u,'audit-helper-'||u||'@example.invalid','{}');
+ UPDATE profiles SET campus_id=ca,is_active=true WHERE id IN(a,s,u);UPDATE profiles SET role='admin' WHERE id=a;UPDATE profiles SET role='super_admin' WHERE id=s;
+ PERFORM set_config('request.jwt.claims',jsonb_build_object('role','authenticated','sub',u)::text,true);EXECUTE 'SET LOCAL ROLE authenticated';
+ IF public.hg_current_user_role()::text<>'student' OR public.hg_user_campus_id()<>ca OR public.hg_is_admin() OR public.hg_is_campus_admin(ca) OR public.hg_is_campus_staff(ca) OR public.hg_is_financial_admin() OR public.hg_is_ambassador_staff(ca) THEN RAISE EXCEPTION 'Student helper escalation'; END IF;
+ IF NOT public.hg_campus_visible(ca) OR public.hg_campus_visible(cb) OR public.hg_is_squad_roster_member(gen_random_uuid()) OR public.hg_effective_rider(gen_random_uuid()) IS NOT NULL THEN RAISE EXCEPTION 'Student scope helper failed'; END IF;
+ SELECT count(*) INTO n FROM public.hg_ambassador_actor() WHERE user_id=u AND campus_id=ca AND role='student';IF n<>1 THEN RAISE EXCEPTION 'Actor lookup returned another user'; END IF;
+ BEGIN PERFORM public.get_hp_program_report_summary(current_date);RAISE EXCEPTION 'Student read HP report';EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+ BEGIN PERFORM public.get_pending_squad_hp_report(14);RAISE EXCEPTION 'Student read squad report';EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+ BEGIN PERFORM * FROM public.hg_hp_grant_segment(ca,null,null,null,u,10);RAISE EXCEPTION 'Student read grant audience';EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+ EXECUTE 'RESET ROLE';PERFORM set_config('request.jwt.claims',jsonb_build_object('role','authenticated','sub',a)::text,true);EXECUTE 'SET LOCAL ROLE authenticated';
+ IF NOT public.hg_is_admin() OR NOT public.hg_is_campus_admin(ca) OR public.hg_is_campus_admin(cb) OR NOT public.hg_is_campus_staff(ca) OR public.hg_is_campus_staff(cb) OR NOT public.hg_is_financial_admin() OR NOT public.hg_is_ambassador_staff(ca) OR public.hg_is_ambassador_staff(cb) THEN RAISE EXCEPTION 'Campus admin scope failed'; END IF;
+ result:=public.get_pending_squad_hp_report(14);IF result->>'pending_count'<>'0' THEN RAISE EXCEPTION 'Campus admin report leaked foreign rows';END IF;
+ PERFORM public.get_hp_program_report_summary(current_date);
+ SELECT count(*) INTO n FROM public.hg_hp_grant_segment(ca,null,null,null,a,10);IF n<>2 THEN RAISE EXCEPTION 'Grant segment scope failed';END IF;
+ BEGIN PERFORM * FROM public.hg_hp_grant_segment(cb,null,null,null,a,10);RAISE EXCEPTION 'Campus admin read foreign audience';EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+ BEGIN PERFORM * FROM public.hg_hp_grant_segment(null,null,null,null,a,10);RAISE EXCEPTION 'Campus admin read global audience';EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+ EXECUTE 'RESET ROLE';UPDATE profiles SET is_active=false WHERE id=a;
+ PERFORM set_config('request.jwt.claims',jsonb_build_object('role','authenticated','sub',a)::text,true);EXECUTE 'SET LOCAL ROLE authenticated';
+ IF public.hg_is_admin() OR public.hg_is_campus_admin(ca) OR public.hg_is_campus_staff(ca) OR public.hg_is_financial_admin() OR coalesce(public.hg_is_ambassador_staff(ca),false) OR public.hg_current_user_role() IS NOT NULL OR EXISTS(SELECT 1 FROM public.hg_ambassador_actor()) THEN RAISE EXCEPTION 'Inactive role reused staff access';END IF;
+ BEGIN PERFORM public.get_hp_program_report_summary(current_date);RAISE EXCEPTION 'Inactive admin read report';EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+ EXECUTE 'RESET ROLE';PERFORM set_config('request.jwt.claims',jsonb_build_object('role','authenticated','sub',s)::text,true);EXECUTE 'SET LOCAL ROLE authenticated';
+ IF NOT public.hg_is_campus_admin(cb) OR NOT public.hg_is_ambassador_staff(cb) OR NOT public.hg_campus_visible(cb) THEN RAISE EXCEPTION 'Super admin scope failed';END IF;
+ EXECUTE 'RESET ROLE';PERFORM set_config('request.jwt.claims','{"role":"anon"}',true);EXECUTE 'SET LOCAL ROLE anon';
+ IF public.hg_user_campus_id() IS NOT NULL OR public.hg_is_campus_admin(ca) OR public.hg_is_campus_staff(ca) OR public.hg_is_squad_roster_member(gen_random_uuid()) THEN RAISE EXCEPTION 'Anonymous helper escalation';END IF;
+ IF NOT public.hg_campus_visible(ca) THEN RAISE EXCEPTION 'Public catalogue predicate unavailable';END IF;
+ PERFORM * FROM public.get_menu_item_review_stats(ARRAY[gen_random_uuid()]);
+ EXECUTE 'RESET ROLE';
+ IF has_function_privilege('anon','public.get_hp_program_report_summary(date)','EXECUTE') OR has_function_privilege('anon','public.get_pending_squad_hp_report(integer)','EXECUTE') OR has_function_privilege('anon','public.hg_hp_grant_segment(uuid,uuid,timestamptz,timestamptz,uuid,integer)','EXECUTE') THEN RAISE EXCEPTION 'Anonymous report permission';END IF;
+ IF has_table_privilege('anon','public.email_send_counters','SELECT') OR has_table_privilege('authenticated','public.email_send_counters','UPDATE') OR has_table_privilege('anon','public.newsletter_deliveries','SELECT') OR has_table_privilege('authenticated','public.newsletter_deliveries','UPDATE') THEN RAISE EXCEPTION 'Private delivery bookkeeping exposed';END IF;
+END $$;
+ROLLBACK;

@@ -87,7 +87,7 @@ export default function AdminBanners({ placement = 'home' }) {
 
   const toggleActive = async (b, v) => {
     setBusy(`act-${b.id}`);
-    try { await liveApi.admin.updateBanner(b.id, { is_active: v }); await load(); }
+    try { await liveApi.admin.updateBanner(b.id, { is_active: v, expected_updated_at: b.updated_at ?? null }); await load(); }
     catch (e) { toast({ title: msg('FE_ADMIN_BANNERS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
     setBusy(null);
   };

@@ -181,6 +181,11 @@ def _same_timestamp(left, right):
         return False
 
 
+def _cms_version_filter(query, existing):
+    stamp = existing.get("updated_at")
+    return query.eq("updated_at", stamp) if stamp is not None else query.is_("updated_at", "null")
+
+
 def _write_denied():
     return jsonify({"error": MSG.UPDATE_NOT_PERMITTED}), 403
 
@@ -700,10 +705,12 @@ def update_section(section_id):
     data = _json_body()
     if data is None:
         return _bad_request()
-    existing = db.table("storefront_sections").select("id,content,section_type").eq("id", section_id).single().execute()
+    existing = db.table("storefront_sections").select("id,content,section_type,updated_at").eq("id", section_id).single().execute()
     if not existing:
         return jsonify({"error": MSG.SECTION_NOT_FOUND}), 404
 
+    if "expected_updated_at" in data and not _same_timestamp(data["expected_updated_at"], existing.get("updated_at")):
+        return jsonify({"error": MSG.STOREFRONT_CONCURRENT_EDIT}), 409
     update = {}
     if "key" in data:
         if not isinstance(data["key"], str) or not data["key"].strip():
@@ -734,13 +741,13 @@ def update_section(section_id):
 
     update["updated_at"] = _now_iso()
     try:
-        updated = _row(db.table("storefront_sections").eq("id", section_id).update(update))
+        updated = _row(_cms_version_filter(db.table("storefront_sections").eq("id", section_id), existing).update(update))
     except SupabaseError as exc:
         if exc.details.get("code") == "23505":
             return _key_conflict_response(db, "storefront_sections", update.get("key"))
         raise
     if updated is None:
-        return _write_denied()
+        return jsonify({"error": MSG.STOREFRONT_CONCURRENT_EDIT}), 409
     return jsonify(updated), 200
 
 
@@ -1164,7 +1171,7 @@ def list_early_supporters():
     """
     campus_id = _get_campus_id()
     q = (
-        _storefront_read_query("storefront_sections", campus_id, "id,title,content,sort_order,created_at,campus_id,is_active")
+        _storefront_read_query("storefront_sections", campus_id, "id,title,content,sort_order,created_at,updated_at,campus_id,is_active")
         .eq("section_type", "early_supporter")
     )
     management_read = str(request.args.get("include_inactive") or "").lower() in ("1", "true", "yes") and getattr(g, "user_role", None) in ADMIN_ROLES
@@ -1185,6 +1192,7 @@ def list_early_supporters():
             "sort_order": row.get("sort_order", 0),
             "is_active": row.get("is_active", True),
             "campus_id": row.get("campus_id"),
+            **({"updated_at": row.get("updated_at")} if management_read else {}),
         })
     return jsonify(supporters), 200
 
@@ -1272,12 +1280,14 @@ def update_early_supporter(section_id):
     if data is None:
         return _bad_request()
     existing = (
-        db.table("storefront_sections").select("id,content,section_type")
+        db.table("storefront_sections").select("id,content,section_type,updated_at")
         .eq("id", section_id).eq("section_type", "early_supporter").limit(1).execute()
     )
     if not existing:
         return jsonify({"error": MSG.STOREFRONT_SUPPORTER_NOT_FOUND}), 404
 
+    if "expected_updated_at" in data and not _same_timestamp(data["expected_updated_at"], existing[0].get("updated_at")):
+        return jsonify({"error": MSG.STOREFRONT_CONCURRENT_EDIT}), 409
     content = dict(existing[0].get("content") or {})
     update_payload = {}
     try:
@@ -1306,9 +1316,9 @@ def update_early_supporter(section_id):
         return jsonify({"error": MSG.STOREFRONT_IMAGE_PROVIDER_INVALID}), 400
     update_payload["content"] = content
     update_payload["updated_at"] = _now_iso()
-    updated = _row(db.table("storefront_sections").eq("id", section_id).update(update_payload))
+    updated = _row(_cms_version_filter(db.table("storefront_sections").eq("id", section_id), existing[0]).update(update_payload))
     if updated is None:
-        return _write_denied()
+        return jsonify({"error": MSG.STOREFRONT_CONCURRENT_EDIT}), 409
     return jsonify(updated), 200
 
 
@@ -1578,13 +1588,10 @@ def update_banner(banner_id):
     update["updated_at"] = _now_iso()
     # Do not overwrite slides added after the editor's read.
     q = db.table("banners").eq("id", banner_id)
-    if "images" in update or "metadata" in update or "expected_updated_at" in data:
-        q = q.eq("updated_at", existing.get("updated_at"))
+    q = _cms_version_filter(q, existing)
     updated = _row(q.update(update))
     if updated is None:
-        if "images" in update or "metadata" in update or "expected_updated_at" in data:
-            return jsonify({"error": MSG.STOREFRONT_CONCURRENT_EDIT}), 409
-        return _write_denied()
+        return jsonify({"error": MSG.STOREFRONT_CONCURRENT_EDIT}), 409
     return jsonify(updated), 200
 
 
