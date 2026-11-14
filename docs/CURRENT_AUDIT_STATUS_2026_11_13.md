@@ -1,3 +1,5 @@
+> Complete consolidated remaining list: [remaining work master](REMAINING_WORK_MASTER_2026_11_14.md). This supersedes earlier next-step/backlog wording; completed evidence remains valid.
+
 > Latest continuation: [14 November admin checkpoint](ADMIN_CONTINUATION_CHECKPOINT_2026_11_14.md). Ambassador roster/milestone/distribution/review exceptions now have recorded evidence; the earlier next-priority wording below is historical.
 
 # Current audit checkpoint — 13 November 2026

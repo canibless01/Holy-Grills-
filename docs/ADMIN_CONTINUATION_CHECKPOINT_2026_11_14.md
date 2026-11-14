@@ -1,3 +1,5 @@
+> Complete consolidated remaining list: [remaining work master](REMAINING_WORK_MASTER_2026_11_14.md). This supersedes earlier next-step/backlog wording; completed evidence remains valid.
+
 # Admin continuation checkpoint — 14 November 2026
 
 ## Completed in this continuation

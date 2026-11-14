@@ -1,3 +1,5 @@
+> Complete consolidated remaining list: [remaining work master](REMAINING_WORK_MASTER_2026_11_14.md). This supersedes earlier next-step/backlog wording; completed evidence remains valid.
+
 Current executed continuation: [Newsletter controls](ADMIN_NEWSLETTER_PAGE_2026_11_13.md) and [delivery worker](ADMIN_NEWSLETTER_WORKER_2026_11_13.md), 13 November 2026. Earlier dated open items below are historical; later closure evidence takes precedence. The whole admin audit remains open.
 
 > **Current checkpoint — 14 November 2026:** The October tables below are historical, not the current unfinished list. Newsletter controls/worker and Campaigns & Blasts are closed for their recorded cases. Ambassador roster, milestone administration, distribution/share exceptions and monthly review controls now have [native/API/live-database evidence](ADMIN_AMBASSADOR_PAGES_2026_11_14.md). The latest shared [CMS recovery](CMS_EDIT_RECOVERY_2026_11_14.md) and [database helper permission review](DATABASE_PERMISSION_REVIEW_2026_11_14.md) are integrated. See [current remaining limits](ADMIN_CONTINUATION_CHECKPOINT_2026_11_14.md); no whole-site certification is implied.
