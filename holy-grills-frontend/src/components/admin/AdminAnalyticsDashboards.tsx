@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area,
   PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -75,12 +75,15 @@ function useDashboard(fetcher, deps = []) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const version = useRef(0);
   const load = useCallback(async () => {
-    setLoading(true); setError(msg('FE_ADMIN_ANALYTICS_DASHBOARDS_MESSAGE', ''));
-    try { setData(body(await fetcher())); } catch (e) { setError(e.message); setData(null); }
-    setLoading(false);
+    const current = ++version.current;
+    setLoading(true); setError('');
+    try { const result = body(await fetcher()); if (current === version.current) setData(result); }
+    catch (e) { if (current === version.current) { setError(e.message || msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")); setData(null); } }
+    finally { if (current === version.current) setLoading(false); }
   }, deps);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(); return () => { version.current++; }; }, [load]);
   return { data, loading, error, retry: load };
 }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
 import {
@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
+import { watCalendarDay } from '@/lib/watCalendar';
 import ModalPortal from '@/components/ModalPortal';
 import { Card, Skeleton, EmptyState, SectionTitle, StatTile, BreakdownTiles, body } from './ui/AdminKit';
 import {
@@ -44,8 +45,8 @@ const formatDateLabel = (value) => {
   return isNaN(d.getTime()) ? '' : d.toLocaleDateString();
 };
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
-const daysAgoStr = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+const todayStr = () => watCalendarDay();
+const daysAgoStr = (n) => watCalendarDay(-n);
 
 // Analytics & Trends — the full /analytics surface: sales, orders, items,
 // users, retention, hp, referrals, gifts, marketplace, abandoned-carts and
@@ -66,6 +67,12 @@ export default function AdminAnalytics() {
   const [abandoned, setAbandoned] = useState(null);
   const [exporting, setExporting] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const loadVersion = useRef(0);
+  const exportLock = useRef(false);
+  const brandVersion = useRef(0);
+  const [brandError, setBrandError] = useState(false);
+  const [brandLoading, setBrandLoading] = useState(true);
   const [tab, setTab] = useState('sales');
   const [brandPartnerships, setBrandPartnerships] = useState([]);
   const [brandModal, setBrandModal] = useState(false);
@@ -75,7 +82,12 @@ export default function AdminAnalytics() {
   const range = { from_date: fromDate, to_date: toDate };
 
   const load = async () => {
-    setLoading(true);
+    const version = ++loadVersion.current;
+    setLoading(true); setLoadError('');
+    if (!fromDate || !toDate || fromDate > toDate) {
+      setLoadError(msg('FE_ANALYTICS_RANGE_INVALID','Choose a valid start and end date, with the start no later than the end.'));
+      setLoading(false); return;
+    }
     const [s, u, h, o, it, rt, rf, gf, mp, ab] = await Promise.allSettled([
       liveApi.analytics.sales(range),
       liveApi.analytics.users(range),
@@ -88,6 +100,11 @@ export default function AdminAnalytics() {
       liveApi.analytics.marketplace(),
       liveApi.analytics.abandonedCarts(),
     ]);
+    if (version !== loadVersion.current) return;
+    if ([s,u,h,o,it,rt,rf,gf,mp,ab].some(result => result.status === 'rejected')) {
+      setLoadError(msg('FE_ANALYTICS_READ_FAILED','Analytics could not be loaded completely. Retry before using these figures.'));
+      setLoading(false); return;
+    }
     setSales(s.status === 'fulfilled' ? body(s.value) : null);
     setUsers(u.status === 'fulfilled' ? body(u.value) : null);
     setHp(h.status === 'fulfilled' ? h.value : null);
@@ -99,11 +116,18 @@ export default function AdminAnalytics() {
     setMarketplace(mp.status === 'fulfilled' ? body(mp.value) : null);
     setAbandoned(ab.status === 'fulfilled' ? body(ab.value) : null);
     setLoading(false);
-    // Brand partnerships — loaded separately (CRUD entity, not date-scoped).
-    liveApi.analytics.getBrandPartnerships().then(setBrandPartnerships).catch(() => setBrandPartnerships([]));
+
   };
 
-  useEffect(() => { load(); }, [fromDate, toDate]);
+  useEffect(() => { void load(); return () => { loadVersion.current++; }; }, [fromDate, toDate]);
+
+  const loadBrands = async () => {
+    const version = ++brandVersion.current; setBrandLoading(true); setBrandError(false);
+    try { const rows = await liveApi.analytics.getBrandPartnerships(); if (version === brandVersion.current) setBrandPartnerships(rows); }
+    catch { if (version === brandVersion.current) setBrandError(true); }
+    finally { if (version === brandVersion.current) setBrandLoading(false); }
+  };
+  useEffect(() => { void loadBrands(); return () => { brandVersion.current++; }; }, []);
 
   const submitBrandPartnership = async () => {
     if (!brandForm.brand_name || !brandForm.contact_email) {
@@ -116,7 +140,7 @@ export default function AdminAnalytics() {
       toast({ title: msg('FE_ADMIN_ANALYTICS_BRAND_PARTNERSHIP_LOGGED', 'Brand partnership logged') });
       setBrandModal(false);
       setBrandForm({ brand_name: '', contact_email: '', requested_data: {} });
-      setBrandPartnerships(await liveApi.analytics.getBrandPartnerships());
+      await loadBrands();
     } catch (e) {
       toast({ title: msg('FE_ADMIN_ANALYTICS_FAILED_TO_LOG_BRAND_PARTNERSHIP', 'Failed to log brand partnership'), description: e.message, variant: 'destructive' });
     }
@@ -126,7 +150,7 @@ export default function AdminAnalytics() {
   const updateBrandStatus = async (id, status) => {
     try {
       await liveApi.analytics.updateBrandPartnership(id, { status });
-      setBrandPartnerships(await liveApi.analytics.getBrandPartnerships());
+      await loadBrands();
     } catch (e) {
       toast({ title: msg('FE_ADMIN_ANALYTICS_FAILED_TO_UPDATE', 'Failed to update'), description: e.message, variant: 'destructive' });
     }
@@ -136,7 +160,8 @@ export default function AdminAnalytics() {
 
   // GET /analytics/export?type=… → CSV text download (raw response, not JSON).
   const doExport = async (type) => {
-    setExporting(type);
+    if (exportLock.current) return;
+    exportLock.current = true; setExporting(type);
     try {
       const csv = await liveApi.admin.exportAnalytics(type, range);
       if (csv && typeof csv === 'string' && csv.trim()) {
@@ -145,28 +170,13 @@ export default function AdminAnalytics() {
         const a = document.createElement('a'); a.href = url; a.download = `${type}_${todayStr()}.csv`; a.click();
         URL.revokeObjectURL(url);
       } else {
-        window.alert('Export returned no data for this date range.');
+        toast({title:msg('FE_ANALYTICS_EXPORT_EMPTY','Export returned no data for this date range.')});
       }
     } catch (e) {
-      window.alert(`Export failed: ${e.message}`);
+      toast({title:msg('FE_ANALYTICS_EXPORT_FAILED','Export failed. Please retry.'),description:e.message,variant:'destructive'});
     }
-    setExporting(null);
+    exportLock.current = false; setExporting(null);
   };
-
-  if (loading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-20" />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28" />)}
-        </div>
-        <div className="grid lg:grid-cols-2 gap-4">
-          <Skeleton className="h-80" />
-          <Skeleton className="h-80" />
-        </div>
-      </div>
-    );
-  }
 
   const EXPORTS = ['orders', 'hp_transactions', 'wallet_transactions', 'users'];
   const funnelRaw = orders?.status_funnel;
@@ -199,19 +209,21 @@ export default function AdminAnalytics() {
         <div className="flex-1 grid grid-cols-2 gap-3 max-w-xs">
           <div>
             <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">From</label>
-            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-full mt-0.5 px-3 py-2 rounded-xl border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            <input aria-label={msg('FE_REPORT_FROM_DATE','From date')} type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-full mt-0.5 px-3 py-2 rounded-xl border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
           </div>
           <div>
             <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">To</label>
-            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-full mt-0.5 px-3 py-2 rounded-xl border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            <input aria-label={msg('FE_REPORT_TO_DATE','To date')} type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-full mt-0.5 px-3 py-2 rounded-xl border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
           </div>
         </div>
         <div className="text-right">
           <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">AOV</div>
-          <div className="font-heading font-extrabold text-lg text-foreground">{formatNaira(sales?.average_order_value ?? sales?.avg_order_value ?? 0)}</div>
+          <div className="font-heading font-extrabold text-lg text-foreground">{loading || loadError ? '—' : formatNaira(sales?.average_order_value ?? sales?.avg_order_value ?? 0)}</div>
         </div>
       </Card>
 
+      <p className="text-xs text-muted-foreground">{msg('FE_ANALYTICS_RANGE_SCOPE','Dates filter sales, orders, menu-item and user reports. Other panels use their own reporting periods. All calendar dates use Lagos time.')}</p>
+      {loading ? <div role="status" aria-label={msg('FE_LOOKUP_LOADING','Loading…')}><Skeleton className="h-64" /></div> : loadError ? <Card className="p-5"><div role="alert" className="space-y-3"><p>{loadError}</p><button onClick={() => { void load(); }} className="rounded-full bg-primary px-4 py-2 text-sm font-bold text-white">{msg('FE_LOOKUP_RETRY','Retry')}</button></div></Card> : <>
       {/* KPIs — headline metrics */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map((k, i) => (
@@ -240,7 +252,7 @@ export default function AdminAnalytics() {
         <SectionTitle icon={Download} title="Export (CSV)" sub={`${fromDate} → ${toDate} · GET /analytics/export`} />
         <div className="flex flex-wrap gap-2">
           {EXPORTS.map((t) => (
-            <button key={t} onClick={() => doExport(t)} disabled={exporting === t} className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-secondary text-secondary-foreground text-xs font-bold hover:bg-primary/10 hover:text-primary active:scale-95 transition disabled:opacity-50">
+            <button key={t} onClick={() => doExport(t)} disabled={exporting !== null} className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-secondary text-secondary-foreground text-xs font-bold hover:bg-primary/10 hover:text-primary active:scale-95 transition disabled:opacity-50">
               <Download className="w-3 h-3" /> {exporting === t ? 'Exporting…' : t.replace(/_/g, ' ')}
             </button>
           ))}
@@ -368,7 +380,7 @@ export default function AdminAnalytics() {
             <Plus className="w-3.5 h-3.5" /> Log request
           </button>
         </div>
-        {brandPartnerships.length === 0 ? (
+        {brandLoading ? <Skeleton className="h-16" /> : brandError ? <div role="alert"><p>{msg('FE_ANALYTICS_BRANDS_FAILED','Brand requests could not be loaded.')}</p><button onClick={() => { void loadBrands(); }} className="font-bold text-primary">{msg('FE_LOOKUP_RETRY','Retry')}</button></div> : brandPartnerships.length === 0 ? (
           <EmptyState icon={Building2} title="No brand partnership requests yet" body="Log a brand's data request for record keeping." />
         ) : (
           <div className="space-y-2">
@@ -434,6 +446,7 @@ export default function AdminAnalytics() {
         </div>
         </ModalPortal>
       )}
+      </>}
     </div>
   );
 }

@@ -17,6 +17,14 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_ANALYTICS_RANGE_INVALID = "Choose a valid start and end date, with the start no later than the end."
+    FE_ANALYTICS_READ_FAILED = "Analytics could not be loaded completely. Retry before using these figures."
+    FE_ANALYTICS_EXPORT_EMPTY = "Export returned no data for this date range."
+    FE_ANALYTICS_EXPORT_FAILED = "Export failed. Please retry."
+    FE_ANALYTICS_RANGE_SCOPE = "Dates filter sales, orders, menu-item and user reports. Other panels use their own reporting periods. All calendar dates use Lagos time."
+    FE_ANALYTICS_BRANDS_FAILED = "Brand requests could not be loaded."
+    FE_REPORT_FROM_DATE = "From date"
+    FE_REPORT_TO_DATE = "To date"
     FE_ADMIN_PRIZE_READ_FAILED = "Prize records could not be loaded. Retry before updating fulfilment."
     FE_ADMIN_NAV_CLOSE = "Close menu"
     FE_ADMIN_NAV_EXPAND = "Expand sidebar"
