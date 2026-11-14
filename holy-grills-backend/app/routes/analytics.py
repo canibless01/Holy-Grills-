@@ -14,6 +14,7 @@ from app.utils.tz import today_wat, WAT_OFFSET
 from app.utils.validators import validate_date, validate_uuid, validate_choice, validate_email, sanitize_string
 from app.utils.logger import get_logger
 import csv
+import json
 import io
 
 analytics_bp = Blueprint("analytics", __name__)
@@ -1105,9 +1106,21 @@ def update_brand_partnership(request_id):
         update_data["shared_at"] = data["shared_at"]
     if not update_data:
         return jsonify({"error": MSG.NO_VALID_FIELDS}), 400
-    result = db.table("brand_partnership_requests").eq("id", request_id).update(update_data).execute()
-    if not result:
+    existing = db.table("brand_partnership_requests").select("*").eq("id", request_id).single().execute()
+    if not existing:
         return jsonify({"error": MSG.ANALYTICS_BRAND_NOT_FOUND}), 404
+    expected = data.get("expected_status", existing.get("status"))
+    if expected not in _BRAND_STATUSES:
+        return jsonify({"error": MSG.NO_VALID_FIELDS}), 400
+    if all(existing.get(key) == value for key, value in update_data.items()):
+        return jsonify(existing), 200
+    if expected != existing.get("status"):
+        return jsonify({"error": MSG.ANALYTICS_BRAND_STALE}), 409
+    query = db.table("brand_partnership_requests").eq("id", request_id).eq("status", expected)
+    query = query.is_("shared_at", "null") if existing.get("shared_at") is None else query.eq("shared_at", existing["shared_at"])
+    result = query.update(update_data).execute()
+    if not result:
+        return jsonify({"error": MSG.ANALYTICS_BRAND_STALE}), 409
     return jsonify(result[0] if isinstance(result, list) else result), 200
 
 
@@ -1133,14 +1146,27 @@ def create_brand_partnership():
     if not validate_email(contact_email):
         return jsonify({"error": MSG.BRAND_EMAIL_INVALID}), 400
     requested_data = data.get("requested_data", {})
-    if not isinstance(requested_data, dict) or len(str(requested_data)) > 10000:
+    try:
+        if not isinstance(requested_data, dict) or len(json.dumps(requested_data, allow_nan=False, ensure_ascii=False)) > 10000:
+            raise ValueError()
+    except (TypeError, ValueError):
         return jsonify({"error": MSG.BRAND_REQUESTED_DATA_INVALID}), 400
-    result = db.table("brand_partnership_requests").insert({
-        "brand_name": brand_name,
-        "contact_email": contact_email,
-        "requested_data": requested_data,
-        "status": "pending",
-    })
+    payload = {"brand_name": brand_name, "contact_email": contact_email,
+               "requested_data": requested_data, "status": "pending"}
+    intent = data.get("request_id")
+    if "request_id" in data:
+        if not validate_uuid(intent):
+            return jsonify({"error": MSG.ANALYTICS_BRAND_REQUEST_INVALID}), 400
+        payload["id"] = intent
+    try:
+        result = db.table("brand_partnership_requests").insert(payload)
+    except SupabaseError as exc:
+        if not intent or exc.details.get("code") != "23505":
+            raise
+        existing = db.table("brand_partnership_requests").select("*").eq("id", intent).single().execute()
+        if not existing or any(existing.get(key) != payload[key] for key in ("brand_name", "contact_email", "requested_data")):
+            return jsonify({"error": MSG.ANALYTICS_BRAND_CONFLICT}), 409
+        return jsonify(existing), 200
     return jsonify(result[0] if isinstance(result, list) and len(result) > 0 else result), 201
 
 

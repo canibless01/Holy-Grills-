@@ -17,6 +17,15 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_ANALYTICS_BRAND_REFRESH = "Refresh requests"
+    FE_ANALYTICS_BRAND_NAME = "Brand name"
+    FE_ANALYTICS_BRAND_CONTACT = "Contact email"
+    FE_ANALYTICS_BRAND_DATA = "Requested data (JSON)"
+    ANALYTICS_BRAND_STALE = "This brand request changed. Reload the requests before changing its status."
+    ANALYTICS_BRAND_REQUEST_INVALID = "A valid request identifier is required."
+    ANALYTICS_BRAND_CONFLICT = "This request identifier belongs to different brand details. Reopen the form and try again."
+    FE_ANALYTICS_BRAND_TITLE = "Log Brand Partnership Request"
+    FE_ANALYTICS_BRAND_JSON_INVALID = "Enter a valid JSON object for the requested data."
     FE_ANALYTICS_RANGE_INVALID = "Choose a valid start and end date, with the start no later than the end."
     FE_ANALYTICS_READ_FAILED = "Analytics could not be loaded completely. Retry before using these figures."
     FE_ANALYTICS_EXPORT_EMPTY = "Export returned no data for this date range."

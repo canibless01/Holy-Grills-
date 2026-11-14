@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
+import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
 import { watCalendarDay } from '@/lib/watCalendar';
 import ModalPortal from '@/components/ModalPortal';
 import { Card, Skeleton, EmptyState, SectionTitle, StatTile, BreakdownTiles, body } from './ui/AdminKit';
@@ -78,6 +79,11 @@ export default function AdminAnalytics() {
   const [brandModal, setBrandModal] = useState(false);
   const [brandForm, setBrandForm] = useState({ brand_name: '', contact_email: '', requested_data: {} });
   const [brandBusy, setBrandBusy] = useState(false);
+  const brandWriteLock = useRef(false);
+  const brandIntent = useCmsCreateIntent();
+  const [brandJson, setBrandJson] = useState('{}');
+  const [brandJsonError, setBrandJsonError] = useState(false);
+  const [brandStatusBusy, setBrandStatusBusy] = useState(false);
 
   const range = { from_date: fromDate, to_date: toDate };
 
@@ -134,26 +140,37 @@ export default function AdminAnalytics() {
       toast({ title: msg('FE_ADMIN_ANALYTICS_BRAND_NAME_AND_CONTACT_EMAIL_ARE', 'Brand name and contact email are required'), variant: 'destructive' });
       return;
     }
-    setBrandBusy(true);
+    if (brandWriteLock.current) return;
+    let requestedData;
     try {
-      await liveApi.analytics.createBrandPartnership(brandForm);
+      requestedData = JSON.parse(brandJson || '{}');
+      if (!requestedData || Array.isArray(requestedData) || typeof requestedData !== 'object') throw new Error();
+    } catch { setBrandJsonError(true); return; }
+    setBrandJsonError(false); brandWriteLock.current = true; setBrandBusy(true);
+    try {
+      await liveApi.analytics.createBrandPartnership(brandIntent.body({brand_name:brandForm.brand_name.trim(),contact_email:brandForm.contact_email.trim(),requested_data:requestedData}));
+      brandIntent.clear();
       toast({ title: msg('FE_ADMIN_ANALYTICS_BRAND_PARTNERSHIP_LOGGED', 'Brand partnership logged') });
       setBrandModal(false);
-      setBrandForm({ brand_name: '', contact_email: '', requested_data: {} });
+      setBrandForm({ brand_name: '', contact_email: '', requested_data: {} }); setBrandJson('{}');
       await loadBrands();
     } catch (e) {
       toast({ title: msg('FE_ADMIN_ANALYTICS_FAILED_TO_LOG_BRAND_PARTNERSHIP', 'Failed to log brand partnership'), description: e.message, variant: 'destructive' });
     }
-    setBrandBusy(false);
+    brandWriteLock.current = false; setBrandBusy(false);
   };
 
   const updateBrandStatus = async (id, status) => {
+    if (brandWriteLock.current) return;
+    const row = brandPartnerships.find(item => item.id === id);
+    if (!row) return;
+    brandWriteLock.current = true; setBrandStatusBusy(true);
     try {
-      await liveApi.analytics.updateBrandPartnership(id, { status });
+      await liveApi.analytics.updateBrandPartnership(id, { status, expected_status:row.status });
       await loadBrands();
     } catch (e) {
       toast({ title: msg('FE_ADMIN_ANALYTICS_FAILED_TO_UPDATE', 'Failed to update'), description: e.message, variant: 'destructive' });
-    }
+    } finally { brandWriteLock.current = false; setBrandStatusBusy(false); }
   };
 
   const setPreset = (days) => { setFromDate(daysAgoStr(days)); setToDate(todayStr()); };
@@ -376,9 +393,10 @@ export default function AdminAnalytics() {
           <div className="min-w-0 flex-1">
             <SectionTitle icon={Building2} title="Brand Partnerships" sub="Log and track brand data-sharing requests · GET/POST/PATCH /analytics/brand-partnerships" />
           </div>
-          <button onClick={() => setBrandModal(true)} className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-cta text-white text-xs font-bold active:scale-95 transition shrink-0 self-start">
+          <div className="flex gap-2 flex-wrap"><button disabled={brandStatusBusy || brandBusy || brandLoading} onClick={() => { void loadBrands(); }} className="rounded-full border border-border px-3 py-1.5 text-xs font-bold">{msg('FE_ANALYTICS_BRAND_REFRESH','Refresh requests')}</button>
+          <button disabled={brandStatusBusy || brandError || brandLoading} onClick={() => setBrandModal(true)} className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-cta text-white text-xs font-bold active:scale-95 transition shrink-0 self-start">
             <Plus className="w-3.5 h-3.5" /> Log request
-          </button>
+          </button></div>
         </div>
         {brandLoading ? <Skeleton className="h-16" /> : brandError ? <div role="alert"><p>{msg('FE_ANALYTICS_BRANDS_FAILED','Brand requests could not be loaded.')}</p><button onClick={() => { void loadBrands(); }} className="font-bold text-primary">{msg('FE_LOOKUP_RETRY','Retry')}</button></div> : brandPartnerships.length === 0 ? (
           <EmptyState icon={Building2} title="No brand partnership requests yet" body="Log a brand's data request for record keeping." />
@@ -394,8 +412,8 @@ export default function AdminAnalytics() {
                 </div>
                 {b.status === 'pending' ? (
                   <div className="flex gap-1 shrink-0">
-                    <button onClick={() => updateBrandStatus(b.id, 'approved')} className="px-3 py-1.5 rounded-full tone-success border border-success/30 text-xs font-bold active:scale-95 whitespace-nowrap">Approve</button>
-                    <button onClick={() => updateBrandStatus(b.id, 'rejected')} className="px-3 py-1.5 rounded-full tone-error border border-destructive/30 text-xs font-bold active:scale-95 whitespace-nowrap">Reject</button>
+                    <button disabled={brandStatusBusy || brandBusy} onClick={() => updateBrandStatus(b.id, 'approved')} className="px-3 py-1.5 rounded-full tone-success border border-success/30 text-xs font-bold active:scale-95 whitespace-nowrap">Approve</button>
+                    <button disabled={brandStatusBusy || brandBusy} onClick={() => updateBrandStatus(b.id, 'rejected')} className="px-3 py-1.5 rounded-full tone-error border border-destructive/30 text-xs font-bold active:scale-95 whitespace-nowrap">Reject</button>
                   </div>
                 ) : (
                   <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 self-start ${b.status === 'approved' ? 'bg-success/15 text-success' : 'bg-destructive/10 text-destructive'}`}>{b.status}</span>
@@ -423,26 +441,27 @@ export default function AdminAnalytics() {
 
       {brandModal && (
         <ModalPortal>
-        <div className="fixed inset-0 z-50 flex items-center justify-center hg-scrim p-4" onClick={() => setBrandModal(false)}>
-          <div className="bg-card rounded-2xl p-5 w-full max-w-md space-y-3 shadow-card" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center hg-scrim p-4" onClick={() => { if (!brandWriteLock.current) setBrandModal(false); }}>
+          <form role="dialog" aria-modal="true" aria-label={msg('FE_ANALYTICS_BRAND_TITLE','Log Brand Partnership Request')} onSubmit={e=>{e.preventDefault();void submitBrandPartnership();}} className="bg-card rounded-2xl p-5 w-full max-w-md space-y-3 shadow-card" onClick={(e) => e.stopPropagation()}><fieldset disabled={brandBusy} className="space-y-3">
             <h3 className="font-bold text-sm text-foreground">Log Brand Partnership Request</h3>
             <div>
               <label className="text-xs font-bold text-muted-foreground">Brand name</label>
-              <input value={brandForm.brand_name} onChange={(e) => setBrandForm({ ...brandForm, brand_name: e.target.value })} className="w-full mt-1 px-3 py-2 rounded-xl border border-border text-sm" placeholder="Acme Foods" />
+              <input aria-label={msg('FE_ANALYTICS_BRAND_NAME','Brand name')} required maxLength={200} value={brandForm.brand_name} onChange={(e) => setBrandForm({ ...brandForm, brand_name: e.target.value })} className="w-full mt-1 px-3 py-2 rounded-xl border border-border text-sm" placeholder="Acme Foods" />
             </div>
             <div>
               <label className="text-xs font-bold text-muted-foreground">Contact email</label>
-              <input value={brandForm.contact_email} onChange={(e) => setBrandForm({ ...brandForm, contact_email: e.target.value })} className="w-full mt-1 px-3 py-2 rounded-xl border border-border text-sm" placeholder="contact@acme.com" />
+              <input aria-label={msg('FE_ANALYTICS_BRAND_CONTACT','Contact email')} required type="email" maxLength={254} value={brandForm.contact_email} onChange={(e) => setBrandForm({ ...brandForm, contact_email: e.target.value })} className="w-full mt-1 px-3 py-2 rounded-xl border border-border text-sm" placeholder="contact@acme.com" />
             </div>
             <div>
               <label className="text-xs font-bold text-muted-foreground">Requested data (JSON)</label>
-              <textarea value={JSON.stringify(brandForm.requested_data, null, 2)} onChange={(e) => { try { setBrandForm({ ...brandForm, requested_data: JSON.parse(e.target.value || '{}') }); } catch { /* invalid JSON — keep previous */ } }} className="w-full mt-1 px-3 py-2 rounded-xl border border-border text-sm font-mono min-h-[80px]" placeholder='{"sales_summary": true}' />
+              <textarea aria-label={msg('FE_ANALYTICS_BRAND_DATA','Requested data (JSON)')} value={brandJson} onChange={e=>{setBrandJson(e.target.value);setBrandJsonError(false);}} maxLength={10000} className="w-full mt-1 px-3 py-2 rounded-xl border border-border text-sm font-mono min-h-[80px]" placeholder='{"sales_summary": true}' />
+              {brandJsonError && <p role="alert" className="text-sm text-destructive">{msg('FE_ANALYTICS_BRAND_JSON_INVALID','Enter a valid JSON object for the requested data.')}</p>}
             </div>
             <div className="flex gap-2 pt-1">
-              <button onClick={() => setBrandModal(false)} className="flex-1 py-2.5 rounded-full bg-secondary text-foreground text-sm font-bold">Cancel</button>
-              <button onClick={submitBrandPartnership} disabled={brandBusy} className="flex-1 py-2.5 rounded-full bg-gradient-cta text-white text-sm font-bold disabled:opacity-50">{brandBusy ? 'Saving…' : 'Log request'}</button>
+              <button type="button" onClick={() => setBrandModal(false)} className="flex-1 py-2.5 rounded-full bg-secondary text-foreground text-sm font-bold">Cancel</button>
+              <button type="submit" disabled={brandBusy} className="flex-1 py-2.5 rounded-full bg-gradient-cta text-white text-sm font-bold disabled:opacity-50">{brandBusy ? 'Saving…' : 'Log request'}</button>
             </div>
-          </div>
+          </fieldset></form>
         </div>
         </ModalPortal>
       )}

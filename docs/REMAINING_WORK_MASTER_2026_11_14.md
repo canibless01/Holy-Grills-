@@ -21,7 +21,7 @@ Existing chat: **A1, A2, A3, A5, A6**. Other chat: **A4, A7, O4, O5**. Coordinat
 ### Current progress within the remaining list
 
 - **A1:** shared navigation controls now have mobile/desktop role/workspace/registry/reload/back/forward evidence in `ADMIN_NAVIGATION_EVIDENCE_2026_11_14.md`; the per-page action reconciliation remains.
-- **A2:** failed prize feeds no longer masquerade as empty queues; native retry/post-handover refresh recovery passes in `ADMIN_PRIZE_READ_RECOVERY_2026_11_14.md`. Analytics headline failures, date races, Lagos defaults, independent brand reads and CSV failure recovery now have evidence in `ADMIN_ANALYTICS_RECOVERY_2026_11_14.md`. Brand write/field exceptions and other reporting/leaderboard coverage remain as listed.
+- **A2:** failed prize feeds no longer masquerade as empty queues; native retry/post-handover refresh recovery passes in `ADMIN_PRIZE_READ_RECOVERY_2026_11_14.md`. Analytics headline failures, date races, Lagos defaults, independent brand reads and CSV failure recovery now have evidence in `ADMIN_ANALYTICS_RECOVERY_2026_11_14.md`. Brand write/field/status exceptions are now closed for the recorded cases in `ADMIN_BRAND_REQUEST_CONTROLS_2026_11_14.md`. Other reporting/leaderboard coverage remains as listed.
 
 ### Next execution order
 
