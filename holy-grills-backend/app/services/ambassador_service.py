@@ -107,9 +107,13 @@ def _iso(dt: datetime) -> str:
 def assert_campus_access(ambassador_row: dict | None):
     """403 when a campus-scoped staff member touches another campus's ambassador."""
     actor_role = getattr(g, "user_role", None)
-    if actor_role == "super_admin" or not ambassador_row:
-        return
-    if ambassador_row.get("campus_id") != getattr(g, "campus_id", None):
+    if not ambassador_row:return
+    if actor_role=='super_admin':
+        from app.middleware.auth import resolve_scoped_campus_id
+        scope=resolve_scoped_campus_id()
+        if not scope:return
+    else:scope=getattr(g,'campus_id',None)
+    if not scope or ambassador_row.get('campus_id')!=scope:
         raise AmbassadorError(MSG.AMBASSADOR_CAMPUS_FORBIDDEN, status=403)
 
 
@@ -220,7 +224,12 @@ def tag_ambassador(actor_id: str, target_profile: dict) -> dict:
             "profile_id", target_profile["id"]).update(payload).execute()
         row = row[0] if isinstance(row, list) else row
     else:
-        row = db.table(AMBASSADOR_TABLE).insert(payload).execute()
+        try:row=db.table(AMBASSADOR_TABLE).insert(payload).execute()
+        except SupabaseError as exc:
+            if str((exc.details or {}).get('code'))!='23505':raise
+            row=db.table(AMBASSADOR_TABLE).select('*').eq('profile_id',target_profile['id']).single().execute()
+            if row and row.get('status')=='active':return {**row,'unchanged':True}
+            raise
         row = row[0] if isinstance(row, list) else row
     audit(actor_id, "ambassador_tagged", target_profile["id"],
           after={"profile_id": target_profile["id"]},
@@ -230,7 +239,10 @@ def tag_ambassador(actor_id: str, target_profile: dict) -> dict:
 
 def untag_ambassador(actor_id: str, ambassador_id: str) -> dict:
     db = get_db()
-    row = _active_ambassador(db, ambassador_id)
+    row=db.table(AMBASSADOR_TABLE).select('*').eq('profile_id',ambassador_id).single().execute()
+    if not row:raise AmbassadorError(MSG.AMBASSADOR_NOT_FOUND,status=404)
+    assert_campus_access(row)
+    if row.get('status')=='inactive':return {**row,'unchanged':True}
     updated = db.table(AMBASSADOR_TABLE).eq("profile_id", ambassador_id).update({
         "status": "inactive", "untagged_at": datetime.now(timezone.utc).isoformat(),
     }).execute()
@@ -541,9 +553,12 @@ def list_monthly_reviews(db, month: str, campus_id: str | None,
     ambassadors = q.execute() or []
     if not is_super:
         ambassadors = [a for a in ambassadors if a.get("campus_id") == campus_id]
+    profiles = _profile_basics(db, [amb["profile_id"] for amb in ambassadors])
     reviews = []
     for amb in ambassadors:
-        reviews.append(persist_review_metrics(db, amb["profile_id"], month))
+        review = persist_review_metrics(db, amb["profile_id"], month)
+        review["profile"] = profiles.get(amb["profile_id"], {})
+        reviews.append(review)
     return reviews
 
 
@@ -655,9 +670,10 @@ def list_promo_messages(db, month: str, campus_id: str | None, is_super: bool) -
     return rows
 
 
-def promo_assignments(db, message_id: str) -> list[dict]:
-    rows = db.table("ambassador_promo_assignments").select("*").eq(
-        "message_id", message_id).execute() or []
+def promo_assignments(db, message_id: str, campus_id=None) -> list[dict]:
+    query = db.table("ambassador_promo_assignments").select("*").eq("message_id", message_id)
+    if campus_id:query=query.eq("campus_id",campus_id)
+    rows=query.execute() or []
     ids = [r["ambassador_id"] for r in rows]
     profiles = _profile_basics(db, ids)
     for r in rows:

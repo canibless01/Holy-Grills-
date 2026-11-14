@@ -1354,3 +1354,47 @@ class ProgrammeGrantRecoveryTests(AmbassadorTestBase):
             g.user_id,g.user_role,g.campus_id=ADMIN_ID,'admin',CAMPUS_A
             body,code=inspect.unwrap(routes.staff_create_grant)()
             self.assertEqual(code,409);self.assertIn('already been rewarded',body.json['error'])
+
+class AdminPageContinuationTests(AmbassadorTestBase):
+    def test_inactive_untag_retry_preserves_original_audit(self):
+        self.ctx();self.seed_ambassador()
+        svc.untag_ambassador(ADMIN_ID,AMB)
+        count=len(self.db.rows('admin_audit_logs'))
+        self.assertTrue(svc.untag_ambassador(ADMIN_ID,AMB)['unchanged'])
+        self.assertEqual(count,len(self.db.rows('admin_audit_logs')))
+
+    def test_review_list_supplies_scoped_readable_identity(self):
+        self.ctx();self.seed_ambassador();self.seed_ambassador(AMB2,CAMPUS_B,'OTHER')
+        with patch.object(svc,'persist_review_metrics',side_effect=lambda db,uid,month:{'ambassador_id':uid,'month':month}):
+            rows=svc.list_monthly_reviews(self.db,MONTH,CAMPUS_A,False)
+        self.assertEqual([r['ambassador_id'] for r in rows],[AMB])
+        self.assertEqual(rows[0]['profile']['full_name'],AMB[:8])
+
+    def test_milestone_create_binds_actor_scope_and_replay_status(self):
+        self.ctx()
+        payload={'request_id':AMB,'metric':'orders','threshold':3,'reward_type':'hp','reward_amount':50,'campus_id':CAMPUS_B,'created_by':AMB2}
+        self.db.rpcs['hg_write_ambassador_milestone']=lambda args:{'milestone':{'id':args['p_id']},'replayed':True}
+        with self.app.test_request_context('/',method='POST',json=payload):
+            with patch.object(routes,'_staff_scope',return_value=CAMPUS_A):
+                response,status=inspect.unwrap(routes.staff_create_milestone)()
+        self.assertEqual(status,200)
+        args=self.db.rpc_calls[-1][1]
+        self.assertEqual(args['p_actor'],ADMIN_ID);self.assertEqual(args['p_scope'],CAMPUS_A)
+        self.assertNotIn('created_by',args['p_values']);self.assertEqual(args['p_request'],AMB)
+
+    def test_super_selected_scope_rejects_foreign_milestone_edit(self):
+        self.ctx(role='super_admin')
+        self.db.seed('ambassador_milestones',[{'id':AMB,'campus_id':CAMPUS_B}])
+        with self.app.test_request_context('/',method='PATCH',json={'is_active':False}):
+            with patch.object(routes,'_staff_scope',return_value=CAMPUS_A):
+                _,status=inspect.unwrap(routes.staff_update_milestone)(AMB)
+        self.assertEqual(status,404);self.assertFalse(self.db.rpc_calls)
+
+    def test_reward_policy_rejects_grant_incompatible_amounts(self):
+        base={'metric':'orders','threshold':3,'reward_type':'meal_discount','reward_amount':50}
+        for change in ({'reward_amount':1000001},{'reward_amount':50.001},{'threshold':2147483648}):
+            with self.subTest(change=change),self.assertRaises(ValueError):routes._milestone_values({**base,**change})
+
+    def test_promo_assignments_scope_is_applied_before_fetch(self):
+        self.db.seed('ambassador_promo_assignments',[{'id':AMB,'message_id':ADMIN_ID,'ambassador_id':AMB,'campus_id':CAMPUS_A},{'id':AMB2,'message_id':ADMIN_ID,'ambassador_id':AMB2,'campus_id':CAMPUS_B}])
+        self.assertEqual([r['id'] for r in svc.promo_assignments(self.db,ADMIN_ID,CAMPUS_A)],[AMB])

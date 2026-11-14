@@ -74,6 +74,7 @@ function PromoMessageRow({ message, open, onToggle }: { message: any; open: bool
   const [busy, setBusy] = useState(false);
   const [sharingId, setSharingId] = useState<string | null>(null);
   const loaded = useRef(false);
+  const statusLock=useRef(false);
   const [assignmentError, setAssignmentError] = useState(false);
   const [assignmentLoading, setAssignmentLoading] = useState(false);
   const [retry, setRetry] = useState(0);
@@ -91,13 +92,13 @@ function PromoMessageRow({ message, open, onToggle }: { message: any; open: bool
   }, [open, message.id, retry]);
 
   const setStatus = async (assignmentId: string, status: string) => {
-    setBusy(true);
+    if(statusLock.current)return;statusLock.current=true;setBusy(true);
     try {
       const updated = await liveApi.ambassadors.setAssignmentStatus(assignmentId, status);
       setAssignments((rows) => rows.map((r) => (r.id === assignmentId ? { ...r, ...updated } : r)));
     } catch (e) {
       toast({ title: e.message, variant: 'destructive' });
-    } finally { setBusy(false); }
+    } finally { statusLock.current=false;setBusy(false); }
   };
 
   const share = async (a: any) => {
@@ -178,7 +179,7 @@ function CopyCaption({ caption }: { caption: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
-      onClick={() => { navigator.clipboard.writeText(caption); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+      onClick={async()=>{try{await navigator.clipboard.writeText(caption);setCopied(true);setTimeout(()=>setCopied(false),1500);}catch{toast({title:msg('FE_AMBASSADOR_CLIPBOARD_FAILED','Copy failed. Select and copy the link or caption instead.'),variant:'destructive'});}}}
       className="flex items-center gap-1 px-3 py-1.5 rounded-full border border-border text-[11px] font-bold">
       {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
       {msg('FE_ADMIN_AMBASSADOR_PROMO_COPY_CAPTION', 'Copy caption')}
@@ -190,13 +191,16 @@ function CreatePromoModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
   const [ambassadors, setAmbassadors] = useState<any[]>([]);
   const [form, setForm] = useState({ image_url: '', caption: '', target_all: true, ambassador_ids: [] as string[] });
   const [busy, setBusy] = useState(false);
+  const [readError,setReadError]=useState(false);const [readRetry,setReadRetry]=useState(0);
   const intent = useRef<{ signature: string; id: string } | null>(null);
   const busyRef = useRef(false);
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
 
   useEffect(() => {
-    liveApi.ambassadors.listStaff().then(setAmbassadors).catch(() => setAmbassadors([]));
-  }, []);
+    let active=true;setReadError(false);
+    liveApi.ambassadors.listStaff().then(rows=>{if(active)setAmbassadors(rows);}).catch(()=>{if(active)setReadError(true);});
+    return()=>{active=false;};
+  }, [readRetry]);
 
   const toggleAmbassador = (id: string) => set('ambassador_ids',
     form.ambassador_ids.includes(id) ? form.ambassador_ids.filter((x) => x !== id) : [...form.ambassador_ids, id]);
@@ -224,9 +228,10 @@ function CreatePromoModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
   };
 
   return (
-    <Modal open onClose={onClose} title={msg('FE_ADMIN_AMBASSADOR_PROMO_NEW', 'New promotional message')}>
-      <div className="space-y-3">
-        <Field label={msg('FE_ADMIN_AMBASSADOR_PROMO_IMAGE', 'Promotional graphic')}>
+    <Modal open onClose={()=>{if(!busy)onClose();}} title={msg('FE_ADMIN_AMBASSADOR_PROMO_NEW', 'New promotional message')}>
+      <fieldset disabled={busy} className="space-y-3">
+        {readError&&<p role="alert" className="text-sm text-destructive">{msg('FE_AMBASSADOR_WORKSPACE_READ_FAILED','Programme data could not be loaded.')} <button onClick={()=>setReadRetry(v=>v+1)} className="underline">{msg('FE_LOOKUP_RETRY','Retry')}</button></p>}
+        <Field label={msg('FE_ADMIN_AMBASSADOR_PROMO_IMAGE' , 'Promotional graphic')}>
           <ImageUploader value={form.image_url} onChange={(url) => set('image_url', url)} folder="ambassador-promo" />
         </Field>
         <Field label={msg('FE_ADMIN_AMBASSADOR_PROMO_CAPTION', "Caption — use {{link}} for the ambassador's tracking link")}>
@@ -250,11 +255,11 @@ function CreatePromoModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
             })}
           </div>
         )}
-        <button disabled={busy || !form.caption.trim()} onClick={save}
+        <button disabled={busy || readError || !form.caption.trim()} onClick={save}
           className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm disabled:opacity-50">
           {busy ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : msg('FE_ADMIN_AMBASSADOR_PROMO_GENERATE', 'Generate personalized messages')}
         </button>
-      </div>
+      </fieldset>
     </Modal>
   );
 }

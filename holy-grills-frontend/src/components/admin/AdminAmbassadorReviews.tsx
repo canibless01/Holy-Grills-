@@ -21,9 +21,10 @@ export default function AdminAmbassadorReviews() {
   const monthRef = useRef(month);
   monthRef.current = month;
 
+  const actionLock=useRef(false);const [actionBusy,setActionBusy]=useState(false);
   const load = useCallback(async () => {
     const version = ++loadVersion.current;
-    setLoading(true); setLoadError(false);
+    setLoading(true); setLoadError(false);setReviews([]);
     try { const rows = await liveApi.ambassadors.listReviews(month); if (version === loadVersion.current) setReviews(rows); }
     catch (e) { if (version === loadVersion.current) { setLoadError(true); toast({ title: e.message, variant: 'destructive' }); } }
     finally { if (version === loadVersion.current) setLoading(false); }
@@ -31,6 +32,7 @@ export default function AdminAmbassadorReviews() {
   useEffect(() => { setGrantFor(null); void load(); return () => { loadVersion.current += 1; }; }, [load]);
 
   const recommend = async (review: any, recommendation: 'recommend' | 'do_not_recommend') => {
+    if(actionLock.current)return;
     const note = window.prompt(
       recommendation === 'recommend'
         ? 'Recommendation note (optional): why should they receive the monthly benefit?'
@@ -38,23 +40,28 @@ export default function AdminAmbassadorReviews() {
       review.recommendation_note || '',
     );
     if (note === null) return;
+    actionLock.current=true;setActionBusy(true);
     try {
       const updated = await liveApi.ambassadors.recommend(review.ambassador_id, { month, recommendation, note });
       if (month !== monthRef.current) return;
       setReviews(rows => rows.map(row => row.ambassador_id === review.ambassador_id ? { ...row, ...updated } : row));
       toast({ title: 'Recommendation saved' });
     } catch (e) { toast({ title: e.message, variant: 'destructive' }); }
+    finally{actionLock.current=false;setActionBusy(false);}
   };
 
   const decide = async (review: any, decision: 'approved' | 'rejected') => {
+    if(actionLock.current)return;
     const note = window.prompt(`Decision note for ${decision} (optional):`, review.decision_note || '');
     if (note === null) return;
+    actionLock.current=true;setActionBusy(true);
     try {
       const updated = await liveApi.ambassadors.decide(review.ambassador_id, { month, decision, note });
       if (month !== monthRef.current) return;
       setReviews(rows => rows.map(row => row.ambassador_id === review.ambassador_id ? { ...row, ...updated } : row));
       toast({ title: `Marked ${decision}` });
     } catch (e) { toast({ title: e.message, variant: 'destructive' }); }
+    finally{actionLock.current=false;setActionBusy(false);}
   };
 
   if (loading) return <StaffPanelSkeleton />;
@@ -66,7 +73,7 @@ export default function AdminAmbassadorReviews() {
       </p>}
       <div className="flex items-center gap-3 flex-wrap">
         <Field label={msg('FE_ADMIN_AMBASSADOR_MONTH', 'Programme month')}>
-          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)}
+          <input disabled={actionBusy} type="month" value={month} onChange={(e) => setMonth(e.target.value)}
             className="mt-1 p-2.5 rounded-xl border border-border text-sm" />
         </Field>
         <span className="text-xs text-muted-foreground self-end pb-2">{reviews.length} ambassador{reviews.length === 1 ? '' : 's'}</span>
@@ -78,7 +85,7 @@ export default function AdminAmbassadorReviews() {
 
       {reviews.map((r) => (
         <ReviewCard key={`${r.ambassador_id}-${r.month}`} review={r}
-          isFinancialAdmin={isFinancialAdmin}
+          isFinancialAdmin={isFinancialAdmin} disabled={actionBusy||loadError}
           onRecommend={recommend} onDecide={decide}
           onGrant={() => setGrantFor(r)} onChanged={load} />
       ))}
@@ -92,20 +99,22 @@ export default function AdminAmbassadorReviews() {
   );
 }
 
-function ReviewCard({ review, isFinancialAdmin, onRecommend, onDecide, onGrant, onChanged }: any) {
+function ReviewCard({ review, isFinancialAdmin, onRecommend, onDecide, onGrant, onChanged, disabled=false }: any) {
   const [open, setOpen] = useState(false);
   const [grants, setGrants] = useState<any[]>([]);
-  useEffect(() => {
-    if (!open) return;
-    liveApi.ambassadors.listGrants(review.ambassador_id).then(setGrants).catch(() => undefined);
-  }, [open, review.ambassador_id]);
+  const [grantError,setGrantError]=useState(false);const [grantLoading,setGrantLoading]=useState(false);const [grantRetry,setGrantRetry]=useState(0);
+  useEffect(()=>{
+    if(!open)return;let active=true;setGrants([]);setGrantError(false);setGrantLoading(true);
+    liveApi.ambassadors.listGrants(review.ambassador_id).then(rows=>{if(active)setGrants(rows);}).catch(()=>{if(active)setGrantError(true);}).finally(()=>{if(active)setGrantLoading(false);});
+    return()=>{active=false;};
+  },[open,review.ambassador_id,grantRetry]);
   const pct = (v: number) => `${v}%`;
   return (
     <Card className="p-4 space-y-3">
       <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between gap-2 text-left">
         <div>
           <div className="text-sm font-bold flex items-center gap-2">
-            {review.ambassador_id.slice(0, 8)}…
+            {review.profile?.full_name || review.profile?.nickname || `${review.ambassador_id.slice(0, 8)}…`}
             {review.decision === 'approved' && <Pill tone="green">approved</Pill>}
             {review.decision === 'rejected' && <Pill tone="red">rejected</Pill>}
             {review.decision === 'pending' && <Pill tone="outline">pending</Pill>}
@@ -144,25 +153,25 @@ function ReviewCard({ review, isFinancialAdmin, onRecommend, onDecide, onGrant, 
       )}
 
       <div className="flex items-center gap-2 flex-wrap">
-        <button onClick={() => onRecommend(review, 'recommend')}
+        <button disabled={disabled} onClick={() => onRecommend(review, 'recommend')}
           className="flex items-center gap-1 px-3 py-1.5 rounded-full border border-success/40 text-success text-[11px] font-bold">
           <Check className="w-3.5 h-3.5" />{msg('FE_ADMIN_AMBASSADOR_RECOMMEND', 'Recommend benefit')}
         </button>
-        <button onClick={() => onRecommend(review, 'do_not_recommend')}
+        <button disabled={disabled} onClick={() => onRecommend(review, 'do_not_recommend')}
           className="flex items-center gap-1 px-3 py-1.5 rounded-full border border-border text-muted-foreground text-[11px] font-bold">
           <X className="w-3.5 h-3.5" />{msg('FE_ADMIN_AMBASSADOR_DO_NOT_RECOMMEND', 'Do not recommend')}
         </button>
         {isFinancialAdmin && (
           <>
-            <button onClick={() => onDecide(review, 'approved')}
+            <button disabled={disabled} onClick={() => onDecide(review, 'approved')}
               className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-success text-white text-[11px] font-bold">
               <Check className="w-3.5 h-3.5" />{msg('FE_ADMIN_AMBASSADOR_APPROVE_REVIEW', 'Approve review')}
             </button>
-            <button onClick={() => onDecide(review, 'rejected')}
+            <button disabled={disabled} onClick={() => onDecide(review, 'rejected')}
               className="px-3 py-1.5 rounded-full border border-destructive/40 text-destructive text-[11px] font-bold">
               {msg('FE_ADMIN_AMBASSADOR_REJECT', 'Reject')}
             </button>
-            <button onClick={onGrant}
+            <button disabled={disabled} onClick={onGrant}
               className="flex items-center gap-1 ml-auto px-3 py-1.5 rounded-full bg-primary text-white text-[11px] font-bold">
               <Gift className="w-3.5 h-3.5" />Issue reward
             </button>
@@ -183,12 +192,14 @@ function ReviewCard({ review, isFinancialAdmin, onRecommend, onDecide, onGrant, 
             <div className="text-[11px]"><span className="font-bold">Decision note: </span><span className="text-muted-foreground">{review.decision_note}</span></div>
           )}
           <div className="text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground">Grants</div>
-          {grants.length === 0 ? <div className="text-[11px] text-muted-foreground">No grants issued for this programme yet.</div> : grants.map((g) => (
+          {grantLoading&&<p role="status">{msg('FE_LOOKUP_LOADING','Loading…')}</p>}
+          {grantError&&<p role="alert" className="text-sm text-destructive">{msg('FE_AMBASSADOR_WORKSPACE_READ_FAILED','Programme data could not be loaded.')} <button onClick={()=>setGrantRetry(v=>v+1)} className="underline">{msg('FE_LOOKUP_RETRY','Retry')}</button></p>}
+          {!grantLoading&&!grantError&&(grants.length === 0 ? <div className="text-[11px] text-muted-foreground">No grants issued for this programme yet.</div> : grants.map((g) => (
             <div key={g.id} className="text-[11px] flex justify-between gap-2">
               <span className="font-bold">{g.reward_category.replace('_', ' ')} · {g.amount}</span>
               <span className="text-muted-foreground">{g.month} · {g.status}{g.expires_at ? ` · exp ${String(g.expires_at).slice(0, 10)}` : ''}</span>
             </div>
-          ))}
+          )))}
           <button onClick={onChanged} className="text-[10px] text-primary underline">refresh</button>
         </div>
       )}

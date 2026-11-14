@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
 import { Plus, Trash2, Search, Copy, Check, Users, Trophy, Loader2 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
@@ -26,6 +27,7 @@ export default function AdminAmbassadors() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [tagOpen, setTagOpen] = useState(false);
+  const untagLock=useRef(false);const [untagBusy,setUntagBusy]=useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setLoadError(false);
@@ -40,14 +42,16 @@ export default function AdminAmbassadors() {
   useEffect(() => { load(); }, [load]);
 
   const untag = async (ambassadorId: string, name: string) => {
+    if(untagLock.current)return;
     if (!window.confirm(msg('FE_ADMIN_AMBASSADOR_UNTAG_CONFIRM', 'Remove the Campus Ambassador tag? Historical attribution records are retained.'))) return;
+    untagLock.current=true;setUntagBusy(true);
     try {
       await liveApi.ambassadors.untag(ambassadorId);
       toast({ title: `${name} removed from the programme` });
       load();
     } catch (e) {
       toast({ title: e.message, variant: 'destructive' });
-    }
+    }finally{untagLock.current=false;setUntagBusy(false);}
   };
 
   if (loading) return <StaffPanelSkeleton />;
@@ -80,7 +84,7 @@ export default function AdminAmbassadors() {
           {rows.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">{msg('FE_ADMIN_AMBASSADOR_NONE', 'No ambassadors yet. Tag a student from User Management or search above.')}</p>
           ) : rows.map((r) => (
-            <AmbassadorRow key={r.ambassador.profile_id} row={r} canUntag={isFinancialAdmin} onUntag={untag} />
+            <AmbassadorRow key={r.ambassador.profile_id} row={r} canUntag={isFinancialAdmin} disabled={untagBusy} onUntag={untag} />
           ))}
         </Card>
       ) : (
@@ -97,7 +101,7 @@ function CopyLink({ link }: { link: string }) {
   if (!link) return <span className="text-xs text-muted-foreground">—</span>;
   return (
     <button
-      onClick={() => { navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+      onClick={async()=>{try{await navigator.clipboard.writeText(link);setCopied(true);setTimeout(()=>setCopied(false),1500);}catch{toast({title:msg('FE_AMBASSADOR_CLIPBOARD_FAILED','Copy failed. Select and copy the link or caption instead.'),variant:'destructive'});}}}
       className="inline-flex items-center gap-1 text-xs text-primary font-bold hover:underline">
       {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
       {copied ? msg('FE_AMBASSADOR_LINK_COPIED', 'Tracking link copied') : msg('FE_AMBASSADOR_COPY_LINK', 'Copy link')}
@@ -105,7 +109,7 @@ function CopyLink({ link }: { link: string }) {
   );
 }
 
-function AmbassadorRow({ row, canUntag, onUntag }: { row: any; canUntag: boolean; onUntag: (id: string, name: string) => void }) {
+function AmbassadorRow({ row, canUntag, onUntag, disabled=false }: { row: any; canUntag: boolean; disabled?:boolean; onUntag: (id: string, name: string) => void }) {
   const name = row.profile?.full_name || row.profile?.nickname || 'Ambassador';
   const m = row.month || {};
   return (
@@ -127,7 +131,7 @@ function AmbassadorRow({ row, canUntag, onUntag }: { row: any; canUntag: boolean
         <Stat label={msg('FE_ADMIN_AMBASSADOR_TARGET', 'Share target')} value={`${m.share_target_progress ?? 0}%`} sub={`${m.monthly_share_target ?? 0}/mo`} />
       </div>
       {canUntag && (
-        <button onClick={() => onUntag(row.ambassador.profile_id, name)} title={msg('FE_ADMIN_AMBASSADOR_UNTAG', 'Remove Ambassador tag')}
+        <button disabled={disabled} onClick={() => onUntag(row.ambassador.profile_id, name)} title={msg('FE_ADMIN_AMBASSADOR_UNTAG', 'Remove Ambassador tag')}
           className="p-2 rounded-lg hover:bg-destructive/10">
           <Trash2 className="w-4 h-4 text-destructive" />
         </button>
@@ -152,21 +156,17 @@ function TagAmbassadorModal({ onClose, onTagged }: { onClose: () => void; onTagg
   const [busy, setBusy] = useState(false);
   const [searching, setSearching] = useState(false);
 
-  const search = async (term: string) => {
-    setQuery(term);
-    if (term.trim().length < 2) { setResults([]); return; }
+  const [searchError,setSearchError]=useState(false);const [retry,setRetry]=useState(0);const searchVersion=useRef(0);const tagLock=useRef(false);
+  useEffect(()=>{
+    const current=++searchVersion.current;setResults([]);setSearchError(false);setSearching(false);
+    if(query.trim().length<2)return;
     setSearching(true);
-    try {
-      setResults((await liveApi.admin.getUsers({ q: term.trim(), limit: 8 })).slice(0, 8));
-    } catch {
-      setResults([]);
-    } finally {
-      setSearching(false);
-    }
-  };
+    const timer=setTimeout(()=>{liveApi.admin.getUsers({q:query.trim(),limit:8}).then(rows=>{if(current===searchVersion.current)setResults((rows||[]).filter(row=>row.is_active!==false).slice(0,8));}).catch(()=>{if(current===searchVersion.current)setSearchError(true);}).finally(()=>{if(current===searchVersion.current)setSearching(false);});},250);
+    return()=>{clearTimeout(timer);searchVersion.current++;};
+  },[query,retry]);
 
   const tag = async (userId: string) => {
-    setBusy(true);
+    if(tagLock.current)return;tagLock.current=true;setBusy(true);
     try {
       await liveApi.ambassadors.tag(userId);
       toast({ title: msg('FE_ADMIN_AMBASSADOR_TAG', 'Add Ambassador tag') + ' ✓' });
@@ -175,19 +175,20 @@ function TagAmbassadorModal({ onClose, onTagged }: { onClose: () => void; onTagg
     } catch (e) {
       toast({ title: e.message, variant: 'destructive' });
     } finally {
-      setBusy(false);
+      tagLock.current=false;setBusy(false);
     }
   };
 
   return (
-    <Modal open onClose={onClose} title={msg('FE_ADMIN_AMBASSADOR_TAG', 'Add Ambassador tag')}>
+    <Modal open onClose={()=>{if(!busy)onClose();}} title={msg('FE_ADMIN_AMBASSADOR_TAG', 'Add Ambassador tag')}>
       <div className="space-y-3">
         <Field label={msg('FE_ADMIN_AMBASSADOR_SEARCH_PLACEHOLDER', 'Search a student by name, email or referral code')}>
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <TextInput value={query} onChange={(e) => search(e.target.value)} placeholder="Name, email or code" className="pl-9" />
+            <TextInput value={query} disabled={busy} onChange={(e) => setQuery(e.target.value)} placeholder="Name, email or code" className="pl-9" />
           </div>
         </Field>
+        {searchError&&<p role="alert" className="text-sm text-destructive">{msg('FE_AMBASSADOR_WORKSPACE_READ_FAILED','Programme data could not be loaded.')} <button onClick={()=>setRetry(v=>v+1)} className="underline">{msg('FE_LOOKUP_RETRY','Retry')}</button></p>}
         {searching && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
         <div className="space-y-2 max-h-72 overflow-y-auto">
           {results.map((u) => (
@@ -212,6 +213,7 @@ function TagAmbassadorModal({ onClose, onTagged }: { onClose: () => void; onTagg
 function MilestonesTab({ readOnly }: { readOnly: boolean }) {
   const [items, setItems] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
+  const [editing,setEditing]=useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const load = useCallback(async () => {
@@ -230,7 +232,7 @@ function MilestonesTab({ readOnly }: { readOnly: boolean }) {
       <div className="flex justify-between items-center">
         <p className="text-xs text-muted-foreground">{items.length} configured milestone{items.length === 1 ? '' : 's'}</p>
         {!readOnly && (
-          <button onClick={() => setOpen(true)} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold">
+          <button disabled={loadError} onClick={() => {setEditing(null);setOpen(true);}} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold">
             <Plus className="w-4 h-4" />{msg('FE_ADMIN_AMBASSADOR_MILESTONE_NEW', 'New milestone')}
           </button>
         )}
@@ -248,39 +250,44 @@ function MilestonesTab({ readOnly }: { readOnly: boolean }) {
               {m.auto_issue ? ` · ${msg('FE_ADMIN_AMBASSADOR_AUTO_ISSUE', 'Issue reward automatically when reached')}` : ''}
             </div>
           </div>
+          {!readOnly&&<button type="button" disabled={loadError} onClick={()=>{setEditing(m);setOpen(true);}} className="rounded-full border border-border px-3 py-2 text-xs font-bold">{msg('FE_AMBASSADOR_EDIT_MILESTONE','Edit milestone')}</button>}
         </div>
       ))}
-      {open && <MilestoneModal onClose={() => setOpen(false)} onSaved={load} />}
+      {open && <MilestoneModal initial={editing} onClose={() => setOpen(false)} onSaved={load} />}
     </Card>
   );
 }
 
-function MilestoneModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+function MilestoneModal({ onClose, onSaved,initial }: { onClose: () => void; onSaved: () => void;initial?:any }) {
+  const {user}=useHolyGrill();const intent=useCmsCreateIntent();const lock=useRef(false);
   const [form, setForm] = useState({
     metric: 'orders', threshold: 3, reward_type: 'meal_discount', reward_amount: 3000,
-    reward_uses: 1, validity_days: 14, auto_issue: false, global: true,
+    reward_uses: 1, validity_days: 14, auto_issue: false, global: user?.role==='super_admin',is_active:true,...(initial||{}),
   });
   const [busy, setBusy] = useState(false);
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
   const save = async () => {
-    setBusy(true);
+    if(lock.current)return;lock.current=true;setBusy(true);
     try {
-      await liveApi.ambassadors.createMilestone(form);
+      const {metric,threshold,reward_type,reward_amount,reward_uses,validity_days,auto_issue,is_active}=form;
+      const payload=intent.body({metric,threshold,reward_type,reward_amount,reward_uses,validity_days,auto_issue,is_active,...(initial?{expected_updated_at:initial.updated_at}:{global:form.global})});
+      if(initial)await liveApi.ambassadors.updateMilestone(initial.id,payload);else await liveApi.ambassadors.createMilestone(payload);
+      intent.clear();
       toast({ title: msg('FE_ADMIN_AMBASSADOR_MILESTONE_NEW', 'New milestone') + ' ✓' });
       onSaved(); onClose();
     } catch (e) {
       toast({ title: e.message, variant: 'destructive' });
-    } finally { setBusy(false); }
+    } finally { lock.current=false;setBusy(false); }
   };
   return (
-    <Modal open onClose={onClose} title={msg('FE_ADMIN_AMBASSADOR_MILESTONE_NEW', 'New milestone')}>
-      <div className="space-y-3">
+    <Modal open onClose={()=>{if(!busy)onClose();}} title={initial?msg('FE_AMBASSADOR_EDIT_MILESTONE','Edit milestone'):msg('FE_ADMIN_AMBASSADOR_MILESTONE_NEW','New milestone')}>
+      <form onSubmit={e=>{e.preventDefault();void save();}}><fieldset disabled={busy} className="space-y-3">
         <Field label="Metric">
           <select value={form.metric} onChange={(e) => set('metric', e.target.value)} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">
             {METRICS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
         </Field>
-        <Field label="Threshold"><TextInput type="number" min={1} value={form.threshold} onChange={(e) => set('threshold', Number(e.target.value))} /></Field>
+        <Field label="Threshold"><TextInput required type="number" min={1} value={form.threshold} onChange={(e) => set('threshold', Number(e.target.value))} /></Field>
         <Field label={msg('FE_ADMIN_AMBASSADOR_GRANT_TYPE', 'Reward type')}>
           <select value={form.reward_type} onChange={(e) => set('reward_type', e.target.value)} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">
             {REWARD_TYPES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
@@ -288,26 +295,27 @@ function MilestoneModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label={msg('FE_ADMIN_AMBASSADOR_GRANT_AMOUNT', 'Amount / quantity')}>
-            <TextInput type="number" min={1} value={form.reward_amount} onChange={(e) => set('reward_amount', Number(e.target.value))} />
+            <TextInput required type="number" step={form.reward_type==='meal_discount'?0.01:1} min={form.reward_type==='meal_discount'?0.01:1} max={form.reward_type==='free_side'?20:1000000} value={form.reward_amount} onChange={(e) => set('reward_amount', Number(e.target.value))} />
           </Field>
           <Field label={msg('FE_ADMIN_AMBASSADOR_GRANT_USES', 'Number of uses')}>
-            <TextInput type="number" min={1} value={form.reward_uses} onChange={(e) => set('reward_uses', Number(e.target.value))} />
+            <TextInput required type="number" min={1} max={100} value={form.reward_uses} onChange={(e) => set('reward_uses', Number(e.target.value))} />
           </Field>
         </div>
         <Field label={msg('FE_ADMIN_AMBASSADOR_GRANT_VALIDITY', 'Validity (days)')}>
-          <TextInput type="number" min={1} value={form.validity_days} onChange={(e) => set('validity_days', Number(e.target.value))} />
+          <TextInput required type="number" min={1} max={365} value={form.validity_days} onChange={(e) => set('validity_days', Number(e.target.value))} />
         </Field>
-        <label className="flex items-center gap-2 text-xs font-bold">
+        {!initial&&user?.role==='super_admin'&&<label className="flex items-center gap-2 text-xs font-bold">
           <input type="checkbox" checked={form.global} onChange={(e) => set('global', e.target.checked)} /> Global (all campuses)
-        </label>
+        </label>}
         <label className="flex items-center gap-2 text-xs font-bold">
           <input type="checkbox" checked={form.auto_issue} onChange={(e) => set('auto_issue', e.target.checked)} />
           {msg('FE_ADMIN_AMBASSADOR_AUTO_ISSUE', 'Issue reward automatically when reached')}
         </label>
-        <button disabled={busy} onClick={save} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm disabled:opacity-50">
+        <label className="flex items-center gap-2 text-xs font-bold"><input type="checkbox" checked={form.is_active} onChange={e=>set('is_active',e.target.checked)}/>{msg('FE_AMBASSADOR_MILESTONE_ACTIVE','Milestone active')}</label>
+        <button type="submit" disabled={busy} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm disabled:opacity-50">
           {busy ? 'Saving…' : 'Save milestone'}
         </button>
-      </div>
+      </fieldset></form>
     </Modal>
   );
 }

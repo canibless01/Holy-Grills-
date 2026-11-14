@@ -87,3 +87,7 @@ The historical tables above are not a current backlog: later closure records in 
 ### Campaigns & Blasts — 13 November 2026
 
 [Recorded page evidence](ADMIN_CAMPAIGNS_PAGE_2026_11_13.md) closes the native composer/history/analytics/test/sync/recovery batch. Fixed cross-campus analytics and subscriber-sync access, dropped tracking settings, WAT scheduling, stale reads and duplicate submissions; verified role/RLS/provider-review boundaries. Full backend 1,771, native mobile/desktop, typecheck/lint/build and live rollback matrices pass. Ambassador roster/milestone, distribution and review exceptions are next; existing completed pages are not reopened merely because older inventory rows predate their evidence.
+
+### Ambassador controls — 14 November 2026
+
+[Native, API and live SQL evidence](ADMIN_AMBASSADOR_PAGES_2026_11_14.md) closes roster/search/tag recovery, milestone edit/activation/replay and review/grant controls for the recorded cases. Added one service-only helper reusing the audit ledger; campus selection and inactive-recipient boundaries corrected. Full backend 1,787 and independent-session concurrency tests pass. Native share/distribution exception checks also pass on mobile and desktop (failed reads/Retry, personalized links, clipboard denial, explicit manual statuses and selected recipients). CMS/presentation variants and historical database dependency review remain follow-up work; this does not claim whole-admin completion.

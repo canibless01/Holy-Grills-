@@ -15,9 +15,9 @@ import uuid
 from flask import Blueprint, request, jsonify, g, current_app
 
 from app.constants import ADMIN_ROLES, COMMUNITY_MANAGER_ROLE
-from app.db import get_db
+from app.db import get_db, SupabaseError
 from app.messages import MSG
-from app.middleware.auth import require_auth, require_role, optional_auth
+from app.middleware.auth import require_auth, require_role, optional_auth, resolve_scoped_campus_id
 from app.middleware.rate_limit import rate_limit
 from app.services import ambassador_service as svc
 from app.utils.logger import get_logger
@@ -38,6 +38,12 @@ def _body():
 
 def _is_super():
     return getattr(g, "user_role", None) == "super_admin"
+
+
+def _staff_scope():
+    scope=resolve_scoped_campus_id()
+    if not _is_super() and not scope:raise svc.AmbassadorError(MSG.AMBASSADOR_CAMPUS_FORBIDDEN,status=403)
+    return scope
 
 
 def _is_financial_admin():
@@ -79,8 +85,13 @@ def _milestone_values(data, partial=False):
             if isinstance(value,bool) or not number.is_finite() or number <= 0: raise ValueError()
             if key != "reward_amount" and number != int(number): raise ValueError()
             if key == "validity_days" and number > 365: raise ValueError()
+            if key == "threshold" and number > 2147483647:raise ValueError()
+            if key == "reward_amount" and number > 1000000:raise ValueError()
             if key == "reward_uses" and number > 100: raise ValueError()
             values[key] = float(number) if key == "reward_amount" else int(number)
+    if values.get('reward_type')=='meal_discount' and 'reward_amount' in values:
+        amount=Decimal(str(values['reward_amount']))
+        if amount.quantize(Decimal('0.01'))!=amount:raise ValueError()
     if values.get('reward_type') in ('hp','free_side') and 'reward_amount' in values:
         amount = values['reward_amount']
         if amount != int(amount) or (values['reward_type'] == 'free_side' and amount > 20): raise ValueError()
@@ -159,7 +170,7 @@ def my_meal_discounts():
 def staff_list_ambassadors():
     db = get_db()
     month = svc.parse_month(request.args.get("month"))
-    rows = svc.staff_ambassador_list(db, getattr(g, "campus_id", None), _is_super())
+    rows = svc.staff_ambassador_list(db, _staff_scope(), _is_super())
     return jsonify({"ambassadors": rows, "month": month}), 200
 
 
@@ -187,7 +198,9 @@ def staff_tag_ambassador():
     ).eq("id", user_id).single().execute()
     if not profile:
         return jsonify({"error": MSG.AMBASSADOR_USER_NOT_FOUND}), 404
-    if not _is_super() and profile.get("campus_id") != getattr(g, "campus_id", None):
+    scope=_staff_scope()
+    if profile.get("is_active") is False:return jsonify({"error":MSG.AMBASSADOR_USER_NOT_FOUND}),404
+    if scope and profile.get("campus_id") != scope:
         return jsonify({"error": MSG.AMBASSADOR_CAMPUS_FORBIDDEN}), 403
     row = svc.tag_ambassador(g.user_id, profile)
     return jsonify({"ambassador": row}), 201
@@ -196,7 +209,7 @@ def staff_tag_ambassador():
 @ambassadors_bp.route("/staff/ambassadors/<ambassador_id>", methods=["DELETE"])
 @require_role("admin")
 def staff_untag_ambassador(ambassador_id):
-    _guard_ambassador(ambassador_id)
+    if not validate_uuid(ambassador_id):return jsonify({'error':MSG.AMBASSADOR_NOT_FOUND}),404
     row = svc.untag_ambassador(g.user_id, ambassador_id)
     return jsonify({"ambassador": row}), 200
 
@@ -209,7 +222,7 @@ def staff_untag_ambassador(ambassador_id):
 def staff_list_promos():
     month = svc.parse_month(request.args.get("month"))
     rows = svc.list_promo_messages(
-        get_db(), month, getattr(g, "campus_id", None), _is_super())
+        get_db(), month, _staff_scope(), _is_super())
     return jsonify({"messages": rows, "month": month}), 200
 
 
@@ -223,7 +236,7 @@ def staff_create_promo():
     try:
         result = svc.create_promo_message(
             get_db(),
-            {"id": g.user_id, "role": g.user_role, "campus_id": getattr(g, "campus_id", None)},
+            {"id": g.user_id, "role": g.user_role, "campus_id": _staff_scope()},
             image_url=str(data.get("image_url") or "").strip() or None,
             caption=str(data.get("caption") or ""),
             target_all=data.get("target_all", False),
@@ -241,11 +254,11 @@ def staff_create_promo():
 def staff_promo_assignments(message_id):
     if not validate_uuid(message_id):
         return jsonify({"error": MSG.RESOURCE_NOT_FOUND}), 404
-    rows = svc.promo_assignments(get_db(), message_id)
+    scope=_staff_scope()
+    rows = svc.promo_assignments(get_db(), message_id, campus_id=scope)
     # Campus scope: hide another campus's recipients from a campus manager.
-    if not _is_super():
-        rows = [r for r in rows
-                if (r.get("profile") or {}).get("campus_id") == getattr(g, "campus_id", None)]
+    if scope or not _is_super():
+        rows = [r for r in rows if (r.get("profile") or {}).get("campus_id") == scope]
     return jsonify({"assignments": rows}), 200
 
 
@@ -274,7 +287,7 @@ def staff_update_assignment(assignment_id):
 def staff_list_reviews():
     month = svc.parse_month(request.args.get("month"))
     rows = svc.list_monthly_reviews(
-        get_db(), month, getattr(g, "campus_id", None), _is_super())
+        get_db(), month, _staff_scope(), _is_super())
     return jsonify({"reviews": rows, "month": month}), 200
 
 
@@ -321,8 +334,10 @@ def staff_decision(ambassador_id):
 @ambassadors_bp.route("/staff/milestones", methods=["GET"])
 @require_role(COMMUNITY_MANAGER_ROLE, "admin")
 def staff_list_milestones():
-    rows = svc.list_milestones(
-        get_db(), getattr(g, "campus_id", None), include_inactive=True)
+    scope=_staff_scope()
+    if _is_super() and scope is None:
+        rows=get_db().table('ambassador_milestones').select('*').order('metric').order('threshold').order('id').execute() or []
+    else:rows=svc.list_milestones(get_db(),scope,include_inactive=True)
     return jsonify({"milestones": rows}), 200
 
 
@@ -332,19 +347,18 @@ def staff_create_milestone():
     denied = _require_financial_admin()
     if denied:
         return denied
-    data = _body() or {}
-    db = get_db()
+    data=_body() or {}
     try:
-        values = _milestone_values(data)
-        row = db.table("ambassador_milestones").insert({
-            **values, "campus_id": None if _is_super() and data.get("global") is True else getattr(g,"campus_id",None),
-            "created_by": g.user_id,
-        }).execute()
-    except (TypeError, ValueError):
-        return jsonify({"error": MSG.AMBASSADOR_MILESTONE_INVALID}), 400
-    row = row[0] if isinstance(row, list) else row
-    svc.audit(g.user_id, "ambassador_milestone_created", row["id"], after=row)
-    return jsonify({"milestone": row}), 201
+        values=_milestone_values(data)
+        scope=None if _is_super() and data.get('global') is True else _staff_scope()
+        if _is_super() and data.get('global') is not True and not scope:raise ValueError()
+        request_id=data.get('request_id') or str(uuid.uuid4())
+        if not validate_uuid(request_id):raise ValueError()
+    except (TypeError,ValueError):return jsonify({'error':MSG.AMBASSADOR_MILESTONE_INVALID}),400
+    try:
+        result=get_db().rpc('hg_write_ambassador_milestone',{'p_actor':g.user_id,'p_request':request_id,'p_id':request_id,'p_scope':scope,'p_values':values,'p_expected':None,'p_create':True})
+    except SupabaseError as exc:return _milestone_write_error(exc)
+    return jsonify(result),200 if result.get('replayed') else 201
 
 
 @ambassadors_bp.route("/staff/milestones/<milestone_id>", methods=["PATCH"])
@@ -362,16 +376,32 @@ def staff_update_milestone(milestone_id):
         return jsonify({"error": MSG.RESOURCE_NOT_FOUND}), 404
     if not _is_super() and (not getattr(g,"campus_id",None) or existing.get("campus_id") != g.campus_id):
         return jsonify({"error": MSG.RESOURCE_ACCESS_DENIED}), 403
+    scope = _staff_scope()
+    if scope and existing.get("campus_id") not in (None, scope):
+        return jsonify({"error": MSG.RESOURCE_NOT_FOUND}), 404
     try:
         patch = _milestone_values(data, partial=True)
         _milestone_values({**existing, **patch})
     except (TypeError, ValueError): return jsonify({"error": MSG.AMBASSADOR_MILESTONE_INVALID}), 400
-    row = db.table("ambassador_milestones").eq("id",milestone_id).update(patch)
-    row = row[0] if isinstance(row, list) and row else row
-    if not row:
-        return jsonify({"error": MSG.RESOURCE_NOT_FOUND}), 404
-    svc.audit(g.user_id, "ambassador_milestone_updated", milestone_id, after=patch)
-    return jsonify({"milestone": row}), 200
+    request_id=data.get('request_id') or str(uuid.uuid4())
+    if not validate_uuid(request_id):return jsonify({'error':MSG.AMBASSADOR_MILESTONE_INVALID}),400
+    expected=data.get('expected_updated_at') or existing.get('updated_at')
+    from app.utils.admin_helpers import as_instant
+    try:expected=as_instant(expected)
+    except (TypeError,ValueError):return jsonify({'error':MSG.AMBASSADOR_MILESTONE_INVALID}),400
+    try:
+        result=db.rpc('hg_write_ambassador_milestone',{'p_actor':g.user_id,'p_request':request_id,'p_id':milestone_id,'p_scope':existing.get('campus_id'),'p_values':patch,'p_expected':expected,'p_create':False})
+    except SupabaseError as exc:return _milestone_write_error(exc)
+    return jsonify(result),200
+
+
+def _milestone_write_error(exc):
+    value=str(exc)
+    if 'HG_AMB_MILESTONE_ACCESS' in value:return jsonify({'error':MSG.RESOURCE_ACCESS_DENIED}),403
+    if 'HG_AMB_MILESTONE_STALE' in value:return jsonify({'error':MSG.AMBASSADOR_MILESTONE_STALE}),409
+    if 'HG_AMB_MILESTONE_CONFLICT' in value:return jsonify({'error':MSG.AMBASSADOR_MILESTONE_CONFLICT}),409
+    if 'HG_AMB_MILESTONE_INVALID' in value:return jsonify({'error':MSG.AMBASSADOR_MILESTONE_INVALID}),400
+    raise exc
 
 
 # ---------------------------------------------------------------------------
@@ -386,9 +416,10 @@ def staff_list_grants():
     if ambassador_id:
         _guard_ambassador(ambassador_id)
     db = get_db()
-    if not ambassador_id and (getattr(g, 'campus_id', None) or not _is_super()):
+    scope=_staff_scope()
+    if not ambassador_id and (scope or not _is_super()):
         allowed = [a['profile_id'] for a in db.table('ambassadors').select('profile_id').eq(
-            'status', 'active').eq('campus_id', getattr(g, 'campus_id', None)).execute() or []]
+            'status', 'active').eq('campus_id', scope).execute() or []]
         rows = svc.list_grants(db, ambassador_ids=allowed)
     else:
         rows = svc.list_grants(db, ambassador_id or None)
@@ -409,7 +440,7 @@ def staff_create_grant():
         _guard_ambassador(ambassador_id)
         grant = svc.issue_grant(
             get_db(),
-            {"id": g.user_id, "role": g.user_role, "campus_id": getattr(g, "campus_id", None)},
+            {"id": g.user_id, "role": g.user_role, "campus_id": _staff_scope()},
             ambassador_id=ambassador_id,
             category=str(data.get("reward_type") or data.get("category") or "").strip(),
             amount=data.get("amount", 0),
