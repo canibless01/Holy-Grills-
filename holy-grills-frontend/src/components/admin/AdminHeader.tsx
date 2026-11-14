@@ -20,7 +20,7 @@ import BrandLogo from '@/components/BrandLogo';
  * Multipliers) and matches live records — available on BOTH mobile and desktop.
  * Title/subtitle come from the TITLES map in Admin.tsx.
  */
-export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, onNavigate }) {
+export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, onNavigate, allowedIds = null }) {
   const { user } = useHolyGrill();
   const financialStaff = ['admin', 'super_admin'].includes(user?.role);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -51,7 +51,7 @@ export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, 
 
         {/* Center — global search (desktop) */}
         <div className="hidden 2xl:block min-w-0 flex-1 max-w-sm">
-          <AdminGlobalSearch onNavigate={onNavigate} />
+          <AdminGlobalSearch onNavigate={onNavigate} allowedIds={allowedIds} />
         </div>
 
         {/* Right — campus + actions */}
@@ -114,7 +114,7 @@ export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, 
       {/* Mobile search row — same engine as desktop, full width */}
       {searchOpen && (
         <div className="2xl:hidden px-4 pb-3 border-t border-border/60">
-          <AdminGlobalSearch onNavigate={onNavigate} />
+          <AdminGlobalSearch onNavigate={onNavigate} allowedIds={allowedIds} />
         </div>
       )}
     </header>

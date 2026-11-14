@@ -4,7 +4,9 @@ Checked against GitHub main `8f47c0a`, the actual admin section registry, both c
 
 **The complete admin page-by-page audit is not signed off.** Most core flows already have implementation and passing evidence. The list below records outstanding verification breadth, configuration/operational acceptance and deferred product work separately. An outstanding verification item is not evidence that its feature is broken. There is no evidence-based percentage completion: the total number of meaningful input/role/failure combinations has not been counted.
 
-## Active audit work — this chat owns the remaining coverage
+## Active audit work — shared ownership
+
+Existing chat: **A1, A2, A3, A5, A6**. Other chat: **A4, A7, O4, O5**. Coordinate O1–O3. Full scope and copyable prompt: `REMAINING_AUDIT_CHAT_HANDOFF_2026_11_14.md`.
 
 | ID | Area | Concrete remaining work | Existing work to retain |
 |---|---|---|---|
@@ -18,7 +20,7 @@ Checked against GitHub main `8f47c0a`, the actual admin section registry, both c
 
 ### Next execution order
 
-A1 navigation/action coverage → A2 reporting/leaderboard gaps → A3 identity/configuration exceptions → A4 settings/system consumers → uncovered A5/A6 actions → A7 remaining object/policy inventory. Fix reproduced defects and push in batches. Existing passing cases remain regression anchors. New findings will be added under their ID rather than silently expanding the backlog.
+Existing chat: A1 navigation/action coverage → A2 reporting/leaderboard gaps → A3 identity/configuration exceptions → uncovered A5/A6 actions. Other chat proceeds independently with A4 settings/system consumers and A7 object/policy inventory, plus O4/O5 configuration review. Fix reproduced defects and push in batches. Existing passing cases remain regression anchors. New findings will be added under their ID rather than silently expanding the backlog.
 
 ## Configuration decisions / operational acceptance
 

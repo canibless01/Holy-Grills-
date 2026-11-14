@@ -95,3 +95,7 @@ The historical tables above are not a current backlog: later closure records in 
 ### Ambassador controls — 14 November 2026
 
 [Native, API and live SQL evidence](ADMIN_AMBASSADOR_PAGES_2026_11_14.md) closes roster/search/tag recovery, milestone edit/activation/replay and review/grant controls for the recorded cases. Added one service-only helper reusing the audit ledger; campus selection and inactive-recipient boundaries corrected. Full backend 1,787 and independent-session concurrency tests pass. Native share/distribution exception checks also pass on mobile and desktop (failed reads/Retry, personalized links, clipboard denial, explicit manual statuses and selected recipients). CMS/presentation variants and historical database dependency review remain follow-up work; this does not claim whole-admin completion.
+
+### Admin navigation — 14 November 2026
+
+[Shared-shell evidence](ADMIN_NAVIGATION_EVIDENCE_2026_11_14.md) covers all 38 registry entries in compact admin navigation, restricted manager navigation/search, remembered-collapse mobile labels, drawer closing/scroll restoration, reload/back/forward and role/workspace search filtering. Fixed the grouped-icon omission and search/label mismatches. This is navigation coverage, not an assertion that every action inside all 38 sections has passed. Shared remaining ownership is in `REMAINING_AUDIT_CHAT_HANDOFF_2026_11_14.md`.

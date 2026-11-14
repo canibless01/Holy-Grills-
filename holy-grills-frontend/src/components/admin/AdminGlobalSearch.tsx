@@ -1,13 +1,16 @@
 import { useState, useRef, useEffect } from 'react';
 import { Search, X, ArrowRight, LayoutGrid } from 'lucide-react';
-import { matchSections } from '@/lib/adminSections';
+import { matchSections, sectionsForRole } from '@/lib/adminSections';
+import { useHolyGrill } from '@/lib/HolyGrillContext';
 
 // Section-only search — jumps straight to an admin page/section by intent.
 // Data-record search (orders, users, menu items, promo codes) was removed:
 // the admin already knows where those live in the sidebar, and the record
 // results returned opaque codes/IDs that were not actionable. This now focuses
 // purely on navigating to the right section ("revenue" → Analytics, etc.).
-export default function AdminGlobalSearch({ onNavigate }) {
+export default function AdminGlobalSearch({ onNavigate, allowedIds = null }) {
+  const { user } = useHolyGrill();
+  const allowedSections = new Set(sectionsForRole(user?.role).map(section => section.id));
   const [q, setQ] = useState('');
   const [focused, setFocused] = useState(false);
   const wrapRef = useRef(null);
@@ -22,7 +25,7 @@ export default function AdminGlobalSearch({ onNavigate }) {
 
   const close = () => { setQ(''); setFocused(false); };
   const open = focused && q.trim().length >= 1;
-  const sectionMatches = open ? matchSections(q) : [];
+  const sectionMatches = open ? matchSections(q).filter(section => allowedSections.has(section.id) && (!allowedIds || allowedIds.has(section.id))) : [];
 
   return (
     <div className="relative" ref={wrapRef}>

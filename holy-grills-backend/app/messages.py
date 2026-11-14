@@ -17,6 +17,9 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_ADMIN_NAV_CLOSE = "Close menu"
+    FE_ADMIN_NAV_EXPAND = "Expand sidebar"
+    FE_ADMIN_NAV_COLLAPSE = "Collapse sidebar"
     AMBASSADOR_CLAIM_ALREADY_ISSUED = "This milestone has already been rewarded. An additional manual reward must not reuse this claim."
     AMBASSADOR_CLAIM_NOT_GRANTABLE = "This milestone claim is unavailable, rejected or belongs to a different ambassador or month."
     AMBASSADOR_GRANT_VOIDED = "The original programme reward was voided. An additional reward needs a new authorised grant."
