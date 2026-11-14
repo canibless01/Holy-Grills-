@@ -1924,16 +1924,10 @@ def _notify_rider_order_ready(order: dict):
 
 
 def _notify_recovered_delivery_rewards(order, result):
-    if result.get('replayed'):
-        return
-    for kind, amount, key in (('hp_unlocked', result.get('unlocked_hp', 0), 'unlocked_hp'),
-                               ('hp_earned', result.get('welcome_hp', 0), 'hp')):
-        if amount:
-            try:
-                send_notification(user_id=order['user_id'], notif_type=kind,
-                                  template_data={key: amount}, reference_id=order['id'], reference_type='order')
-            except Exception:
-                logger.warning('Recovered delivery reward notification pending for %s', order['id'], exc_info=True)
+    # Balances and notices now commit together. Replays may wake a saved push,
+    # but never reconstruct another HP notice after the transaction.
+    from app.services.notification_outbox import start_balance_dispatch
+    start_balance_dispatch(order['user_id'])
 
 
 def _recover_delivery_checkin(order):
@@ -2069,30 +2063,8 @@ def _handle_delivery_rewards(order: dict):
     total_hp_awarded = notify_hp + welcome_result.get("awarded", 0)
 
     def _send_delivery_notifications():
-        if total_hp_awarded > 0:
-            send_notification(
-                user_id=user_id,
-                notif_type="hp_earned",
-                template_data={"hp": total_hp_awarded, "total_hp": total_hp_awarded},
-                reference_id=order_id,
-                reference_type="order",
-            )
-        unlocked = int((unlock_result or {}).get("unlocked") or 0)
-        if unlocked > 0:
-            send_notification(
-                user_id=user_id,
-                notif_type="hp_unlocked",
-                template_data={"unlocked_hp": unlocked},
-            )
-        if tier_change.get("changed") and tier_change.get("tier"):
-            tier_name = tier_change["tier"].get("name", "new tier")
-            send_notification(
-                user_id=user_id,
-                notif_type="tier_upgrade",
-                template_data={"tier_name": tier_name},
-                reference_id=user_id,
-                reference_type="user_tier",
-            )
+        from app.services.notification_outbox import start_balance_dispatch
+        start_balance_dispatch(user_id)
 
     _t.Thread(target=_send_delivery_notifications, daemon=True).start()
 

@@ -42,6 +42,9 @@ def _complete_referral_award(referral: dict, order_id: str):
                      referral["referred_user_id"], result)
         return {"hp_awarded": 0, "error": MSG.REFERRAL_COMPLETE_FAILED}
 
+    from app.services.notification_outbox import start_balance_dispatch
+    start_balance_dispatch(referrer_id)
+
     # 2. Handle idempotent case
     if result.get("already_completed"):
         return {

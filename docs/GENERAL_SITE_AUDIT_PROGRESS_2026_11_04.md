@@ -188,3 +188,7 @@ Signup production follow-up: removed profile/cart reads from the pre-navigation 
 ### 14 November — guest and account notification opt-in
 
 [Prompt and subscription evidence](GUEST_MEMBER_PUSH_OPT_IN_2026_11_14.md): global explicit Allow suggestion for supported guest/new-session browsers, per-identity seven-day dismissal, no automatic native request, anonymous OneSignal subscription without private API writes, serialized logout and one-time adoption of a recent guest consent after account login. SDK contracts, native mobile/desktop and frontend build/type/lint pass. Guest-private order targeting is not silently inferred from anonymous subscription. Next owner request: monthly birthday operations digest, department celebration/gifting, balance-change notices and community copy review.
+
+### 14 November — balance notices before birthday/gifting continuation
+
+[Financial-boundary evidence](DURABLE_BALANCE_NOTICES_2026_11_14.md): fixed referral payouts having no notice and delivery's post-credit daemon-only notice gap. Final net active HP/wallet changes and pending HP queue transactional inbox/push receipts, honoring preferences and rollbacks; existing recovery scans remain authoritative. Migration applied and fresh rollback proof passes. Birthday outreach, gift links/consent and community copy remain in active implementation.

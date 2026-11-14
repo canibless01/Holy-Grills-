@@ -60,6 +60,8 @@ def credit_wallet(user_id: str, amount: float, payment_reference: str, reference
             pass
 
     apply_wallet_funding_rewards(user_id, amount, txn_id, reference_type, campus_id)
+    from app.services.notification_outbox import start_balance_dispatch
+    start_balance_dispatch(user_id)
     return txn or {"user_id": user_id, "amount": amount, "balance_after": res.get("new_balance") if isinstance(res, dict) else amount}
 
 

@@ -189,7 +189,7 @@ def start_reference_dispatch(kind, reference_id):
     """
     import threading
     from flask import current_app
-    if kind not in ('low_stock_ingredient', 'prize_fulfilment_update', 'squad_hp_share', 'checkin_reclaimed', 'membership_anniversary', 'tier_upgrade', 'tier_downgrade', 'tier_grace_period', 'milestone_achieved'):
+    if kind not in ('low_stock_ingredient', 'prize_fulfilment_update', 'squad_hp_share', 'checkin_reclaimed', 'membership_anniversary', 'tier_upgrade', 'tier_downgrade', 'tier_grace_period', 'milestone_achieved', 'hp_transfer_recipient', 'hp_transfer_sent', 'birthday_bonus', 'birthday_blast'):
         return False
     try:
         app = current_app._get_current_object()
@@ -208,4 +208,29 @@ def start_reference_dispatch(kind, reference_id):
         return True
     except Exception as exc:
         logger.warning('Notification wake deferred: %s', type(exc).__name__)
+        return False
+
+
+def start_balance_dispatch(user_id):
+    """Wake saved balance receipts; the existing recovery scan survives a lost wake."""
+    import threading
+    from flask import current_app
+    try:
+        app = current_app._get_current_object()
+        def wake():
+            try:
+                with app.app_context():
+                    rows = (get_db().table('notification_deliveries')
+                            .select('id,notice:notifications!inner(type,user_id)')
+                            .eq('status', 'queued').eq('channel', 'push')
+                            .eq('notice.user_id', user_id)
+                            .in_('notice.type', ['hp_balance_changed', 'wallet_balance_changed'])
+                            .order('created_at').limit(20).execute()) or []
+                    for row in rows:
+                        dispatch_notification(row['id'])
+            except Exception:
+                logger.warning('Saved balance notification wake deferred', exc_info=True)
+        threading.Thread(target=wake, daemon=True).start()
+        return True
+    except Exception:
         return False

@@ -76,7 +76,7 @@ class DeliveryMultiplierRecoveryTests(unittest.TestCase):
             self.invoke()
         self.assertEqual(self.db.rpc.call_args.args[1]['p_hp_amount'], 300)
 
-    def test_unlock_notice_uses_the_actual_unlock_result(self):
+    def test_delivery_wakes_saved_balance_notice_without_reconstructing_awards(self):
         from contextlib import ExitStack
         self.db.rpc.return_value={'success':True}
         with ExitStack() as stack:
@@ -92,8 +92,8 @@ class DeliveryMultiplierRecoveryTests(unittest.TestCase):
                 stack.enter_context(patch(target))
             thread=stack.enter_context(patch('threading.Thread'))
             send=stack.enter_context(patch.object(service,'send_notification'))
+            wake=stack.enter_context(patch('app.services.notification_outbox.start_balance_dispatch'))
             service._handle_delivery_rewards(self.order)
             thread.call_args.kwargs['target']()
-            notices={call.kwargs['notif_type']:call.kwargs['template_data'] for call in send.call_args_list}
-            self.assertEqual(notices['hp_unlocked']['unlocked_hp'],30)
-            self.assertEqual(notices['hp_earned']['hp'],204)
+            send.assert_not_called()
+            wake.assert_called_once_with('owner')

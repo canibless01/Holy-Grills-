@@ -754,6 +754,8 @@ def _record_hp_transaction(
         except Exception as e:                     # [B-20] was a bare `pass` -- a tier recalc failure was invisible
             logger.warning("recalculate_tier failed for %s: %s", user_id, e)
 
+    from app.services.notification_outbox import start_balance_dispatch
+    start_balance_dispatch(user_id)
     return res
 
 
