@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Trophy, Gift, Check, Clock } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
@@ -14,28 +14,33 @@ export default function AdminLeaderboard() {
   const [hofHistory, setHofHistory] = useState([]);
   const [busy, setBusy] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const loadVersion = useRef(0);
   const [advance, setAdvance] = useState(null); // { id, name, nextStatus, notes }
   const [lbNotes, setLbNotes] = useState({}); // per-prize notes for leaderboard fulfilment
 
   const load = async () => {
+    const version = ++loadVersion.current;
+    setLoaded(false); setLoadError(false);
     try {
       const [pending, fulfilled, hofAll] = await Promise.all([
-        mockApi.admin.getLeaderboardRewards({ status: 'pending' }).catch(() => []),
-        mockApi.admin.getLeaderboardRewards({ status: 'fulfilled' }).catch(() => []),
-        mockApi.admin.getHallOfFameRewards().catch(() => []),
+        mockApi.admin.getLeaderboardRewards({ status: 'pending' }),
+        mockApi.admin.getLeaderboardRewards({ status: 'fulfilled' }),
+        mockApi.admin.getHallOfFameRewards(),
       ]);
+      if (version !== loadVersion.current) return;
       setRewards(pending || []);
       setRewardHistory(fulfilled || []);
       const all = hofAll || [];
       setHof(all.filter((h) => h.status !== 'fulfilled'));
       setHofHistory(all.filter((h) => h.status === 'fulfilled'));
-    } catch { /* empty */ }
-    setLoaded(true);
+    } catch { if (version === loadVersion.current) setLoadError(true); }
+    finally { if (version === loadVersion.current) setLoaded(true); }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { void load(); return () => { loadVersion.current++; }; }, []);
 
-  const fulfillReward = async (id, userName) => {
+  const fulfillReward = async (id, _userName) => {
     setBusy(id);
     try {
       const res = await mockApi.admin.fulfillLeaderboardReward(id, { status: 'fulfilled', notes: lbNotes[id] || '' });
@@ -63,6 +68,10 @@ export default function AdminLeaderboard() {
   };
 
   if (!loaded) return <StaffPanelSkeleton />;
+  if (loadError) return <Card><div role="alert" className="space-y-3 text-center">
+    <p>{msg('FE_ADMIN_PRIZE_READ_FAILED','Prize records could not be loaded. Retry before updating fulfilment.')}</p>
+    <button onClick={() => { void load(); }} className="rounded-full bg-primary px-4 py-2 text-sm font-bold text-white">{msg('FE_LOOKUP_RETRY','Retry')}</button>
+  </div></Card>;
 
   return (
     <div className="space-y-4">

@@ -17,6 +17,7 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_ADMIN_PRIZE_READ_FAILED = "Prize records could not be loaded. Retry before updating fulfilment."
     FE_ADMIN_NAV_CLOSE = "Close menu"
     FE_ADMIN_NAV_EXPAND = "Expand sidebar"
     FE_ADMIN_NAV_COLLAPSE = "Collapse sidebar"

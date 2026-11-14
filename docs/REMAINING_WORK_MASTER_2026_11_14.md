@@ -18,6 +18,11 @@ Existing chat: **A1, A2, A3, A5, A6**. Other chat: **A4, A7, O4, O5**. Coordinat
 | A6 | Customer/public presentation and preferences | Close any unmatched requested presentation/field behavior found during final per-page reconciliation; check remaining notification-preference/deep-link and public rating/UI variants. Preserve owner-approved styling. Broader visual redesign is deferred below. | Cloudinary uploads owner-confirmed; newsletter/worker, blasts, ambassador roster/milestones/distribution/reviews, CMS edit/sort/version recovery and returning-user Home/Menu refresh now have current evidence. Those batches are closed. |
 | A7 | Historical database/security inventory | Complete policy-by-policy and object/dependency/use review beyond the structural and public-helper checks; reconcile migration signatures/overloads, duplicate policies/triggers/indexes and service/browser grants. Any obsolete object requires dependency proof before removal. Record intentional exceptions. | All 136 public tables have RLS; readable views use invoker security; browser maintenance privileges removed; remaining 15 authenticated/6 anonymous definer helpers reviewed; milestone helper service-only; latest migration appears once. Advisor warnings do not imply all these protections are absent. |
 
+### Current progress within the remaining list
+
+- **A1:** shared navigation controls now have mobile/desktop role/workspace/registry/reload/back/forward evidence in `ADMIN_NAVIGATION_EVIDENCE_2026_11_14.md`; the per-page action reconciliation remains.
+- **A2:** failed prize feeds no longer masquerade as empty queues; native retry/post-handover refresh recovery passes in `ADMIN_PRIZE_READ_RECOVERY_2026_11_14.md`. Other reporting/leaderboard coverage remains as listed.
+
 ### Next execution order
 
 Existing chat: A1 navigation/action coverage → A2 reporting/leaderboard gaps → A3 identity/configuration exceptions → uncovered A5/A6 actions. Other chat proceeds independently with A4 settings/system consumers and A7 object/policy inventory, plus O4/O5 configuration review. Fix reproduced defects and push in batches. Existing passing cases remain regression anchors. New findings will be added under their ID rather than silently expanding the backlog.

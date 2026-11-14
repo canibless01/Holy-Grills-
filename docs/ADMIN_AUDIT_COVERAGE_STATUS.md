@@ -99,3 +99,7 @@ The historical tables above are not a current backlog: later closure records in 
 ### Admin navigation — 14 November 2026
 
 [Shared-shell evidence](ADMIN_NAVIGATION_EVIDENCE_2026_11_14.md) covers all 38 registry entries in compact admin navigation, restricted manager navigation/search, remembered-collapse mobile labels, drawer closing/scroll restoration, reload/back/forward and role/workspace search filtering. Fixed the grouped-icon omission and search/label mismatches. This is navigation coverage, not an assertion that every action inside all 38 sections has passed. Shared remaining ownership is in `REMAINING_AUDIT_CHAT_HANDOFF_2026_11_14.md`.
+
+### Leaderboard prize reads — 14 November 2026
+
+[Native failed-feed and post-write refresh recovery](ADMIN_PRIZE_READ_RECOVERY_2026_11_14.md) closes the false-empty pending/history/Hall-of-Fame display. Retry reloads saved state without repeating handover. Wider A2 reporting/leaderboard controls remain under the existing chat; the other chat owns A4/A7/O4/O5 per the current handoff.
