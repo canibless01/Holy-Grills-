@@ -228,6 +228,22 @@ def update_setting(key):
     if not existing:
         return jsonify({"error": MSG.SETTING_NOT_FOUND}), 404
 
+    if 'expected_updated_at' in data and data['expected_updated_at'] is None:
+        return jsonify({'error': MSG.INVALID_INPUT}), 400
+    expected = data.get('expected_updated_at', existing.get('updated_at'))
+    if expected is not None:
+        try:
+            if not isinstance(expected, str):
+                raise ValueError()
+            datetime.fromisoformat(expected.replace('Z', '+00:00'))
+        except ValueError:
+            return jsonify({'error': MSG.INVALID_INPUT}), 400
+        if 'expected_updated_at' in data and expected != existing.get('updated_at'):
+            # Compare instants as PostgREST may normalize an equivalent timestamp.
+            stored = existing.get('updated_at')
+            if not stored or datetime.fromisoformat(expected.replace('Z', '+00:00')) != datetime.fromisoformat(stored.replace('Z', '+00:00')):
+                return jsonify({'error': MSG.SETTING_EDIT_CONFLICT}), 409
+
     value = data.get("value")
     if value is None:
         return jsonify({"error": MSG.SETTING_VALUE_REQUIRED}), 400
@@ -285,7 +301,11 @@ def update_setting(key):
     q = db.table("system_settings").eq("key", key)
     q = q.is_("campus_id", "null") if not campus_id else q.eq("campus_id", campus_id)
     try:
-        q.update(update_payload)
+        if expected is not None:
+            q = q.eq('updated_at', expected)
+        saved = q.update(update_payload)
+        if not saved:
+            return jsonify({'error': MSG.SETTING_EDIT_CONFLICT}), 409
     except SupabaseError as exc:
         refusal = _validator_refusal(exc)
         if refusal is None:

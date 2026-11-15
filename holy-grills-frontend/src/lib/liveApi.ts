@@ -838,7 +838,7 @@ const admin = {
       };
     });
     let backendJobs = [];
-    const res = await apiClient.get('/admin/cron/status').catch(() => null);
+    const res = await apiClient.get('/admin/cron/status');
     if (Array.isArray(res)) backendJobs = normalize(res);
     else if (res && Array.isArray(res.jobs)) backendJobs = normalize(res.jobs);
     else if (res && Array.isArray(res.cron_jobs)) backendJobs = normalize(res.cron_jobs);
@@ -850,18 +850,13 @@ const admin = {
         return { job, ...o };
       }));
     }
-    else if (res && typeof res === 'object' && !Array.isArray(res)) {
-      backendJobs = normalize(Object.entries(res).map(([job, info]) => {
-        const o = (info && typeof info === 'object') ? info : { status: info };
-        return { job, ...o };
-      }));
-    }
+    else throw new Error(msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again."));
     // Merge: every known beat job appears even if the backend's status endpoint
     // doesn't report it. Backend-reported status/last_triggered wins.
     const seen = new Set(backendJobs.map((j) => j.job));
     const missing = Object.values(KNOWN_CRON_MAP)
       .filter((k) => !seen.has(k.job))
-      .map((k) => ({ job: k.job, status: 'never_run', last_triggered: null, cadence: k.cadence, desc: k.desc }));
+      .map((k) => ({ job: k.job, status: 'not_reported', last_triggered: null, cadence: k.cadence, desc: k.desc }));
     return [...backendJobs, ...missing];
   },
 

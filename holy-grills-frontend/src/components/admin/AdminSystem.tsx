@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
   Clock, ScrollText, Play, Server, RefreshCw, Eye, User as UserIcon, HeartPulse,
@@ -79,10 +79,12 @@ function HealthCard() {
     );
   }
 
+  const checks = health?.checks || health;
   const services = [
     { label: 'API', value: health?.status ?? health?.api ?? null, okValues: ['ok', 'success', 'healthy', 'up', true] },
-    { label: 'Supabase (Database)', value: health?.supabase ?? health?.database ?? health?.db ?? null, okValues: [true, 'ok', 'connected', 'healthy', 'success'] },
-    { label: 'Redis', value: health?.redis ?? null, okValues: [true, 'ok', 'connected', 'healthy', 'success'] },
+    { label: 'Supabase (Database)', value: checks?.supabase ?? checks?.database ?? checks?.db ?? null, okValues: [true, 'ok', 'connected', 'healthy', 'success'] },
+    { label: 'Supabase Auth', value: checks?.supabase_auth ?? null, okValues: [true, 'ok', 'connected', 'healthy', 'success'] },
+    { label: 'Redis', value: checks?.redis ?? null, okValues: [true, 'ok', 'connected', 'healthy', 'success'] },
   ];
   const extras = { ...health };
   delete extras.status; delete extras.api; delete extras.supabase;
@@ -97,7 +99,7 @@ function HealthCard() {
         </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {services.map((s) => {
           const v = s.value;
           const known = v != null;
@@ -127,22 +129,31 @@ function CronJobs() {
   const [jobs, setJobs] = useState(null);
   const [busy, setBusy] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [readError, setReadError] = useState('');
+  const readVersion = useRef(0);
+  const runPending = useRef(false);
 
   const load = async () => {
-    setRefreshing(true);
+    const version = ++readVersion.current;
+    setRefreshing(true); setReadError('');
     try {
-      setJobs(await liveApi.admin.getCronStatus());
+      const rows = await liveApi.admin.getCronStatus();
+      if (version !== readVersion.current) return;
+      setJobs(rows);
     } catch (e) {
       toast({ title: msg('FE_ADMIN_SYSTEM_COULDN_T_LOAD_CRON_STATUS', "Couldn't load cron status"), description: e.message, variant: 'destructive' });
-      setJobs([]);
+      if (version !== readVersion.current) return;
+      setReadError(e.message);
+      setJobs(null);
     }
-    setRefreshing(false);
+    if (version === readVersion.current) setRefreshing(false);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); return () => { readVersion.current += 1; }; }, []);
 
   const run = async (job) => {
-    setBusy(job);
+    if (!isSuperAdmin || runPending.current) return;
+    runPending.current = true; setBusy(job);
     try {
       const res = await liveApi.admin.triggerCron(job);
       // Backend returns { job, status: 'started', triggered_by, note } — the
@@ -154,8 +165,10 @@ function CronJobs() {
       // The only hard super_admin wall in the backend lives here (POST /admin/cron/:job).
       toast({ title: msg('FE_ADMIN_SYSTEM_CRON_TRIGGER_FAILED', 'Cron trigger failed'), description: e.message, variant: 'destructive' });
     }
-    setBusy(null);
+    runPending.current = false; setBusy(null);
   };
+
+  if (readError) return <Card><p role="alert" className="text-sm text-destructive">{readError}</p><button disabled={refreshing} type="button" onClick={load} className="mt-3 font-bold text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></Card>;
 
   if (jobs == null) {
     return (
@@ -185,22 +198,23 @@ function CronJobs() {
 
       {jobs.map((j, i) => {
         const ok = j.status === 'ok' || j.status === 'success';
+        const unreported = j.status === 'not_reported';
         const never = j.status === 'never_run' || !j.status;
         return (
           <motion.div key={j.job || i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.03, 0.2) }}>
             <Card className="p-3.5 flex items-center gap-3 hover:border-primary/30 transition-colors">
-              <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${ok ? 'bg-success' : never ? 'bg-border' : 'bg-destructive'} ${ok ? 'animate-pulse' : ''}`} />
+              <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${ok ? 'bg-success' : never || unreported ? 'bg-border' : 'bg-destructive'} ${ok ? 'animate-pulse' : ''}`} />
               <div className="flex-1 min-w-0">
                 <div className="font-mono font-bold text-sm text-foreground truncate">{j.job}</div>
                 {j.desc && <div className="text-[10px] text-muted-foreground truncate">{j.desc}</div>}
                 <div className="text-[11px] text-muted-foreground font-semibold">
-                  Last run: {j.last_triggered ? timeAgo(j.last_triggered) : 'Never'} · {j.cadence || '—'}
+                  Last run: {j.last_triggered ? timeAgo(j.last_triggered) : unreported ? msg('FE_SYSTEM_NOT_REPORTED', 'Not reported') : 'Never'} · {j.cadence || '—'}
                 </div>
               </div>
-              <Pill tone={ok ? 'green' : never ? 'outline' : 'red'} className="hidden sm:inline-flex">{never ? 'never run' : j.status}</Pill>
+              <Pill tone={ok ? 'green' : never || unreported ? 'outline' : 'red'} className="hidden sm:inline-flex">{unreported ? msg('FE_SYSTEM_NOT_REPORTED', 'Not reported') : never ? 'never run' : j.status}</Pill>
               <button
                 onClick={() => run(j.job)}
-                disabled={busy === j.job || !isSuperAdmin}
+                disabled={!!busy || refreshing || !isSuperAdmin}
                 title={!isSuperAdmin ? 'Only a super admin can trigger cron jobs' : 'Run job'}
                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-foreground text-white text-xs font-bold active:scale-95 transition disabled:opacity-50 shrink-0"
               >
@@ -230,30 +244,37 @@ function AuditLog() {
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [payload, setPayload] = useState(null);
+  const [readError, setReadError] = useState('');
+  const readVersion = useRef(0);
 
   const load = async () => {
-    setLoading(true);
+    const version = ++readVersion.current;
+    setLoading(true); setReadError(''); setLog(null);
     try {
       const res = await liveApi.admin.getAuditLog({ limit: PAGE_SIZE, offset: page * PAGE_SIZE });
+      if (version !== readVersion.current) return;
       setLog(res);
       setHasMore(res.length === PAGE_SIZE);
     } catch (e) {
       toast({ title: msg('FE_ADMIN_SYSTEM_COULDN_T_LOAD_THE_AUDIT_LOG', "Couldn't load the audit log"), description: e.message, variant: 'destructive' });
-      setLog([]);
+      if (version !== readVersion.current) return;
+      setReadError(e.message);
     }
-    setLoading(false);
+    if (version === readVersion.current) setLoading(false);
   };
 
-  useEffect(() => { load(); }, [page]);
+  useEffect(() => { load(); return () => { readVersion.current += 1; }; }, [page]);
+
+  if (readError) return <Card><p role="alert" className="text-sm text-destructive">{readError}</p><button type="button" onClick={load} className="mt-3 font-bold text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></Card>;
 
   if (log == null) {
     return <div className="space-y-2.5">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>;
   }
 
-  if (log.length === 0) {
+  if (log.length === 0 && page === 0) {
     return (
       <Card>
-        <EmptyState icon={ScrollText} title="No audit entries" body="Every admin action — settings, roles, orders — lands here with a full before/after trail." />
+        <EmptyState icon={ScrollText} title="No audit entries" body="Recorded admin actions appear here with their saved details." />
       </Card>
     );
   }

@@ -10,6 +10,7 @@ import SocialLinksSettings from './SocialLinksSettings';
 import { useCampus } from '@/lib/campusContext';
 import { useIsSuperAdmin, SuperAdminBadge } from './SuperAdminGate';
 import { msg } from '@/lib/messages';
+import { parseSettingValue, displaySettingValue } from '@/lib/settingEditor';
 import { loadSystemSettings } from '@/lib/featureConfig';
 import { useAdminWriteScope } from './AdminScopeBadge';
 
@@ -56,24 +57,6 @@ const KNOWN_SETTINGS = {
   whatsapp_support_message: { default: 'Hello, I need help with my order', purpose: 'Prefilled text in the support chat' },
 };
 
-// Parse an edit-string back into the jsonb value shape: arrays for known
-// list keys, booleans, numbers, or the raw string.
-const parseValue = (key, raw) => {
-  if (key === 'global_social_links' || key === 'campus_operations_email' || key === 'campus_cart_recovery') return JSON.parse(raw);
-  if (KNOWN_SETTINGS[key]?.default != null && typeof KNOWN_SETTINGS[key].default !== 'string' && !Array.isArray(KNOWN_SETTINGS[key].default)) {
-    if (typeof KNOWN_SETTINGS[key].default === 'boolean') return raw === 'true';
-    const n = Number(raw);
-    if (!isNaN(n)) return n;
-  }
-  if (raw.includes(',')) return raw.split(',').map((s) => s.trim()).filter(Boolean);
-  if (raw === 'true') return true;
-  if (raw === 'false') return false;
-  if (raw !== '' && !isNaN(Number(raw))) return Number(raw);
-  return raw;
-};
-
-const displayValue = (v) => Array.isArray(v) ? v.join(', ') : typeof v === 'object' ? JSON.stringify(v) : String(v);
-
 // One key can exist once globally AND once per campus, and GET /admin/settings
 // returns every row — so `key` alone does not identify a row. Using it as the
 // React key duplicated keys, and `editKey === s.key` opened the editor on every
@@ -116,6 +99,8 @@ export default function AdminSystemSettings() {
   const [settings, setSettings] = useState(null);
   const [loadError, setLoadError] = useState(false);
   const writePending = useRef(false);
+  const readVersion = useRef(0);
+  const [editError, setEditError] = useState('');
   const [editKey, setEditKey] = useState(null);
   const [editValue, setEditValue] = useState('');
   const [busy, setBusy] = useState(null);
@@ -130,32 +115,38 @@ export default function AdminSystemSettings() {
   const writeScope = useAdminWriteScope();
 
   const load = async () => {
+    const version = ++readVersion.current;
     try {
-      setSettings(await liveApi.admin.getSystemSettings());
+      const rows = await liveApi.admin.getSystemSettings();
+      if (version !== readVersion.current) return;
+      setSettings(rows);
       setLoadError(false);
     } catch (e) {
+      if (version !== readVersion.current) return;
       toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_COULDN_T_LOAD_SETTINGS', "Couldn't load settings"), description: e.message, variant: 'destructive' });
       setLoadError(true);
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); return () => { readVersion.current += 1; }; }, []);
 
   const save = async (s, rawValue = null) => {
     const key = s.key;
-    const value = parseValue(key, rawValue != null ? String(rawValue) : editValue);
     const id = rowId(s);
     if (writePending.current) return;
     writePending.current = true;
-    setBusy(id);
+    setBusy(id); setEditError('');
     try {
+      const value = parseSettingValue(rawValue != null ? String(rawValue) : editValue, s.value);
       // The row's campus_id is what tells the backend which row to write and
       // whether this admin may write it at all.
-      await liveApi.admin.updateSystemSetting(key, { value, ...(s.campus_id ? { campus_id: s.campus_id } : {}) });
+      await liveApi.admin.updateSystemSetting(key, { value, expected_updated_at: s.updated_at, ...(s.campus_id ? { campus_id: s.campus_id } : {}) });
       toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_SETTING_UPDATED', 'Setting updated'), description: msg('FE_ADMIN_SYSTEM_SETTINGS_KEY_SAVED', '{key} saved.', { key: key }) });
       setEditKey(null);
-      await Promise.all([load(), loadSystemSettings()]);
+      await load();
+      void loadSystemSettings().catch(() => {});
     } catch (e) {
+      setEditError(e.message);
       toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' });
     }
     writePending.current = false;
@@ -168,13 +159,14 @@ export default function AdminSystemSettings() {
     writePending.current = true;
     setBusy(rowId(s));
     try {
-      await liveApi.admin.updateSystemSetting(key, { value: !current, ...(s.campus_id ? { campus_id: s.campus_id } : {}) });
+      await liveApi.admin.updateSystemSetting(key, { value: !current, expected_updated_at: s.updated_at, ...(s.campus_id ? { campus_id: s.campus_id } : {}) });
       toast({
         title: current
           ? msg('FE_ADMIN_SYSTEM_SETTINGS_SETTING_DISABLED', '{key} disabled', { key })
           : msg('FE_ADMIN_SYSTEM_SETTINGS_SETTING_ENABLED', '{key} enabled', { key }),
       });
-      await Promise.all([load(), loadSystemSettings()]);
+      await load();
+      void loadSystemSettings().catch(() => {});
     } catch (e) {
       toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_FAILED_TO_UPDATE', 'Failed to update'), description: e.message, variant: 'destructive' });
     }
@@ -195,7 +187,7 @@ export default function AdminSystemSettings() {
     try {
       await liveApi.admin.createSystemSetting({
         key,
-        value: parseValue(key, draft.value.trim()),
+        value: parseSettingValue(draft.value),
         description: draft.description.trim() || null,
         // A private row is invisible to GET /storefront/config/public, which is
         // the only settings source a signed-out visitor has — so a new key
@@ -207,7 +199,8 @@ export default function AdminSystemSettings() {
       toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_SETTING_CREATED', 'Setting created'), description: key });
       setCreateOpen(false);
       setDraft({ key: '', value: '', description: '' });
-      await Promise.all([load(), loadSystemSettings()]);
+      await load();
+      void loadSystemSettings().catch(() => {});
     } catch (e) {
       toast({ title: msg('FE_ADMIN_SYSTEM_SETTINGS_FAILED_TO_CREATE_SETTING', 'Failed to create setting'), description: e.message, variant: 'destructive' });
     }
@@ -215,15 +208,16 @@ export default function AdminSystemSettings() {
     setCreating(false);
   };
 
-  if (loadError) return <Card><p role="alert" className="text-sm text-destructive">{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="mt-3 font-bold text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></Card>;
+  if (loadError && settings == null) return <Card><p role="alert" className="text-sm text-destructive">{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="mt-3 font-bold text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></Card>;
 
   return (
     <div className="space-y-4">
+      {(loadError || editError) && <Card><p role="alert" className="text-sm text-destructive">{loadError ? msg('FE_SETTINGS_REFRESH_FAILED', 'Settings could not be refreshed. Reload before making another change; your draft is kept.') : editError}</p><button disabled={!!busy || creating} type="button" onClick={() => { setEditError(''); load(); }} className="mt-2 font-bold text-primary">{msg('FE_SETTINGS_RELOAD', 'Reload latest settings')}</button></Card>}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 text-sm font-bold text-foreground">
           <SlidersHorizontal className="w-4 h-4 text-primary" /> {settings ? `${settings.length} setting${settings.length === 1 ? '' : 's'}` : 'Loading…'}
         </div>
-        <button onClick={() => setCreateOpen(true)} className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-gradient-cta text-white text-sm font-bold shadow-glow active:scale-95 transition">
+        <button disabled={!!busy || loadError} onClick={() => { setCreateOpen(true); setEditError(''); }} className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-gradient-cta text-white text-sm font-bold shadow-glow active:scale-95 transition">
           <Plus className="w-4 h-4" /> New Setting
         </button>
       </div>
@@ -273,7 +267,7 @@ export default function AdminSystemSettings() {
             title="No system settings yet"
             body="Create the first settings key — defaults like hp_multiplier are consumed by the backend the moment they exist."
             action={
-              <button onClick={() => setCreateOpen(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-primary text-white text-xs font-bold active:scale-95 transition">
+              <button disabled={!!busy || loadError} onClick={() => { setCreateOpen(true); setEditError(''); }} className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-primary text-white text-xs font-bold active:scale-95 transition">
                 <Plus className="w-3.5 h-3.5" /> Create a setting
               </button>
             }
@@ -289,7 +283,7 @@ export default function AdminSystemSettings() {
             const editable = canEditRow(s, isSuperAdmin, writeScope.targetCampusId);
             return (
               <motion.div key={id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.03, 0.2) }}>
-                <Card className="p-4">
+                <Card role="group" aria-label={`${s.key} ${s.campus_id ? 'campus' : 'global'}`} className="p-4">
                   <div className="flex items-center justify-between gap-2 mb-1 min-w-0">
                     <span className="font-mono font-bold text-xs text-foreground truncate min-w-0 flex-1">{s.key}</span>
                     <span className="flex items-center gap-1 shrink-0">
@@ -302,24 +296,24 @@ export default function AdminSystemSettings() {
                       // so instead of offering a Save that answers 403.
                       <SuperAdminBadge />
                     ) : isBool ? (
-                      <Toggle checked={s.value} onChange={() => toggleBool(s, s.value)} disabled={busy === id} />
+                      <Toggle checked={s.value} onChange={() => toggleBool(s, s.value)} disabled={!!busy || creating || loadError} />
                     ) : editKey === id ? (
                       <div className="flex gap-1.5 shrink-0">
-                        <button onClick={() => save(s)} disabled={busy === id} className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold active:scale-95 transition disabled:opacity-50 flex items-center gap-1">
+                        <button onClick={() => save(s)} disabled={!!busy || creating || loadError} className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold active:scale-95 transition disabled:opacity-50 flex items-center gap-1">
                           <Save className="w-3 h-3" /> Save
                         </button>
-                        <button onClick={() => setEditKey(null)} className="px-3 py-1.5 rounded-lg bg-secondary text-muted-foreground text-xs font-bold active:scale-95 transition">Cancel</button>
+                        <button disabled={!!busy} onClick={() => setEditKey(null)} className="px-3 py-1.5 rounded-lg bg-secondary text-muted-foreground text-xs font-bold active:scale-95 transition">Cancel</button>
                       </div>
                     ) : (
                       <button
-                        onClick={() => { setEditKey(id); setEditValue(displayValue(s.value)); }}
+                        disabled={!!busy || creating || loadError} onClick={() => { setEditKey(id); setEditValue(displaySettingValue(s.value)); setEditError(''); }}
                         className="px-3 py-1.5 rounded-lg bg-secondary text-secondary-foreground text-xs font-bold active:scale-95 transition hover:bg-primary/10 hover:text-primary shrink-0"
                       >
                         Edit
                       </button>
                     )}
                   </div>
-                  {desc && <div className="text-[11px] text-muted-foreground mb-2 break-words">{desc}{known && s.value !== known.default && ` · documented default: ${displayValue(known.default)}`}</div>}
+                  {desc && <div className="text-[11px] text-muted-foreground mb-2 break-words">{desc}{known && s.value !== known.default && ` · documented default: ${displaySettingValue(known.default)}`}</div>}
                   {s.key === 'campus_operations_email' ? <OperationsEmailControls value={s.value} campusId={s.campus_id} editable={editable} busy={busy === id} onSave={(value) => save(s, value)} /> : isBool ? (
                     <div className="font-bold text-sm text-foreground">{s.value ? 'Enabled' : 'Disabled'}</div>
                   ) : editKey === id ? (
@@ -333,17 +327,18 @@ export default function AdminSystemSettings() {
                             <button
                               key={m}
                               onClick={() => save(s, String(m))}
-                              disabled={busy === id}
+                              disabled={!!busy || creating || loadError}
                               className={`px-3.5 py-1.5 rounded-lg text-xs font-bold active:scale-95 transition disabled:opacity-50 ${Number(s.value) === m ? 'bg-primary text-white' : 'bg-secondary text-secondary-foreground hover:bg-primary/10 hover:text-primary'}`}
                             >
                               {m}×
                             </button>
                           ))}
-                          <button onClick={() => setEditKey(null)} className="px-3 py-1.5 rounded-lg bg-secondary text-muted-foreground text-xs font-bold active:scale-95 transition">Cancel</button>
+                          <button disabled={!!busy} onClick={() => setEditKey(null)} className="px-3 py-1.5 rounded-lg bg-secondary text-muted-foreground text-xs font-bold active:scale-95 transition">Cancel</button>
                         </div>
                       ) : (
                         <>
                           <input
+                            aria-label={`${s.key} value`} disabled={!!busy}
                             value={editValue}
                             onChange={(e) => setEditValue(e.target.value)}
                             autoFocus
@@ -357,7 +352,7 @@ export default function AdminSystemSettings() {
                     </div>
                   ) : (
                     <div className="flex items-baseline gap-2 flex-wrap min-w-0">
-                      <span className="font-bold text-sm text-foreground break-words min-w-0">{displayValue(s.value)}</span>
+                      <span className="font-bold text-sm text-foreground break-words min-w-0">{displaySettingValue(s.value)}</span>
                       {UNITS[s.key] && (
                         <span className="text-[10px] font-bold tracking-wide px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
                           {UNITS[s.key]}
@@ -372,17 +367,17 @@ export default function AdminSystemSettings() {
         </div>
       )}
 
-      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New Setting">
+      <Modal open={createOpen} onClose={() => { if (!creating) setCreateOpen(false); }} title="New Setting">
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">New setting scope: {isSuperAdmin ? 'Global' : writeScope.label}</p>
           <Field label="Key (lowercase, numbers, underscores)">
-            <TextInput value={draft.key} onChange={(e) => setDraft({ ...draft, key: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') })} placeholder="new_setting_key" />
+            <TextInput disabled={creating} value={draft.key} onChange={(e) => setDraft({ ...draft, key: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') })} placeholder="new_setting_key" />
           </Field>
-          <Field label="Value" hint="Booleans: true/false · numbers parse automatically · commas create a list">
-            <TextInput value={draft.value} onChange={(e) => setDraft({ ...draft, value: e.target.value })} placeholder="true" />
+          <Field label="Value" hint="Booleans: true/false · numbers parse automatically · objects and lists use JSON">
+            <TextInput disabled={creating} value={draft.value} onChange={(e) => setDraft({ ...draft, value: e.target.value })} placeholder="true" />
           </Field>
           <Field label="Description (optional)">
-            <TextInput value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="What this setting controls" />
+            <TextInput disabled={creating} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="What this setting controls" />
           </Field>
           <button onClick={createSetting} disabled={creating || !draft.key.trim()} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm active:scale-95 transition disabled:opacity-50">
             {creating ? 'Creating…' : 'Create Setting'}

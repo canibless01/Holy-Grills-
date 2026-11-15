@@ -30,6 +30,7 @@ Existing chat: **A1, A2, A3, A5, A6**. Other chat: **A4, A7, O4, O5**. Coordinat
 - **A3 staff controls:** current role/access expected-state, lookup→write race, no-op replay, manager hierarchy and pending native controls are verified in `ADMIN_IDENTITY_CONCURRENCY_2026_11_15.md`. No new role authority or database policy was introduced.
 
 - **A6:** shared campus contact failure/Retry, all six notification preferences, independent push-update rollback, and five popup account/viewport/page-target cases now pass in `PUBLIC_CONTACT_PREFERENCES_POPUPS_2026_11_15.md`. Remaining unmatched action reconciliation stays explicit.
+- **A4:** generic settings JSON/type/draft/version recovery and System cron/audit/health failure, retry and pagination cases now pass in `SETTINGS_SYSTEM_RECOVERY_2026_11_15.md`. Consumer reconciliation and configuration/inventory review continue.
 
 - **A2 dashboard:** nested delivery pipeline counts, common Lagos date range, HP tier fallback, missing-versus-zero feeds, Retry and delayed campus/role cases now pass in `ADMIN_DASHBOARD_CONTRACT_2026_11_15.md`. Independent report endpoints are not represented as a transactionally synchronized snapshot.
 

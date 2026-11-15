@@ -1506,6 +1506,10 @@ class MSG:
 
     # ── System Settings ────────────────────────────────────────────────────────
     SETTING_NOT_FOUND            = "Setting not found"
+    SETTING_EDIT_CONFLICT = "This setting changed while you were editing. Reload the latest settings, review your draft and save again."
+    FE_SYSTEM_NOT_REPORTED = "Not reported"
+    FE_SETTINGS_REFRESH_FAILED = "Settings could not be refreshed. Reload before making another change; your draft is kept."
+    FE_SETTINGS_RELOAD = "Reload latest settings"
     SETTING_VALUE_REQUIRED       = "'value' is required"
     SETTING_KEY_VALUE_REQUIRED   = "'key' and 'value' are required"
     SETTING_UPDATED              = "Setting updated"
