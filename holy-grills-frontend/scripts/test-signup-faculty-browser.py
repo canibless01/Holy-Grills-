@@ -9,7 +9,10 @@ rows.append({'id':'postgraduate','name':'Postgraduate','faculty':'Postgraduate'}
 c='70000001-cafe-cafe-cafe-000000000001';other='22222222-2222-4222-8222-222222222222';writes=[]
 def fixture(route):
     req=route.request;url=urlparse(req.url);path=url.path;query=parse_qs(url.query);data={}
-    if path.endswith('/campuses'):data=[{'id':c,'name':'FUTA Main Campus'},{'id':other,'name':'Other controlled campus'}]
+    if path.endswith('/auth/registration-options'):
+        campus=query.get('campus_id',[c])[0]
+        data={'campus_id':campus,'campuses':[{'id':c,'name':'FUTA Main Campus'},{'id':other,'name':'Other controlled campus'}],'departments':rows if campus==c else [{'id':'other-department','name':'Other programme','faculty':'Other school'}],'levels':[{'id':'level','name':'100 Level','value':'100'},{'id':'pg','name':'Postgraduate','value':'PG'}]}
+    elif path.endswith('/campuses'):data=[{'id':c,'name':'FUTA Main Campus'},{'id':other,'name':'Other controlled campus'}]
     elif path.endswith('/departments'):data={'departments':rows if query.get('campus_id')==[c] else [{'id':'other-department','name':'Other programme','faculty':'Other school'}]}
     elif path.endswith('/academic-levels'):data={'levels':[{'id':'level','name':'100 Level','value':'100'},{'id':'pg','name':'Postgraduate','value':'PG'}]}
     elif path.endswith('/auth/register'):writes.append(req.post_data_json);data={'status':'check_email','message':'Controlled registration accepted'}

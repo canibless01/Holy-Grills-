@@ -53,6 +53,8 @@ No outstanding newly reproduced launch-blocking code defect is recorded in the c
 
 ## Closed follow-up batches — do not keep listing as unfinished
 
+- Guest/account push opt-in, durable actual balance notices, monthly birthday outreach, department birthday gift links, explicit anonymous/contact-sharing cash and HP receipts and community-copy corrections: `BIRTHDAY_GIFTS_COMMUNITY_NOTICES_2026_11_15.md` (plus the linked opt-in/balance evidence). Actual future inbox/device arrival remains operational acceptance, not unfinished implementation.
+
 - Newsletter controls and durable worker send/cancel/unsubscribe/counter boundaries.
 - Campaigns & Blasts editor/history/analytics/test/sync/recovery and scoped access.
 - Ambassador roster, milestone configuration/edit/activation, atomic request replay, distribution/share/status and monthly review/grant controls.
@@ -60,4 +62,4 @@ No outstanding newly reproduced launch-blocking code defect is recorded in the c
 - Current legacy reward recovery; tier/grace transitions; challenge/milestone recovery; scheduled reminder implementation; multi-gift/reward/refund recorded combinations.
 - Event owner workspace, settlement contracts, registration/payment/check-in recovery, guest QR/account linking and administrator-only wallet refunds for the documented cases. Deferred event additions are listed above.
 
-Evidence index: `ADMIN_AUDIT_COVERAGE_STATUS.md`, `GENERAL_SITE_AUDIT_PROGRESS_2026_11_04.md`, `ADMIN_CONTINUATION_CHECKPOINT_2026_11_14.md`, `CURRENT_AUDIT_STATUS_2026_11_13.md`. The latest combined backend checkpoint is 1,797 passing tests and a passing production build. Neither a passing count nor a working page URL is whole-site sign-off.
+Evidence index: `ADMIN_AUDIT_COVERAGE_STATUS.md`, `GENERAL_SITE_AUDIT_PROGRESS_2026_11_04.md`, `ADMIN_CONTINUATION_CHECKPOINT_2026_11_14.md`, `CURRENT_AUDIT_STATUS_2026_11_13.md`. The latest combined backend checkpoint is 1,849 passing tests and a passing production build (15 November birthday/gifting integration). Neither a passing count nor a working page URL is whole-site sign-off.
