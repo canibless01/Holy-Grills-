@@ -111,3 +111,7 @@ The historical tables above are not a current backlog: later closure records in 
 ### Brand-request form and decisions — 14 November 2026
 
 [Native/API/concurrent persistence evidence](ADMIN_BRAND_REQUEST_CONTROLS_2026_11_14.md) closes current JSON/name/email/create/replay/status/Refresh controls. Stable UUIDs reuse the existing primary key; conditional updates reject stale decisions. Full backend 1,811, native mobile/desktop, local independent-session handler tests and production build pass. No migration or production test data.
+
+### Profile/account controls — 15 November 2026
+
+[Native profile/photo/save/reference/deletion recovery and handler boundary evidence](PROFILE_ACCOUNT_RECOVERY_2026_11_15.md) closes the recorded A3 UI/validation cases. Saved-but-failed-refresh now retains drafts honestly; no real account was deleted. Broader staff/account/configuration exceptions remain separate.

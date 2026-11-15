@@ -17,6 +17,17 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_PROFILE_REFRESH_FAILED = "Your changes were saved, but the updated profile could not be loaded. Retry to finish."
+    FE_PROFILE_SAVE_FAILED = "Your profile could not be saved. Please retry."
+    FE_PROFILE_DELETE_PASSWORD = "Enter your password to confirm."
+    FE_PROFILE_DELETE_FAILED = "Could not delete account."
+    FE_PROFILE_FULL_NAME = "Full name"
+    FE_PROFILE_NICKNAME = "Nickname"
+    FE_PROFILE_PHONE = "Phone"
+    FE_PROFILE_DEPARTMENT = "Department"
+    FE_PROFILE_LEVEL = "Level"
+    FE_PROFILE_DELETE_TITLE = "Delete account"
+    FE_PROFILE_DELETE_CLOSE = "Close account deletion"
     FE_ANALYTICS_BRAND_REFRESH = "Refresh requests"
     FE_ANALYTICS_BRAND_NAME = "Brand name"
     FE_ANALYTICS_BRAND_CONTACT = "Contact email"

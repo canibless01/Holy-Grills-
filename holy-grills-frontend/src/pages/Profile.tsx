@@ -1,6 +1,6 @@
 import { openInstallHelp, isStandalone } from '@/lib/installPromptStore';
 import { confirmAction } from '@/lib/confirmAction';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Phone, Mail, Calendar, Lock, Bell, LogOut, ChevronRight, Shield, Trash2, Flame, MapPin as MapPinIcon, Wallet as WalletIcon, Volume2, VolumeX, Store, CalendarDays, Sparkles, Crown, GraduationCap, BookOpen, Users, X } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
@@ -29,6 +29,10 @@ export default function Profile() {
     avatar_url: user?.avatar_url || user?.profile?.photo_url || user?.profile?.avatar_url || '',
   });
   const [saving, setSaving] = useState(false);
+  const saveLock = useRef(false);
+  const deleteLock = useRef(false);
+  const referenceVersion = useRef(0);
+  const [saveError,setSaveError] = useState('');
   const [freeSideCredits, setFreeSideCredits] = useState(null);
   const [exclusiveStatus, setExclusiveStatus] = useState(null);
   const [rewardReadErrors, setRewardReadErrors] = useState({ sides: false, spins: false });
@@ -58,16 +62,18 @@ export default function Profile() {
 
   const loadReferences = async () => {
     if (!user) return;
+    const version = ++referenceVersion.current;
     setReferenceReady(false); setReferenceError(false);
     try {
       const snapshot = await liveApi.auth.registrationOptions({ campus_id: user.campus_id || user.profile?.campus_id });
+      if (version !== referenceVersion.current) return;
       const deps = snapshot.departments, levels = snapshot.levels;
       setDepartments(deps); setAcademicLevels(levels);
       const saved = user.profile?.academic_level || user.academic_level;
       const matching = levels.find(l => l.value === saved || l.name === saved);
       if (!editing && matching) setForm(current => ({ ...current, academic_level_id: matching.id }));
       setReferenceReady(true);
-    } catch { setReferenceError(true); }
+    } catch { if (version === referenceVersion.current) setReferenceError(true); }
   };
   useEffect(() => {
     if (!user) return;
@@ -76,11 +82,12 @@ export default function Profile() {
     liveApi.rewards.getFreeSideCredits().then(value => { if (current) setFreeSideCredits(value); }).catch(() => { if (current) setRewardReadErrors(value => ({ ...value, sides: true })); });
     liveApi.hp.getExclusiveSpinStatus().then(value => { if (current) setExclusiveStatus(value); }).catch(() => { if (current) setRewardReadErrors(value => ({ ...value, spins: true })); });
     loadReferences();
-    return () => { current = false; };
-  }, [user?.id, rewardRetry]);
+    return () => { current = false; referenceVersion.current++; };
+  }, [user?.id, user?.campus_id, rewardRetry]);
 
   const handleSave = async () => {
-    setSaving(true);
+    if (saveLock.current || !referenceReady) return;
+    saveLock.current = true; setSaveError(''); setSaving(true);
     try {
       const dept = departments.find((d) => d.id === form.department_id);
       const level = academicLevels.find((l) => l.id === form.academic_level_id);
@@ -99,10 +106,11 @@ export default function Profile() {
         await liveApi.auth.updateProfilePhoto({ photo_url: form.avatar_url || null });
       }
       await liveApi.auth.updateProfile(body);
-      await refreshUser();
+      const refreshed = await refreshUser();
+      if (!refreshed) throw new Error(msg('FE_PROFILE_REFRESH_FAILED','Your changes were saved, but the updated profile could not be loaded. Retry to finish.'));
       setEditing(false);
-    } catch (e) { alert(e.message); }
-    setSaving(false);
+    } catch (e) { setSaveError(e.message || msg('FE_PROFILE_SAVE_FAILED','Your profile could not be saved. Please retry.')); }
+    finally { saveLock.current = false; setSaving(false); }
   };
 
   const handleLogout = async () => {
@@ -113,17 +121,18 @@ export default function Profile() {
   };
 
   const handleDeleteAccount = async () => {
+    if (deleteLock.current) return;
     setDeleteError(null);
-    if (!deletePassword.trim()) { setDeleteError('Enter your password to confirm.'); return; }
-    setDeleting(true);
+    if (!deletePassword.trim()) { setDeleteError(msg('FE_PROFILE_DELETE_PASSWORD','Enter your password to confirm.')); return; }
+    deleteLock.current = true; setDeleting(true);
     try {
       await liveApi.auth.deleteAccount({ password: deletePassword, reason: deleteReason.trim() || undefined });
       await logout();
       navigate('/');
     } catch (e) {
-      setDeleteError(e.message || 'Could not delete account.');
+      setDeleteError(e.message || msg('FE_PROFILE_DELETE_FAILED','Could not delete account.'));
     }
-    setDeleting(false);
+    deleteLock.current = false; setDeleting(false);
   };
 
   const tierInfo = hpBalance ? getTierProgress(hpBalance.hp_earned_120day) : null;
@@ -153,14 +162,14 @@ export default function Profile() {
       <h1 className="font-heading font-extrabold text-2xl text-foreground">Profile</h1>
 
       {/* Profile Card */}
-      <div className="rounded-2xl bg-gradient-dark p-5 text-white relative overflow-hidden">
+      <fieldset disabled={saving} className="min-w-0 border-0 rounded-2xl bg-gradient-dark p-5 text-white relative overflow-hidden">
         <div className="absolute -right-6 -top-6 text-6xl opacity-10 select-none">🔥</div>
         <div className="relative flex items-center gap-3">
           <TierAvatar user={user} hpEarned120Day={hpBalance?.hp_earned_120day} size="lg" />
           <div className="flex-1 min-w-0">
             {editing ? (
               <input
-                value={form.full_name}
+                aria-label={msg('FE_PROFILE_FULL_NAME','Full name')} value={form.full_name}
                 onChange={(e) => setForm({ ...form, full_name: e.target.value })}
                 className="bg-white/15 rounded-lg px-2 py-1 text-white text-lg font-bold focus:outline-none focus:ring-2 focus:ring-white/30 w-full"
               />
@@ -182,13 +191,13 @@ export default function Profile() {
               <ImageUploader value={form.avatar_url} onChange={(url) => setForm({ ...form, avatar_url: url })} folder="avatars" label="Avatar" />
             </div>
             <input
-              value={form.nickname}
+              aria-label={msg('FE_PROFILE_NICKNAME','Nickname')} value={form.nickname}
               onChange={(e) => setForm({ ...form, nickname: e.target.value })}
               className="w-full bg-white/15 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/30 placeholder-white/50"
               placeholder="Nickname (what friends call you)"
             />
             <input
-              value={form.phone}
+              aria-label={msg('FE_PROFILE_PHONE','Phone')} value={form.phone}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
               className="w-full bg-white/15 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/30 placeholder-white/50"
               placeholder="Phone"
@@ -199,7 +208,7 @@ export default function Profile() {
             </label>
             <div className="grid grid-cols-2 gap-2">
               <select
-                value={form.department_id}
+                aria-label={msg('FE_PROFILE_DEPARTMENT','Department')} value={form.department_id}
                 onChange={(e) => setForm({ ...form, department_id: e.target.value })}
                 className="w-full bg-white/15 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/30"
               >
@@ -210,7 +219,7 @@ export default function Profile() {
                 ))}
               </select>
               <select
-                value={form.academic_level_id}
+                aria-label={msg('FE_PROFILE_LEVEL','Level')} value={form.academic_level_id}
                 onChange={(e) => setForm({ ...form, academic_level_id: e.target.value })}
                 className="w-full bg-white/15 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/30"
               >
@@ -223,13 +232,14 @@ export default function Profile() {
             </div>
           </div>
         )}
+        {saveError && <p role="alert" className="mt-3 rounded-xl bg-white/15 p-3 text-sm">{saveError}</p>}
         <div className="mt-4 flex gap-2">
           {editing ? (
             <>
               <button onClick={handleSave} disabled={saving || !referenceReady} className="flex-1 py-2 rounded-xl bg-card text-foreground font-bold text-xs active:scale-[0.98] transition disabled:opacity-50">
                 {saving ? 'Saving...' : 'Save'}
               </button>
-              <button onClick={() => setEditing(false)} className="flex-1 py-2 rounded-xl bg-white/20 text-white font-bold text-xs active:scale-[0.98] transition">
+              <button disabled={saving} onClick={() => setEditing(false)} className="flex-1 py-2 rounded-xl bg-white/20 text-white font-bold text-xs active:scale-[0.98] transition">
                 Cancel
               </button>
             </>
@@ -239,7 +249,7 @@ export default function Profile() {
             </button>
           )}
         </div>
-      </div>
+      </fieldset>
 
       {/* Info */}
       <div className="rounded-2xl bg-card border border-border p-4 space-y-3">
@@ -364,28 +374,28 @@ export default function Profile() {
       {/* Delete Account Modal */}
       {showDelete && (
         <div className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4" onClick={() => !deleting && setShowDelete(false)}>
-          <div className="bg-card rounded-3xl p-6 w-full max-w-sm animate-slide-up" onClick={e => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" aria-label={msg('FE_PROFILE_DELETE_TITLE','Delete account')} className="bg-card rounded-3xl p-6 w-full max-w-sm animate-slide-up" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-3">
               <h3 className="font-heading font-bold text-lg text-foreground">Delete Account</h3>
-              <button onClick={() => setShowDelete(false)} disabled={deleting}><X className="w-5 h-5 text-muted-foreground" /></button>
+              <button aria-label={msg('FE_PROFILE_DELETE_CLOSE','Close account deletion')} onClick={() => setShowDelete(false)} disabled={deleting}><X className="w-5 h-5 text-muted-foreground" /></button>
             </div>
             <p className="text-xs text-muted-foreground mb-4 leading-relaxed">This permanently deactivates your account and removes your personal data. This action is irreversible.</p>
             <div className="space-y-3">
               <input
-                type="password"
+                type="password" disabled={deleting}
                 value={deletePassword}
                 onChange={(e) => setDeletePassword(e.target.value)}
                 placeholder="Your password"
                 className="w-full p-3 rounded-xl border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 transition"
               />
               <input
-                value={deleteReason}
+                disabled={deleting} value={deleteReason}
                 onChange={(e) => setDeleteReason(e.target.value)}
                 placeholder="Reason (optional)"
                 className="w-full p-3 rounded-xl border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 transition"
               />
               {deleteError && (
-                <div className="flex items-center gap-2 p-2.5 rounded-xl bg-destructive/10 border border-destructive/20">
+                <div role="alert" className="flex items-center gap-2 p-2.5 rounded-xl bg-destructive/10 border border-destructive/20">
                   <span className="text-xs text-destructive font-semibold">{deleteError}</span>
                 </div>
               )}

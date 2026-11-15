@@ -280,7 +280,7 @@ export const HolyGrillProvider = ({ children }) => {
   const isSavedItem = useCallback((menuItemId) => savedItems.some((s) => s.menu_item_id === menuItemId), [savedItems]);
 
   const refreshUser = useCallback(async () => {
-    if (!isAuthenticated()) return;
+    if (!isAuthenticated()) return null;
     try {
       const profile = await liveApi.auth.me();
       setUser(profile); persistUserCampus(profile);
@@ -289,7 +289,8 @@ export const HolyGrillProvider = ({ children }) => {
       // Push runs on OneSignal — identify the signed-in user so the device's
       // player id maps to their account (fire-and-forget, never blocks login).
       if (profile?.id) initOneSignal(profile.id).catch(() => {});
-    } catch (e) { /* ignore */ }
+      return profile;
+    } catch (e) { return null; }
   }, []);
 
   const refreshStreak = useCallback(async () => {
