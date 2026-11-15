@@ -79,6 +79,18 @@ def recipient_lookup(args):
     return {'lookup_type': kind, 'value': value}
 
 
+def gift_options(body):
+    result = {}
+    for key in ('anonymous', 'share_contact'):
+        if key in body:
+            if not isinstance(body[key], bool):
+                raise TransferError('invalid_transfer')
+            result[key] = body[key]
+    if result.get('anonymous') and result.get('share_contact'):
+        raise TransferError('invalid_transfer')
+    return result
+
+
 def intent(body):
     try:
         if not isinstance(body, dict) or isinstance(body.get('amount'), bool):
@@ -94,7 +106,7 @@ def intent(body):
     except (ValueError, TypeError, InvalidOperation, OverflowError):
         raise TransferError('invalid_transfer') from None
     return transfer_id, {'recipient_id': recipient_id, 'recipient_code': code(body.get('recipient_code')),
-                         'amount_kobo': int(amount * 100), 'note': note.strip()}
+                         'amount_kobo': int(amount * 100), 'note': note.strip(), **gift_options(body)}
 
 
 def dispatch_receipt(receipt):
@@ -102,7 +114,7 @@ def dispatch_receipt(receipt):
     amount = f'{float(receipt["amount"]):,.2f}'
     for user_id, kind, title, body in (
         (receipt.get('sender_id'), 'wallet_transfer_sent', 'Wallet transfer sent', f'You sent ₦{amount} to {receipt["recipient_name"]}.'),
-        (receipt.get('recipient_id'), 'wallet_transfer_received', 'Money added to your wallet', f'{receipt["sender_name"]} sent you ₦{amount}. It is ready to spend.'),
+        (receipt.get('recipient_id'), 'wallet_transfer_received', 'Money added to your wallet', f'{receipt["sender_name"]} sent you ₦{amount}. A little love, ready to spend. Open your receipt to read their message.'),
     ):
         if user_id:
             send_notification(user_id=user_id, notif_type=kind, title=title, body=body,

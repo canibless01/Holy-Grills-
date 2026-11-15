@@ -1,3 +1,4 @@
+import { GiftOptions, GiftContact } from './GiftOptions';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, Check, Copy, Loader2, Send, ShieldCheck } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
@@ -14,24 +15,29 @@ interface PendingTransfer {
   recipient_name: string;
   amount: number;
   note: string;
+  anonymous?: boolean;
+  share_contact?: boolean;
 }
 const DEFINITE_FAILURES = new Set(['account_unavailable', 'campus_required', 'transfers_paused', 'invalid_recipient_code',
   'recipient_unavailable', 'self_transfer', 'invalid_transfer', 'transfer_amount_out_of_range', 'transfer_daily_limit',
   'insufficient_wallet_balance', 'wallet_unavailable']);
 
-export default function WalletTransferModal({ receiptId, onClose, onSuccess }: {
+export default function WalletTransferModal({ receiptId, initialRecipient = null, onClose, onSuccess }: {
   receiptId?: string | null;
+  initialRecipient?: any;
   onClose: () => void;
   onSuccess: () => void | Promise<void>;
 }) {
   const { user } = useHolyGrill();
   const key = `hg_pending_wallet_transfer_v1:${user?.id}`;
   const [limits, setLimits] = useState<any>(null);
-  const [recipient, setRecipient] = useState<any>(null);
+  const [recipient, setRecipient] = useState<any>(initialRecipient);
   const [lookupKind, setLookupKind] = useState<'email' | 'phone' | 'code'>('email');
-  const [identifier, setIdentifier] = useState('');
+  const [identifier, setIdentifier] = useState(initialRecipient?.code || '');
   const [amount, setAmount] = useState('');
-  const [note, setNote] = useState('');
+  const [note, setNote] = useState(initialRecipient ? 'Happy birthday!' : '');
+  const [anonymous, setAnonymous] = useState(false);
+  const [shareContact, setShareContact] = useState(false);
   const [pending, setPending] = useState<PendingTransfer | null>(null);
   const [receipt, setReceipt] = useState<any>(null);
   const [busy, setBusy] = useState(false);
@@ -83,7 +89,7 @@ export default function WalletTransferModal({ receiptId, onClose, onSuccess }: {
     event.preventDefault(); if (!recipient || !limits || !limits.enabled || guard.current) return;
     setError('');
     setPending({ request_id: crypto.randomUUID(), recipient_id: recipient.id, recipient_code: recipient.code,
-      recipient_name: recipient.name, amount: Number(amount), note: note.trim() });
+      recipient_name: recipient.name, amount: Number(amount), note: note.trim(), anonymous, share_contact: shareContact });
   };
   const send = async () => {
     if (!pending || guard.current) return;
@@ -118,12 +124,14 @@ export default function WalletTransferModal({ receiptId, onClose, onSuccess }: {
       {receipt ? <>
         <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-success/10 text-success"><Check className="h-5 w-5" /></span><div><p className="text-xs text-muted-foreground">{receipt.direction === 'sent' ? 'Sent successfully' : 'Received successfully'}</p><p className="font-heading text-2xl font-extrabold">{formatNaira(receipt.amount)}</p></div></div>
         <dl className="space-y-3 rounded-2xl border border-border p-4 text-sm"><div><dt className="text-xs text-muted-foreground">From</dt><dd className="font-bold break-words">{receipt.sender_name}</dd></div><div><dt className="text-xs text-muted-foreground">To</dt><dd className="font-bold break-words">{receipt.recipient_name}</dd></div><div className="flex justify-between gap-3"><dt>Transfer fee</dt><dd className="font-bold">{formatNaira(0)}</dd></div><div className="flex justify-between gap-3"><dt>Balance after this transfer</dt><dd className="font-bold">{formatNaira(receipt.balance_after)}</dd></div>{receipt.note && <div><dt className="text-xs text-muted-foreground">Note</dt><dd className="break-words">{receipt.note}</dd></div>}<div><dt className="text-xs text-muted-foreground">Date</dt><dd>{new Date(receipt.created_at).toLocaleString('en-NG', { timeZone: 'Africa/Lagos' })} WAT</dd></div><div><dt className="text-xs text-muted-foreground">Reference</dt><dd className="break-all font-mono text-xs">{receipt.id}</dd></div></dl>
+        <GiftContact contact={receipt.shared_contact} />
         <button onClick={onClose} className="w-full rounded-xl bg-gradient-cta p-3 font-bold text-white">Done</button>
       </> : pending ? <>
         <p className="text-sm font-semibold">{uncertain ? 'Check this transfer' : 'Review your transfer'}</p>
         <div className="rounded-2xl bg-brand-brown p-4 text-white"><p className="text-xs text-white/70">You are sending</p><p className="mt-1 text-3xl font-extrabold">{formatNaira(pending.amount)}</p><p className="mt-3 font-bold break-words">To {pending.recipient_name}</p><p className="text-xs text-white/70">Code: {pending.recipient_code} · Same campus</p></div>
         <p className="text-sm">Transfer fee: <strong>{formatNaira(0)}</strong>. Your friend can spend the money immediately. Please check the recipient carefully before confirming.</p>
         {pending.note && <p className="rounded-xl bg-background p-3 text-sm break-words">{pending.note}</p>}
+        <p className="text-xs text-muted-foreground">{pending.anonymous ? msg('FE_GIFT_ANONYMOUS_REVIEW', 'Your name will be hidden.') : pending.share_contact ? msg('FE_GIFT_CONTACT_REVIEW', 'Your name and registered phone number will be shared.') : msg('FE_GIFT_NAMED_REVIEW', 'Your name will be shown; your phone number stays private.')}</p>
         {uncertain && <><p role="status" className="text-sm text-muted-foreground">A response may have been lost after the money moved. Closing this page keeps the same reference for recovery.</p><button disabled={busy} onClick={check} className="w-full rounded-xl border border-primary p-3 font-bold text-primary disabled:opacity-50">Check transfer</button></>}
         <button disabled={busy} onClick={send} className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-cta p-3 font-bold text-white disabled:opacity-50">{busy ? <><Loader2 className="h-4 w-4 animate-spin" />Checking…</> : uncertain ? 'Retry this same transfer' : <>Send {formatNaira(pending.amount)}<ArrowRight className="h-4 w-4" /></>}</button>
         {!uncertain && <button disabled={busy} onClick={() => setPending(null)} className="w-full py-2 text-sm font-semibold">Edit details</button>}
@@ -132,7 +140,7 @@ export default function WalletTransferModal({ receiptId, onClose, onSuccess }: {
         {limits.my_code && <div className="flex items-center justify-between gap-3 rounded-xl bg-background p-3 text-xs"><span>Your code: <strong className="font-mono">{limits.my_code}</strong></span><button aria-label="Copy my referral code" onClick={async () => { try { await navigator.clipboard.writeText(limits.my_code); setCopied(true); } catch { setError('Copy is unavailable. You can select your code instead.'); } }} className="flex items-center gap-1.5 font-bold text-primary"><Copy className="h-3.5 w-3.5" />{copied ? 'Copied' : 'Copy'}</button></div>}
         <fieldset disabled={busy} className="space-y-2"><legend className="mb-2 text-sm font-bold">Find your friend by</legend><div className="grid grid-cols-3 gap-1.5 rounded-xl bg-background p-1">{([['email', 'Email'], ['phone', 'Phone'], ['code', 'Referral code']] as const).map(([kind, label]) => <button key={kind} type="button" aria-pressed={lookupKind === kind} onClick={() => { setLookupKind(kind); setIdentifier(''); setRecipient(null); setError(''); }} className={`rounded-lg px-2 py-2.5 text-xs font-bold ${lookupKind === kind ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`}>{label}</button>)}</div></fieldset>
         <form onSubmit={lookup} className="space-y-3"><label className="block text-sm font-bold">{lookupKind === 'email' ? 'Recipient’s email address' : lookupKind === 'phone' ? 'Recipient’s phone number' : 'Friend’s referral code'}<input className={input} type={lookupKind === 'email' ? 'email' : lookupKind === 'phone' ? 'tel' : 'text'} required pattern={lookupKind === 'code' ? '[A-Za-z0-9_-]{3,80}' : undefined} maxLength={lookupKind === 'email' ? 254 : lookupKind === 'phone' ? 40 : 80} autoComplete="off" autoCapitalize="none" value={identifier} onChange={event => { setIdentifier(lookupKind === 'code' ? event.target.value.toUpperCase() : event.target.value); setRecipient(null); }} placeholder={lookupKind === 'email' ? 'friend@example.com' : lookupKind === 'phone' ? '08012345678 or +2348012345678' : 'Enter their referral code'} disabled={busy} /></label><p className="text-xs text-muted-foreground">Enter the complete details they registered with. Only active accounts on your campus can receive a transfer. Confirm the name before sending.</p><button disabled={busy} className="w-full rounded-xl border border-border p-3 text-sm font-bold disabled:opacity-50">{busy ? 'Checking…' : 'Find recipient'}</button></form>
-        {recipient && <form onSubmit={review} className="space-y-4 border-t border-border pt-4"><div className="rounded-xl bg-success/5 p-3"><p className="font-bold break-words">{recipient.name}</p><p className="mt-0.5 font-mono text-xs text-muted-foreground">{recipient.code} · Same campus</p></div><label className="block text-sm font-bold">Amount (₦)<input className={input} type="number" inputMode="decimal" required min={limits.minimum_amount} max={maximum} step="0.01" value={amount} onChange={event => setAmount(event.target.value)} disabled={busy} /></label><p className="text-xs text-muted-foreground">Minimum {formatNaira(limits.minimum_amount)} · Up to {formatNaira(Math.max(0, maximum))} available to send today.</p><label className="block text-sm font-bold">Note (optional)<input className={input} maxLength={200} value={note} onChange={event => setNote(event.target.value)} disabled={busy} /></label><button disabled={busy || maximum < limits.minimum_amount} className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-cta p-3 font-bold text-white disabled:opacity-50"><Send className="h-4 w-4" />Review transfer</button></form>}
+        {recipient && <form onSubmit={review} className="space-y-4 border-t border-border pt-4"><div className="rounded-xl bg-success/5 p-3"><p className="font-bold break-words">{recipient.name}</p><p className="mt-0.5 font-mono text-xs text-muted-foreground">{recipient.code} · Same campus</p></div><label className="block text-sm font-bold">Amount (₦)<input className={input} type="number" inputMode="decimal" required min={limits.minimum_amount} max={maximum} step="0.01" value={amount} onChange={event => setAmount(event.target.value)} disabled={busy} /></label><p className="text-xs text-muted-foreground">Minimum {formatNaira(limits.minimum_amount)} · Up to {formatNaira(Math.max(0, maximum))} available to send today.</p><label className="block text-sm font-bold">Note (optional)<input className={input} maxLength={200} value={note} onChange={event => setNote(event.target.value)} disabled={busy} /></label>{limits.gift_options_supported && <GiftOptions anonymous={anonymous} shareContact={shareContact} onAnonymous={setAnonymous} onShareContact={setShareContact} disabled={busy} />}<button disabled={busy || maximum < limits.minimum_amount} className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-cta p-3 font-bold text-white disabled:opacity-50"><Send className="h-4 w-4" />Review transfer</button></form>}
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><ShieldCheck className="h-3.5 w-3.5 shrink-0" />No transfer fee. Wallet money stays within Holy Grills.</p>
       </>}
     </div>

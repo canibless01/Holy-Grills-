@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+import { GiftOptions } from '@/components/wallet/GiftOptions';
+import { sessionStore } from '@/lib/storage';
+import { useState, useEffect, useRef } from 'react';
 import { Search, X, Send, Flame, AlertCircle, Check } from 'lucide-react';
 import { useStudentSearch } from '@/hooks/useStudentSearch';
 import { liveApi } from '@/lib/liveApi';
@@ -19,13 +21,19 @@ const DEFAULT_MIN_TRANSFER = 10;
  * searcher. The search is debounced so we only hit the API after the user
  * stops typing.
  */
-export default function HpTransferModal({ open, onClose }) {
+export default function HpTransferModal({ open, onClose, initialRecipient = null }) {
   const { hpBalance, refreshHp, user, getSetting } = useHolyGrill();
   const MIN_AMOUNT = getSetting('hp_transfer_min_amount', DEFAULT_MIN_TRANSFER);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(null);
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
+  const [anonymous, setAnonymous] = useState(false);
+  const [shareContact, setShareContact] = useState(false);
+  const [uncertain, setUncertain] = useState(false);
+  const requestRef = useRef<any>(null);
+  const sendingRef = useRef(false);
+  const pendingKey = `hg_pending_hp_gift_v1:${user?.id}`;
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
   const [done, setDone] = useState(null);
@@ -45,9 +53,15 @@ export default function HpTransferModal({ open, onClose }) {
 
   useEffect(() => {
     if (open) {
-      setQuery(''); setSelected(null); setAmount(''); setNotes(''); setError(null); setDone(null); setShowResults(false);
+      setQuery(initialRecipient?.name || ''); setSelected(initialRecipient ? { ...initialRecipient, full_name: initialRecipient.name } : null); setAmount(''); setNotes(initialRecipient ? 'Happy birthday!' : ''); setAnonymous(false); setShareContact(false); setUncertain(false); setError(null); setDone(null); setShowResults(false); requestRef.current = null;
+      try {
+        const saved = JSON.parse(sessionStore.getItem(pendingKey) || 'null');
+        if (saved?.body?.request_id && saved?.recipient?.id && saved.body.recipient_id === saved.recipient.id) {
+          requestRef.current = saved; setSelected(saved.recipient); setQuery(displayName(saved.recipient)); setAmount(String(saved.body.amount)); setNotes(saved.body.notes || ''); setAnonymous(saved.body.anonymous === true); setShareContact(saved.body.share_contact === true); setUncertain(true);
+        }
+      } catch { /* invalid storage cannot authorize a gift */ }
     }
-  }, [open]);
+  }, [open, initialRecipient, pendingKey]);
 
   if (!open) return null;
 
@@ -58,15 +72,21 @@ export default function HpTransferModal({ open, onClose }) {
   const pickRecipient = (r) => { setSelected(r); setQuery(displayName(r)); setShowResults(false); };
 
   const handleSend = async () => {
+    if (sendingRef.current) return;
     setError(null);
     if (!selected) { setError(msg('FE_HP_TRANSFER_MODAL_PICK_A_RECIPIENT_FIRST', 'Pick a recipient first.')); return; }
     if (selected.id === user?.id) { setError(msg('FE_HP_TRANSFER_MODAL_YOU_CAN_T_SEND_HP_TO_YOURSELF', 'You can\'t send HP to yourself.')); return; }
-    if (!Number.isInteger(amt) || amt < MIN_AMOUNT) { setError(msg('FE_HP_TRANSFER_MODAL_MINIMUM_TRANSFER_IS_MIN_AMOUNT_HP', 'Minimum transfer is {min_amount} HP.', { min_amount: MIN_AMOUNT })); return; }
-    if (amt > activeHp) { setError(msg('FE_HP_TRANSFER_MODAL_INSUFFICIENT_HP_BALANCE', 'Insufficient HP balance.')); return; }
-    setSending(true);
+    if (!Number.isInteger(amt) || (!uncertain && amt < MIN_AMOUNT)) { setError(msg('FE_HP_TRANSFER_MODAL_MINIMUM_TRANSFER_IS_MIN_AMOUNT_HP', 'Minimum transfer is {min_amount} HP.', { min_amount: MIN_AMOUNT })); return; }
+    if (!uncertain && amt > activeHp) { setError(msg('FE_HP_TRANSFER_MODAL_INSUFFICIENT_HP_BALANCE', 'Insufficient HP balance.')); return; }
+    sendingRef.current = true; setSending(true);
+    const details = { recipient_id: selected.id, amount: amt, notes: notes.trim(), anonymous, share_contact: shareContact };
+    const fingerprint = JSON.stringify(details);
+    if (!requestRef.current || requestRef.current.fingerprint !== fingerprint) requestRef.current = { fingerprint, body: { ...details, request_id: crypto.randomUUID() }, recipient: selected };
+    sessionStore.setItem(pendingKey, JSON.stringify(requestRef.current));
     try {
-      const res = await liveApi.hp.transfer({ recipient_id: selected.id, amount: amt, notes: notes.trim() || undefined });
-      await refreshHp();
+      const res = await liveApi.hp.transfer(requestRef.current.body);
+      sessionStore.removeItem(pendingKey); requestRef.current = null; setUncertain(false);
+      try { await refreshHp(); } catch { /* a saved gift stays successful if the balance refresh fails */ }
       setDone({ amount: amt, name: res?.recipient_name || displayName(selected), newBalance: res?.new_balance });
       haptic('success');
       toast({
@@ -78,14 +98,16 @@ export default function HpTransferModal({ open, onClose }) {
       haptic('error');
       const failure = e?.message || 'Transfer failed.';
       setError(failure);
+      if (e?.status === 400 || e?.status === 403) { sessionStore.removeItem(pendingKey); requestRef.current = null; setUncertain(false); }
+      else setUncertain(true);
     }
-    setSending(false);
+    sendingRef.current = false; setSending(false);
   };
 
   return (
     <ModalPortal>
-    <div className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-card rounded-3xl p-6 w-full max-w-sm animate-slide-up max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 hg-scrim flex items-end sm:items-center justify-center p-4" onClick={() => { if (!sendingRef.current) onClose(); }}>
+      <div role="dialog" aria-modal="true" aria-label="Send HP" className="bg-card rounded-3xl p-6 w-full max-w-sm animate-slide-up max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         {done ? (
           <div className="text-center py-4">
             <div className="w-14 h-14 rounded-full tone-success flex items-center justify-center mx-auto mb-3">
@@ -99,7 +121,7 @@ export default function HpTransferModal({ open, onClose }) {
           <>
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-heading font-bold text-lg text-foreground flex items-center gap-2"><Flame className="w-5 h-5 text-primary" /> Send HP</h3>
-              <button onClick={onClose}><X className="w-5 h-5 text-muted-foreground" /></button>
+              <button disabled={sending} aria-label="Close HP gift" onClick={onClose}><X className="w-5 h-5 text-muted-foreground" /></button>
             </div>
 
             <div className="rounded-2xl bg-foreground p-3 text-white mb-4">
@@ -110,6 +132,7 @@ export default function HpTransferModal({ open, onClose }) {
             <p role="status" className="text-xs text-muted-foreground mb-3">
               {eligibility ? `${eligibility.delivered_orders}/${eligibility.minimum_orders} delivered orders · ${eligibility.eligible ? 'Ready to send HP' : 'Complete more delivered orders to send HP'}` : eligibilityError || 'Checking transfer eligibility…'}
             </p>
+            <fieldset disabled={sending || uncertain}>
             {/* Recipient search */}
             <label className="text-xs font-bold text-muted-foreground uppercase">Recipient</label>
             <div className="relative mt-1">
@@ -175,6 +198,9 @@ export default function HpTransferModal({ open, onClose }) {
               className="w-full mt-1 p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary/60"
             />
 
+            {eligibility?.gift_options_supported && <GiftOptions anonymous={anonymous} shareContact={shareContact} onAnonymous={setAnonymous} onShareContact={setShareContact} disabled={sending || uncertain} />}
+            </fieldset>
+            {uncertain && <p role="status" className="mt-3 text-xs text-muted-foreground">{msg('FE_GIFT_RECOVER_HINT', 'A response may have been lost. Retry this same gift before starting another; it keeps the same reference.')}</p>}
             {error && (
               <div className="flex items-center gap-2 mt-3 p-2.5 rounded-xl tone-error border border-destructive/30">
                 <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
@@ -184,12 +210,12 @@ export default function HpTransferModal({ open, onClose }) {
 
             <button
               onClick={handleSend}
-              disabled={sending || !selected || !amountValid || !eligibility?.eligible}
+              disabled={sending || !selected || (!uncertain && (!amountValid || !eligibility?.eligible))}
               className="w-full mt-4 py-3 rounded-full bg-gradient-cta text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {sending ? 'Sending…' : (<><Send className="w-4 h-4" /> Send{amt && !isNaN(amt) ? ` ${amt} HP` : ''}</>)}
             </button>
-            <p className="text-[10px] text-muted-foreground text-center mt-2">HP comes from your Active balance. Recipients are notified instantly.</p>
+            <p className="text-[10px] text-muted-foreground text-center mt-2">HP comes from your active balance. The gift and notification are saved together.</p>
           </>
         )}
       </div>

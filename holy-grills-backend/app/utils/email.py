@@ -74,19 +74,19 @@ This link expires in 1 hour. If you didn't request this, you can safely ignore t
         "subject": MSG.EMAIL_BIRTHDAY_BONUS,
         "body": lambda d: f"""Happy Birthday! As a gift, we've added {d.get('hp', 150)} {d.get('currency', 'HP')} to your account.
 
-Treat yourself on us!""",
+A little birthday love from your Holy Grills people. Explore your rewards when you’re ready.""",
         "cta_buttons": lambda d: [{"label": "Order Now", "url": "https://holygrills.online/menu", "primary": True}],
     },
     "referral_completed": {
         "subject": MSG.EMAIL_REFERRAL_COMPLETED,
         "body": lambda d: f"""Great news — a friend you referred just placed their first order on {d.get('app_name', '')}.
 
-You've earned {d.get('hp', 75)} {d.get('currency', 'HP')} (active, no monthly cap). Spend it on your next order!""",
+You've earned {d.get('hp', 75)} {d.get('currency', 'HP')} in your active balance. Thanks for bringing your people along!""",
         "cta_buttons": lambda d: [{"label": "Order Now", "url": "https://holygrills.online/menu", "primary": True}],
     },
     "abandoned_cart": {
         "subject": MSG.EMAIL_ABANDONED_CART,
-        "body": lambda d: f"""You left some items in your cart. Come back and complete your order — your {d.get('currency', 'HP')} is waiting!
+        "body": lambda d: f"""You left some items in your cart. Pick up where you left off when you’re ready. Your {d.get('currency', 'HP')} rewards follow the usual order rules.
 
 {d.get('items_summary', '')}""",
         "cta_buttons": lambda d: [{"label": "Complete Your Order", "url": "https://holygrills.online/checkout", "primary": True}],

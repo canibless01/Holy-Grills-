@@ -57,6 +57,14 @@ def render(db, row):
             lines = [f"Period: {payload['from']} to {payload['to']} (Nigeria time)"]
         lines += [f"{label}: {_amount(payload[key]) if key in money else payload[key]}" for key, label in labels]
         subject = prefix + (' · Daily report' if kind == 'daily_report' else ' · Weekly report')
+    elif kind == 'birthday_report':
+        subject = prefix + ' · Birthdays in ' + str(payload.get('month') or 'this month')
+        lines = [f"{int(payload.get('count') or 0)} people to celebrate this month."]
+        for person in payload.get('people') or []:
+            lines.append(' · '.join(str(value) for value in (person.get('name'), person.get('date'), person.get('faculty'), person.get('department'), person.get('phone') or 'Phone not supplied') if value))
+        if not payload.get('people'):
+            lines.append('No birthdays on the campus list this month.')
+        lines += ['', 'Reach out privately to ask whether they would like to share a photo for a celebration.']
     elif kind == 'paid_order':
         order = _order(db, payload.get('order_id'))
         if not order or order.get('payment_status') not in ('paid', 'partially_refunded') or order.get('status') in ('cancelled', 'refunded'):

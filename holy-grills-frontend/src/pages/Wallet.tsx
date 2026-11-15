@@ -1,3 +1,4 @@
+import BirthdayGiftPanel from '@/components/wallet/BirthdayGiftPanel';
 import { lazy, Suspense, useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { liveApi } from '@/lib/liveApi';
@@ -17,6 +18,7 @@ import { hpTransferMinOrders } from '@/lib/appConfig';
 import { ChevronDown, Repeat2 } from 'lucide-react';
 
 const WalletTransferModal = lazy(() => import('@/components/wallet/WalletTransferModal'));
+const HpGiftReceipt = lazy(() => import('@/components/wallet/HpGiftReceipt'));
 const AutoFundingPanel = lazy(() => import('@/components/wallet/AutoFundingPanel'));
 
 export default function Wallet() {
@@ -38,6 +40,7 @@ export default function Wallet() {
   useEffect(() => {
     if (incomingTransfer) { setReceiptId(incomingTransfer); setShowMoneyTransfer(true); }
   }, [incomingTransfer]);
+  const [giftRecipient, setGiftRecipient] = useState<any>(null);
   const [showTransfer, setShowTransfer] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
   // Eligibility and the release gate are independent requirements.
@@ -139,8 +142,9 @@ export default function Wallet() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <WalletBalanceCard balance={balance} onFund={() => setShowFund(true)} onSend={isFeatureEnabled('wallet_transfer') ? () => { setReceiptId(null); setShowMoneyTransfer(true); } : null} />
-        <WalletHpCard hpBalance={hpBalance} onSend={() => setShowTransfer(true)} transferEnabled={hpTransferEnabled} transferVisible={transferReleased} minimumOrders={transferMinimum} deliveredCount={deliveredCount} />
+        {searchParams.get('gift_to') && <BirthdayGiftPanel code={searchParams.get('gift_to')} cashEnabled={isFeatureEnabled('wallet_transfer')} hpEnabled={hpTransferEnabled} onCash={person => { setGiftRecipient(person); setReceiptId(null); setShowMoneyTransfer(true); }} onHp={person => { setGiftRecipient(person); setShowTransfer(true); }} />}
+        <WalletBalanceCard balance={balance} onFund={() => setShowFund(true)} onSend={isFeatureEnabled('wallet_transfer') ? () => { setGiftRecipient(null); setReceiptId(null); setShowMoneyTransfer(true); } : null} />
+        <WalletHpCard hpBalance={hpBalance} onSend={() => { setGiftRecipient(null); setShowTransfer(true); }} transferEnabled={hpTransferEnabled} transferVisible={transferReleased} minimumOrders={transferMinimum} deliveredCount={deliveredCount} />
       </div>
 
       <WalletVirtualAccount account={virtualAccount} />
@@ -180,12 +184,13 @@ export default function Wallet() {
         onAutoFunding={() => { setShowFund(false); setShowAutoFunding(true); setTimeout(() => document.getElementById('automatic-funding')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); }}
       />
 
-      {showMoneyTransfer && <Suspense fallback={<p role="status" className="text-sm">Loading transfer details…</p>}><WalletTransferModal key={`${user?.id}:${receiptId || 'send'}`} receiptId={receiptId} onClose={() => {
+      {showMoneyTransfer && <Suspense fallback={<p role="status" className="text-sm">Loading transfer details…</p>}><WalletTransferModal key={`${user?.id}:${receiptId || 'send'}`} receiptId={receiptId} initialRecipient={giftRecipient} onClose={() => {
         setShowMoneyTransfer(false); setReceiptId(null);
         if (searchParams.has('transfer')) { const params = new URLSearchParams(searchParams); params.delete('transfer'); setSearchParams(params, { replace: true }); }
       }} onSuccess={async () => { await refreshWallet(); setHistoryRetry(value => value + 1); }} /></Suspense>}
 
-      <HpTransferModal open={showTransfer && transferReleased} onClose={() => setShowTransfer(false)} />
+      {searchParams.get('hp_gift') && <Suspense fallback={null}><HpGiftReceipt key={`${user?.id}:${searchParams.get('hp_gift')}`} id={searchParams.get('hp_gift')} onClose={() => { const params = new URLSearchParams(searchParams); params.delete('hp_gift'); setSearchParams(params, { replace: true }); }} /></Suspense>}
+      <HpTransferModal initialRecipient={giftRecipient} open={showTransfer && transferReleased} onClose={() => setShowTransfer(false)} />
     </div>
   );
 }

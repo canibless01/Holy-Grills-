@@ -18,6 +18,7 @@ export default function Register() {
   const location = useLocation();
   const from = location.state?.from;
   const guestOrderReturn = typeof from === 'string' && /^\/orders\/[0-9a-f-]{36}(?:\?[^#]*)?$/i.test(from) ? from : null;
+  const giftReturn = typeof from === 'string' && /^\/wallet\?gift_to=[A-Za-z0-9_-]{3,80}(?:&[^#]*)?$/.test(from) ? from : null;
   const { register } = useHolyGrill();
   const [form, setForm] = useState({
     full_name: '', nickname: '', email: searchParams.get('email') || '', password: '', confirm: '',
@@ -150,7 +151,7 @@ export default function Register() {
         toast({ title: msg('FE_REGISTER_SUCCESS_TITLE', "You're in ❤️‍🔥"), description: msg('FE_REGISTER_SUCCESS_BODY', 'Welcome to Holy Grills.') });
         const role = data?.role || data?.user?.role || 'student';
         const isStaff = ['admin', 'super_admin', 'kitchen', 'rider'].includes(role);
-        window.location.href = isStaff ? (ROLE_HOME[role] || '/admin') : (guestOrderReturn || STUDENT_HOME);
+        window.location.href = isStaff ? (ROLE_HOME[role] || '/admin') : (guestOrderReturn || giftReturn || STUDENT_HOME);
         return;
       }
       // No session returned — show generic notice (anti-enumeration: don't reveal if email confirmation is required)

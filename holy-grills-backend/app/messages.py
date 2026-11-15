@@ -859,7 +859,7 @@ class MSG:
     ORDER_SCHEDULED_DEFERRED_BODY  = "Your requested day is full — your order is scheduled for {scheduled_date}, delivery between {delivery_window_start}–{delivery_window_end}."
 
     ORDER_PREPARING_TITLE        = "Your order is being prepared"
-    ORDER_PREPARING_BODY         = "The kitchen is on it! Won't be long."
+    ORDER_PREPARING_BODY         = "Your meal is on the grill. We’ll let you know when it’s ready for a rider."
 
     ORDER_READY_TITLE            = "Order Ready!"
     ORDER_READY_BODY             = "Your order is ready and waiting for a rider."
@@ -899,15 +899,42 @@ class MSG:
 
     # ── Tier ──────────────────────────────────────────────────────────────────
     TIER_UPGRADE_TITLE       = "You reached {tier_name}!"
-    TIER_UPGRADE_BODY        = "Congratulations! You've earned {tier_name} status. Enjoy your enhanced rewards."
+    TIER_UPGRADE_BODY        = "You’ve reached {tier_name}! Thanks for being part of the circle. Your new perks are ready to explore."
     TIER_DROPPED_TITLE       = "Tier Update \u2014 {from_tier} \u2192 {to_tier}"
-    TIER_DROPPED_BODY        = "Your grace period has ended. Keep ordering to climb back up!"
+    TIER_DROPPED_BODY        = "Your grace period has ended and your tier has changed. There’s always room to climb back — we’re glad you’re here."
     TIER_GRACE_TITLE         = "{grace_days}-Day Grace Period Started \u2014 {tier_name}"
     TIER_GRACE_BODY          = "Your {currency} is below the {tier_name} maintenance threshold. Order within {grace_days} days to keep your tier!"
 
     # ── Birthday ──────────────────────────────────────────────────────────────
+    GIFT_INVALID_REQUEST = "Review your gift amount, recipient and sharing choices, then try again."
+    GIFT_INSUFFICIENT_HP = "Your active HP balance is too low for this gift."
+    GIFT_CHANGED_REQUEST = "This gift reference already belongs to different details. Check its receipt before sending again."
+    GIFT_STATUS_UNCERTAIN = "Your gift status is not confirmed yet. Check or retry this same gift before sending another."
+    GIFT_RECEIPT_UNAVAILABLE = "This gift receipt is not available for your account."
+    FE_GIFT_VISIBILITY = "How your gift shows up"
+    FE_GIFT_ANONYMOUS = "Send anonymously"
+    FE_GIFT_ANONYMOUS_HELP = "Your name stays private. Your message is still visible."
+    FE_GIFT_SHARE_PHONE = "Share my registered phone number with the recipient"
+    FE_GIFT_SHARE_PHONE_HELP = "So they can reach out and say thank you. This is optional."
+    FE_GIFT_CONTACT_SHARED = "They shared their number so you can say thank you."
+    FE_GIFT_CALL_THANKS = "Call to say thank you"
+    FE_GIFT_BIRTHDAY_HEADING = "A little birthday love"
+    FE_GIFT_LOADING_FRIEND = "Finding your campus friend…"
+    FE_GIFT_BIRTHDAY_PERSON = "It’s {name}’s birthday. Send a little wallet money or Holy Points, with a message from you."
+    FE_GIFT_SEND_CASH = "Send wallet money"
+    FE_GIFT_SEND_HP = "Send HP"
+    FE_GIFT_HP_LOCKED = "HP gifts follow your account’s transfer eligibility. You can still choose wallet money when it is available."
+    FE_GIFT_HP_RECEIPT = "Your HP gift"
+    FE_GIFT_LOADING_RECEIPT = "Opening your gift…"
+    FE_GIFT_FROM = "From {name}"
+    FE_GIFT_TO = "To {name}"
+    FE_GIFT_ANONYMOUS_REVIEW = "Your name will be hidden."
+    FE_GIFT_CONTACT_REVIEW = "Your name and registered phone number will be shared."
+    FE_GIFT_NAMED_REVIEW = "Your name will be shown; your phone number stays private."
+    FE_GIFT_RECOVER_HINT = "A response may have been lost. Retry this same gift before starting another; it keeps the same reference."
+    BIRTHDAY_GIFT_UNAVAILABLE = "This birthday celebration is not available for your account. You can still send a gift from your wallet."
     BIRTHDAY_TITLE           = "Happy Birthday, {name}!"
-    BIRTHDAY_BODY            = "You've received {hp} {currency} as a birthday gift! Valid for 30 days. Enjoy your special day."
+    BIRTHDAY_BODY            = "A little birthday love: {hp} {currency} has been added to your account. Have a beautiful day!"
     BIRTHDAY_REPORT_TITLE    = "\U0001f382 {count} Birthday{plural} This Month ({month})"
 
     # ── Abandoned Cart ───────────────────────────────────────────────────────
@@ -963,8 +990,8 @@ class MSG:
     # ── Referrals ─────────────────────────────────────────────────────────────
     REFERRAL_NOT_FOUND       = "No referral found"
     REFERRAL_ALREADY_DONE    = "Referral already completed"
-    REFERRAL_HP_EARNED_TITLE = "Referral Bonus!"
-    REFERRAL_HP_EARNED_BODY  = "A friend you referred just placed their first order. You've earned {hp} {currency}!"
+    REFERRAL_HP_EARNED_TITLE = "Your referral reward is in"
+    REFERRAL_HP_EARNED_BODY  = "Your friend placed their first order. Thanks for bringing them along — {hp} {currency} has landed in your balance!"
 
     # ── Storefront ────────────────────────────────────────────────────────────
     STOREFRONT_ALREADY_SUBSCRIBED = "Already subscribed"
@@ -1088,12 +1115,12 @@ class MSG:
     GIFT_KITCHEN_BODY            = "Order #{order_id} qualifies for the first-order hot dog gift."
 
     # ── Referral signup ───────────────────────────────────────────────────────
-    REFERRAL_SIGNUP_TITLE        = "Someone Used Your Referral!"
-    REFERRAL_SIGNUP_BODY         = "A new user just signed up with your referral link. They need to place their first order to complete the referral."
+    REFERRAL_SIGNUP_TITLE        = "Your circle just grew"
+    REFERRAL_SIGNUP_BODY         = "Someone joined Holy Grills with your link. Their first order is the next step towards your referral reward."
 
     # ── Referral milestone ────────────────────────────────────────────────────
     REFERRAL_MILESTONE_TITLE     = "Milestone! {count} Referral{plural} Completed 🎉"
-    REFERRAL_MILESTONE_BODY      = "You earned {hp} bonus {currency} for referring {count} friend{plural}!"
+    REFERRAL_MILESTONE_BODY      = "You brought {count} friend{plural} into the circle. Here’s {hp} bonus {currency} to celebrate!"
 
     # ── Leaderboard ───────────────────────────────────────────────────────────
     LEADERBOARD_RANK_TITLE       = "You Made the Top 10! 🏆"
@@ -1442,7 +1469,7 @@ class MSG:
     ORDER_LOCK_REDEEMED_HP_BODY  = "Your locked-date order was delivered. You earned {hp} {currency}!"
     ORDER_LOCK_REMINDER_BODY_HP  = "Your {hp} {currency} reward is waiting for {date}. Place an order to claim it!"
     BIRTHDAY_BLAST_TITLE         = "🎂 It's {name}'s Birthday Today!"
-    BIRTHDAY_BLAST_BODY          = "Celebrate {name}'s birthday — tap to send them {currency} as a gift! 🎉"
+    BIRTHDAY_BLAST_BODY          = "It’s {name}’s birthday! Send a kind word or a little {currency} love to celebrate. 🎉"
 
     # ── First-Order Gift ───────────────────────────────────────────────────────
     GIFT_NOT_FOUND               = "Gift not found"
@@ -1472,7 +1499,7 @@ class MSG:
 
     # ── Squad HP Split ─────────────────────────────────────────────────────────
     SQUAD_HP_SPLIT_TITLE         = "Squad {currency} Earned!"
-    SQUAD_HP_SPLIT_BODY          = "You earned {hp} {currency} from the squad order placed by {organizer}."
+    SQUAD_HP_SPLIT_BODY          = "Good food, shared rewards. Your squad order with {organizer} earned you {hp} {currency}."
     SQUAD_ORDER_ADDED_BODY       = "{organizer} added you to a squad order."
     SQUAD_MAX_MEMBERS_REACHED    = "This squad has reached its member limit."
     SQUAD_ORGANIZER_ONLY         = "Only the squad organizer can do this."
@@ -1543,7 +1570,7 @@ class MSG:
 
     # ── HP Transfer — recipient notification ──────────────────────────────────
     HP_TRANSFER_RECEIVED_TITLE   = "You received {amount} {currency}! 🎉"
-    HP_TRANSFER_RECEIVED_BODY    = "{sender} sent you {amount} {currency}."
+    HP_TRANSFER_RECEIVED_BODY    = "{sender} sent you {amount} {currency}. Open your gift to read their message."
 
     # ── Social follow milestone ───────────────────────────────────────────────
     SOCIAL_FOLLOW_NOT_CONFIGURED = "Social follow milestone not configured"
@@ -1655,27 +1682,28 @@ class MSG:
 
     # Reviews (personalized)
     REVIEW_REQUEST_TITLE       = "How was your order? \u2b50"
-    REVIEW_REQUEST_BODY        = "Order #{order_id} is delivered! Leave a review and earn {currency}."
+    REVIEW_REQUEST_BODY        = "How did we do on order #{order_id}? Share your experience and earn {currency}."
     REVIEW_SUBMITTED_TITLE     = "Review Submitted"
-    REVIEW_SUBMITTED_BODY      = "Thanks for your feedback, {name}! Your review on order #{order_id} is live."
+    REVIEW_SUBMITTED_BODY      = "Thanks for sharing your experience, {name}. Your review of order #{order_id} is live."
 
     # HP Earned — source-specific (personalized)
-    HP_EARNED_FOOD_BODY        = "You earned {hp} {currency} from your food order, {name}. Keep ordering to unlock more!"
+    HP_EARNED_REVIEW_BODY = "Thanks for your review, {name}. You earned {hp} pending {currency}; your balance shows what is ready to use."
+    HP_EARNED_FOOD_BODY        = "{name}, your meal brought a little extra: {hp} {currency} has been added to your balance."
     HP_EARNED_WELCOME_TITLE    = "Welcome Bonus!"
     HP_EARNED_WELCOME_BODY     = "You earned {hp} {currency} for your first order delivery. Welcome to {brand}, {name}!"
     HP_EARNED_TOPUP_TITLE      = "+{hp} {currency} Earned!"
-    HP_EARNED_TOPUP_BODY       = "You earned {hp} {currency} for topping up your wallet, {name}."
-    HP_EARNED_ANNIVERSARY_BODY = "Membership anniversary bonus — {hp} {currency} added to your account, {name}!"
+    HP_EARNED_TOPUP_BODY       = "{name}, your wallet top-up earned {hp} {currency}. A little extra for your next get-together."
+    HP_EARNED_ANNIVERSARY_BODY = "Another milestone together, {name}! Your membership anniversary brings {hp} {currency} to your account."
     HP_EARNED_SOCIAL_TITLE     = "+{hp} {currency} for Following Us!"
-    HP_EARNED_SOCIAL_BODY      = "Thanks for following us on {platform}, {name}! {hp} {currency} has been added to your account."
-    HP_EARNED_LOGIN_BODY       = "You earned {hp} {currency} for your login streak, {name}. Keep checking in!"
-    HP_EARNED_CHALLENGE_BODY   = "You earned {hp} {currency} for completing a challenge, {name}!"
+    HP_EARNED_SOCIAL_BODY      = "Thanks for staying connected on {platform}, {name}. Your account received {hp} {currency}."
+    HP_EARNED_LOGIN_BODY       = "Good to see you again, {name}. Your check-in streak earned {hp} {currency}!"
+    HP_EARNED_CHALLENGE_BODY   = "You did it, {name}! Completing this challenge earned you {hp} {currency}."
 
     # HP Gift (personalized)
-    HP_GIFT_RECEIVED_TITLE     = "\U0001f381 {currency} Gift Received!"
-    HP_GIFT_RECEIVED_BODY      = "{gift_sender} sent you {hp} {currency} as a gift, {name}!"
+    HP_GIFT_RECEIVED_TITLE     = "A little {currency} love for you"
+    HP_GIFT_RECEIVED_BODY      = "{name}, {gift_sender} sent you {hp} {currency}. A little something to brighten your day!"
     HP_GIFT_SENT_TITLE         = "{currency} Gift Sent"
-    HP_GIFT_SENT_BODY          = "You sent {hp} {currency} to a friend successfully."
+    HP_GIFT_SENT_BODY          = "You sent {hp} {currency} to a friend. Thanks for spreading a little love."
 
     # Flash sale (personalized)
     FLASH_REDEEMED_TITLE       = "Flash Deal Redeemed!"
@@ -1689,7 +1717,7 @@ class MSG:
 
     # Tier (personalized)
     TIER_GRACE_ENDED_TITLE     = "Grace Period Ended — Tier Changed"
-    TIER_GRACE_ENDED_BODY      = "Hi {name}, your grace period ended. You've moved from {from_tier} to {to_tier}. Keep ordering to climb back!"
+    TIER_GRACE_ENDED_BODY      = "{name}, your grace period ended and your tier moved from {from_tier} to {to_tier}. Keep showing up with your people to climb back."
 
     # Events — user-facing (personalized)
     EVENT_TICKET_PURCHASED_TITLE = "Ticket Confirmed! \U0001f3ab"
@@ -1787,10 +1815,10 @@ class MSG:
 
     # Non-personalized notifications (include_name=False)
     NOTIF_WELCOME_TITLE            = "Welcome to {brand}!"
-    NOTIF_WELCOME_BODY             = "You're in! Start exploring the menu and earn {currency} with every order."
-    NOTIF_WELCOME_BODY_HP          = "You're in! You've earned {welcome_hp} {currency}. Start exploring the menu and earn more with every order."
-    NOTIF_WELCOME_BODY_SIDES       = "You're in! You've got {free_side_credits} free side credit(s) waiting. Start exploring the menu and earn {currency} with every order."
-    NOTIF_WELCOME_BODY_BOTH        = "You're in! You've earned {welcome_hp} {currency} + {free_side_credits} free side credit(s). Start exploring the menu and earn more with every order."
+    NOTIF_WELCOME_BODY             = "You’re part of the circle! Bring your people, explore the menu and earn {currency} with your orders."
+    NOTIF_WELCOME_BODY_HP          = "You’re part of the circle! Your welcome gift is {welcome_hp} {currency}. Bring your people — we’ll bring the fire."
+    NOTIF_WELCOME_BODY_SIDES       = "You’re part of the circle! Your {free_side_credits} free side credit(s) are ready at checkout. Earn {currency} with your orders too."
+    NOTIF_WELCOME_BODY_BOTH        = "You’re part of the circle! Your welcome gifts are {welcome_hp} {currency} and {free_side_credits} free side credit(s). See you at the grill."
     NOTIF_EMAIL_VERIFY_TITLE       = "Verify Your Email"
     NOTIF_EMAIL_VERIFY_BODY        = "Click the link in your email to activate your {brand} account."
     NOTIF_PASSWORD_RESET_TITLE     = "Password Reset Request"
@@ -1798,7 +1826,7 @@ class MSG:
     NOTIF_SYSTEM_TITLE             = "\U0001f4e2 System Announcement"
     NOTIF_SYSTEM_BODY              = "An important update from {brand}. Check the app for details."
     NOTIF_SQUAD_INVITE_TITLE       = "You've Been Invited!"
-    NOTIF_SQUAD_INVITE_BODY        = "You've been invited to join a {brand} squad order. Check the app to join."
+    NOTIF_SQUAD_INVITE_BODY        = "Your people are getting a {brand} squad order together. Open the app to join them."
     NOTIF_SQUAD_MEMBER_ADDED_TITLE = "You're in a Squad Order!"
 
     # ── Challenges / Gamification (personalized) ─────────────────────────────

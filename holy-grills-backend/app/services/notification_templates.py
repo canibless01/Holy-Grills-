@@ -478,7 +478,7 @@ NOTIFICATION_TEMPLATES: dict = {
     },
     "hp_earned_review": {
         "title":        MSG.HP_EARNED_TITLE,
-        "body":         MSG.HP_EARNED_FOOD_BODY,
+        "body":         MSG.HP_EARNED_REVIEW_BODY,
         "include_name": True,
         "channels":     None,
     },

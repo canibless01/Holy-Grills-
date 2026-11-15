@@ -564,7 +564,7 @@ def _transfer_order_eligibility(db, user_id):
 @require_auth
 def transfer_order_eligibility():
     minimum, delivered = _transfer_order_eligibility(get_user_client(), g.user_id)
-    return jsonify({"minimum_orders": minimum, "delivered_orders": delivered, "eligible": delivered >= minimum}), 200
+    return jsonify({"minimum_orders": minimum, "delivered_orders": delivered, "eligible": delivered >= minimum, "gift_options_supported": True}), 200
 
 
 @hp_bp.route("/transfer", methods=["POST"])
@@ -598,20 +598,44 @@ def transfer_hp():
       404:
         description: Recipient not found
     """
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': MSG.REQUIRED_FIELD_MISSING}), 400
+    from app.services.hp_gifts import replay
+    from app.services.wallet_transfers import TransferError
+    try:
+        saved = replay(data, g.user_id)
+    except TransferError as exc:
+        return jsonify({'error': str(exc), 'code': exc.code}), exc.status
+    except Exception:
+        return jsonify({'error': MSG.GIFT_STATUS_UNCERTAIN, 'code': 'transfer_uncertain'}), 503
+    if saved:
+        from app.services.notification_outbox import start_reference_dispatch
+        start_reference_dispatch('hp_transfer_sent', saved['transfer_id'])
+        start_reference_dispatch('hp_transfer_recipient', saved['transfer_id'])
+        return jsonify(saved), 200
     from app.services.feature_flags import is_feature_enabled
     if not is_feature_enabled("hp_transfer"):
         return jsonify({"error": resolve_msg(MSG.FEATURE_NOT_AVAILABLE, feature="HP transfer")}), 403
 
-    data = request.get_json(force=True) or {}
-    recipient_id = (data.get("recipient_id") or "").strip()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': MSG.REQUIRED_FIELD_MISSING}), 400
+    if not isinstance(data.get('recipient_id'), str) or not isinstance(data.get('notes') or '', str):
+        return jsonify({'error': MSG.GIFT_INVALID_REQUEST}), 400
+    recipient_id = data['recipient_id'].strip()
     amount = data.get("amount")
     notes = (data.get("notes") or "").strip()
 
     if not recipient_id or not amount:
         return jsonify({"error": MSG.REQUIRED_FIELD_MISSING}), 400
     try:
-        amount = int(amount)
-    except (TypeError, ValueError):
+        from decimal import Decimal
+        parsed = Decimal(str(amount))
+        if isinstance(amount, bool) or not parsed.is_finite() or parsed != parsed.to_integral_value() or parsed > 2147483647:
+            raise ValueError()
+        amount = int(parsed)
+    except (TypeError, ValueError, ArithmeticError):
         return jsonify({"error": MSG.REQUIRED_FIELD_MISSING}), 400
 
     min_transfer = int(current_app.config.get("HP_TRANSFER_MIN_AMOUNT", 10))
@@ -653,6 +677,39 @@ def transfer_hp():
             "error": resolve_msg(MSG.HP_TRANSFER_INSUFFICIENT, have=balance.get("active", 0), need=amount)
         }), 400
 
+    if data.get('request_id'):
+        from uuid import UUID
+        from app.services.wallet_transfers import gift_options, TransferError
+        try:
+            request_id = str(UUID(str(data['request_id'])))
+            options = gift_options(data)
+            if len(notes) > 200:
+                raise ValueError()
+        except (ValueError, TypeError, TransferError):
+            return jsonify({'error': MSG.GIFT_INVALID_REQUEST, 'code': 'invalid_transfer'}), 400
+        try:
+            result = get_db().rpc('hg_transfer_hp_gift', {'p_sender': g.user_id, 'p_recipient': recipient_id,
+                'p_amount': amount, 'p_request': request_id, 'p_options': {**options, 'note': notes}})
+        except Exception as exc:
+            message = (getattr(exc, 'details', None) or {}).get('message') or str(exc)
+            known = {'recipient_unavailable': (MSG.HP_TRANSFER_USER_NOT_FOUND, 400),
+                     'insufficient_hp': (MSG.GIFT_INSUFFICIENT_HP, 400),
+                     'invalid_transfer': (MSG.GIFT_INVALID_REQUEST, 400),
+                     'transfer_intent_conflict': (MSG.GIFT_CHANGED_REQUEST, 409),
+                     'transfer_not_found': (MSG.GIFT_CHANGED_REQUEST, 409)}
+            text, status = known.get(message, (MSG.GIFT_STATUS_UNCERTAIN, 503))
+            return jsonify({'error': text, 'code': message if message in known else 'transfer_uncertain'}), status
+        if not isinstance(result, dict) or not result.get('success'):
+            return jsonify({'error': MSG.GIFT_STATUS_UNCERTAIN, 'code': 'transfer_uncertain'}), 503
+        from app.services.notification_outbox import start_reference_dispatch
+        start_reference_dispatch('hp_transfer_recipient', request_id)
+        start_reference_dispatch('hp_transfer_sent', request_id)
+        return jsonify({'message': resolve_msg(MSG.HP_TRANSFER_OK), 'amount': amount,
+                        'recipient_id': recipient_id, 'recipient_name': recipient_name,
+                        'transfer_id': request_id, 'new_balance': result.get('sender_new_balance'),
+                        'replayed': result.get('replayed', False)}), 200
+    if data.get('anonymous') or data.get('share_contact'):
+        return jsonify({'error': MSG.GIFT_INVALID_REQUEST}), 400
     transfer_note = notes or f"HP transfer from {sender_name}"
     result = get_db().rpc("hg_transfer_hp_atomic", {
         "p_sender_id": g.user_id,
@@ -715,3 +772,29 @@ def _log_admin_action(actor_id, table, target_id, action, after_data=None, campu
         # Same as the menu audit helper: the admin action happened, the record of who
         # did it did not. That is an error, not a warning.
         logger.error("admin audit write failed for %s:%s (%s): %s", table, target_id, action, exc)
+
+
+@hp_bp.route('/birthday-recipient', methods=['GET'])
+@require_auth
+def birthday_recipient():
+    from app.services.wallet_transfers import code, TransferError
+    try:
+        identifier = code(request.args.get('code'))
+    except TransferError:
+        return jsonify({'error': MSG.BIRTHDAY_GIFT_UNAVAILABLE}), 400
+    recipient = get_db().rpc('hg_birthday_recipient', {'p_actor': g.user_id, 'p_code': identifier})
+    if not recipient:
+        return jsonify({'error': MSG.BIRTHDAY_GIFT_UNAVAILABLE}), 404
+    return jsonify({'recipient': recipient})
+
+
+@hp_bp.route('/transfers/<transfer_id>', methods=['GET'])
+@require_auth
+def hp_gift_receipt(transfer_id):
+    from app.utils.validators import validate_uuid
+    if not validate_uuid(transfer_id):
+        return jsonify({'error': MSG.GIFT_RECEIPT_UNAVAILABLE}), 400
+    value = get_db().rpc('hg_hp_gift_receipt', {'p_actor': g.user_id, 'p_request': transfer_id})
+    if not value:
+        return jsonify({'error': MSG.GIFT_RECEIPT_UNAVAILABLE}), 404
+    return jsonify({'transfer': value})

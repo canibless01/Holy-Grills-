@@ -13,7 +13,7 @@ wallet_transfers_bp = Blueprint('wallet_transfers', __name__)
 def transfers():
     try:
         if request.method == 'GET':
-            return jsonify(service.rpc('limits', g.user_id))
+            return jsonify({**service.rpc('limits', g.user_id), 'gift_options_supported': True})
         return jsonify({'transfer': service.send(g.user_id, request.get_json(silent=True))})
     except service.TransferError as exc:
         return jsonify({'error': str(exc), 'code': exc.code}), exc.status

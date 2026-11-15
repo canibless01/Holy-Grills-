@@ -16,7 +16,11 @@ const ROLE_HOME = { admin: '/admin', super_admin: '/admin', community_manager: '
 const loginDestination = (role, from) => {
   const isStaff = ['admin', 'super_admin', 'kitchen', 'rider'].includes(role);
   const studentRoutes = ['/', '/menu', '/cart', '/checkout', '/orders', '/track-orders', '/dashboard', '/hp-education', '/rewards', '/wallet', '/profile', '/addresses', '/notifications', '/notification-preferences', '/referrals', '/order-locks', '/streak', '/leaderboard', '/events', '/marketplace', '/faq', '/terms', '/our-story', '/hall-of-fame'];
-  const isStudentRoute = (p) => studentRoutes.includes(p) || /^\/(menu|orders|marketplace|events)\//.test(p);
+  const isStudentRoute = (p) => {
+    if (typeof p !== 'string' || !p.startsWith('/') || p.startsWith('//') || p.includes(String.fromCharCode(92)) || p.includes(String.fromCharCode(10)) || p.includes(String.fromCharCode(13))) return false;
+    const path = p.split(/[?#]/)[0];
+    return studentRoutes.includes(path) || ['menu', 'orders', 'marketplace', 'events'].some(family => path.startsWith('/' + family + '/'));
+  };
   let dest;
   if (isStaff) {
     dest = ROLE_HOME[role] || '/admin';
@@ -191,7 +195,7 @@ export default function Login() {
         </button>
 
         <div className="text-center pt-0.5">
-          <Link to="/register" className="text-xs text-primary font-bold hover:underline">Create account →</Link>
+          <Link to="/register" state={{ from: location.state?.from }} className="text-xs text-primary font-bold hover:underline">Create account →</Link>
         </div>
       </form>
     </AuthShell>

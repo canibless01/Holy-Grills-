@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react';
 import { liveApi } from '@/lib/liveApi';
 
-type Config = { recipients: string[]; paid_order_alerts: boolean; abandoned_cart_alerts: boolean; daily_report: boolean; weekly_report: boolean; abandoned_minutes: number; daily_report_time?: string };
+type Config = { recipients: string[]; paid_order_alerts: boolean; abandoned_cart_alerts: boolean; daily_report: boolean; weekly_report: boolean; birthday_report?: boolean; abandoned_minutes: number; daily_report_time?: string };
 type Receipt = { id: string; kind: string; recipient: string; state: string; created_at: string };
-const switches = { paid_order_alerts: 'Paid order alerts', abandoned_cart_alerts: 'Abandoned cart alerts', daily_report: 'Daily summary', weekly_report: 'Weekly summary' };
+const switches = { paid_order_alerts: 'Paid order alerts', abandoned_cart_alerts: 'Abandoned cart alerts', daily_report: 'Daily summary', weekly_report: 'Weekly summary', birthday_report: 'Monthly birthday outreach list (1st, 7 a.m. WAT)' };
 export default function OperationsEmailControls({ value, campusId, editable, busy, onSave }: { value: Config; campusId: string; editable: boolean; busy: boolean; onSave: (value: string) => void }) {
-  const [draft, setDraft] = useState(value);
+  const [draft, setDraft] = useState({ birthday_report: true, ...value });
   const [addresses, setAddresses] = useState(value.recipients.join(', '));
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [refresh, setRefresh] = useState(0);
-  useEffect(() => { setDraft(value); setAddresses(value.recipients.join(', ')); }, [value]);
+  useEffect(() => { setDraft({ birthday_report: true, ...value }); setAddresses(value.recipients.join(', ')); }, [value]);
   useEffect(() => {
     let active = true; setLoading(true); setError('');
     liveApi.admin.getOperationsEmails(campusId).then((result) => {
