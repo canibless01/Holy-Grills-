@@ -17,6 +17,7 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_CONTACT_READ_FAILED = "Contact details could not be loaded. Please retry."
     ADMIN_USER_STATE_CHANGED = "This account changed. Refresh the directory before changing its role or access."
     FE_ADMIN_USERS_REFRESH_DIRECTORY = "Refresh directory"
     FE_CATERING_SEARCH = "Search catering requests"

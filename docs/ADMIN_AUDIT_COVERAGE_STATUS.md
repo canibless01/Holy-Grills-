@@ -1,3 +1,5 @@
+> Latest public-contact/preferences/popup closure: [15 November evidence](PUBLIC_CONTACT_PREFERENCES_POPUPS_2026_11_15.md). Historical open rows below are superseded by the [current master](REMAINING_WORK_MASTER_2026_11_14.md), not new findings.
+
 > Complete consolidated remaining list: [remaining work master](REMAINING_WORK_MASTER_2026_11_14.md). This supersedes earlier next-step/backlog wording; completed evidence remains valid.
 
 Current executed continuation: [Newsletter controls](ADMIN_NEWSLETTER_PAGE_2026_11_13.md) and [delivery worker](ADMIN_NEWSLETTER_WORKER_2026_11_13.md), 13 November 2026. Earlier dated open items below are historical; later closure evidence takes precedence. The whole admin audit remains open.

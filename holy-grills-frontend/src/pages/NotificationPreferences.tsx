@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2, Bell, Mail, Package, Truck, Flame, Tag } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
+import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { toast } from '@/components/ui/use-toast';
 import PreferenceRow from '@/components/notifications/PreferenceRow';
 import PushPermissionBanner from '@/components/notifications/PushPermissionBanner';
@@ -17,6 +18,9 @@ export default function NotificationPreferences() {
     { key: 'hp_updates', label: msg('FE_PREF_HP', 'HP updates'), desc: msg('FE_PREF_HP_HELP', 'HP earned, tiers, unlocks'), icon: Flame },
     { key: 'promotions', label: msg('FE_PREF_PROMOTIONS', 'Promotions'), desc: msg('FE_PREF_PROMOTIONS_HELP', 'Flash redeems, offers, events'), icon: Tag },
   ];
+  const { user } = useHolyGrill();
+  const readVersion = useRef(0);
+  const saveLock = useRef(false);
   const navigate = useNavigate();
   const [prefs, setPrefs] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -24,10 +28,12 @@ export default function NotificationPreferences() {
   const [loadError, setLoadError] = useState(false);
 
   const load = useCallback(async () => {
+    const version = ++readVersion.current;
     setLoading(true);
     setLoadError(false);
     try {
       const result = await liveApi.notifications.getPreferences();
+      if (version !== readVersion.current) return;
       const data = result && result.data ? result.data : result || {};
       // The backend returns effective channel settings, including legacy opt-outs.
       setPrefs({
@@ -38,29 +44,30 @@ export default function NotificationPreferences() {
         hp_updates: data.hp_updates ?? true,
         promotions: data.promotions ?? true,
       });
-    } catch (e) {
-      console.error(e);
-      setLoadError(true);
+    } catch {
+      if (version === readVersion.current) setLoadError(true);
     }
-    setLoading(false);
-  }, []);
+    if (version === readVersion.current) setLoading(false);
+  }, [user?.id]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(); return () => { readVersion.current++; }; }, [load]);
 
   const toggle = async (key, next) => {
-    if (savingKey) return;
-    const prev = prefs;
-    const updated = { ...prefs, [key]: next };
-    setPrefs(updated);
+    if (saveLock.current || !prefs) return;
+    saveLock.current = true;
+    const version = readVersion.current;
+    const previousValue = prefs[key];
+    setPrefs(current => ({ ...current, [key]: next }));
     setSavingKey(key);
     try {
       await liveApi.notifications.updatePreferences({ [key]: next });
+      if (version !== readVersion.current) return;
       toast({ title: msg('FE_NOTIFICATION_PREFERENCES_NOTIFICATION_SETTINGS_UPDATED', 'Notification settings updated.') });
-    } catch (e) {
-      setPrefs(prev);
+    } catch {
+      if (version !== readVersion.current) return;
+      setPrefs(current => ({ ...current, [key]: previousValue }));
       toast({ title: msg('FE_NOTIFICATION_PREFERENCES_FAILED_TO_UPDATE_NOTIFICATION', 'Failed to update notification preferences.'), variant: 'destructive' });
-    }
-    setSavingKey(null);
+    } finally { saveLock.current = false; setSavingKey(null); }
   };
 
   if (loadError) return <div className="text-center py-16 space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="text-primary font-bold">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;

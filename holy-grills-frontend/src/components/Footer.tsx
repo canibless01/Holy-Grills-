@@ -1,5 +1,5 @@
 import { useFeatureFlags, showMarketplaceUI } from '@/lib/featureConfig';
-import { useMessages } from '@/lib/messages';
+import { msg, useMessages } from '@/lib/messages';
 import { Link } from 'react-router-dom';
 import { Mail, Phone, MapPin } from 'lucide-react';
 import APP_CONFIG from '@/config/app.config';
@@ -53,21 +53,21 @@ export default function Footer() {
         <div className="md:col-span-4">
           <h4 className="font-heading font-bold text-white text-xs mb-4 uppercase tracking-[0.14em]">Get in touch</h4>
           <ul className="space-y-3.5 text-sm text-beige-soft">
-            {contact.email && <li className="flex items-center gap-2.5">
+            {!contact.error && contact.email && <li className="flex items-center gap-2.5">
               <Mail className="w-4 h-4 text-accent shrink-0" />
               <a href={`mailto:${contact.email}`} className="hover:text-accent transition-colors">{contact.email}</a>
             </li>}
-            {contact.phone && <li className="flex items-center gap-2.5">
+            {!contact.error && contact.phone && <li className="flex items-center gap-2.5">
               <Phone className="w-4 h-4 text-accent shrink-0" />
               <a href={`tel:${contact.phone.replace(/[^+\d]/g, '')}`} className="hover:text-accent transition-colors">{contact.phone}</a>
             </li>}
-            {contact.address && <li className="flex items-start gap-2.5">
+            {!contact.error && contact.address && <li className="flex items-start gap-2.5">
               <MapPin className="w-4 h-4 text-accent shrink-0 mt-0.5" />
               <span>{contact.address}</span>
             </li>}
             <li><ContactActions /></li>
           </ul>
-          <div className="mt-4"><SocialLinks links={contact.socialLinks} /></div>
+          <div className="mt-4">{contact.error ? <div role="alert" className="space-y-2 text-sm"><p>{msg('FE_CONTACT_READ_FAILED','Contact details could not be loaded. Please retry.')}</p><button type="button" onClick={contact.retry} className="font-bold underline">{msg('FE_LOOKUP_RETRY','Retry')}</button></div> : <SocialLinks links={contact.socialLinks} />}</div>
         </div>
       </div>
 
