@@ -25,6 +25,8 @@ Existing chat: **A1, A2, A3, A5, A6**. Other chat: **A4, A7, O4, O5**. Coordinat
 
 - **A3:** profile/avatar editing, failed-save/refresh recovery, reference read gating and deletion feedback now have native/handler evidence in `PROFILE_ACCOUNT_RECOVERY_2026_11_15.md`; wider staff/account/configuration exceptions remain.
 
+- **A5:** catering staff/quote/status/version/retry and full server-side list/search/filter/pagination now have native, handler and concurrency evidence in `ADMIN_CATERING_CONTROLS_2026_11_15.md`. Catering status-email capture across database-update/process-loss remains a shared A4/O2 delivery follow-up, not a UI defect closed by these tests.
+
 ### Next execution order
 
 Existing chat: A1 navigation/action coverage → A2 reporting/leaderboard gaps → A3 identity/configuration exceptions → uncovered A5/A6 actions. Other chat proceeds independently with A4 settings/system consumers and A7 object/policy inventory, plus O4/O5 configuration review. Fix reproduced defects and push in batches. Existing passing cases remain regression anchors. New findings will be added under their ID rather than silently expanding the backlog.

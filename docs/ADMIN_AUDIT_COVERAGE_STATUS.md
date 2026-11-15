@@ -115,3 +115,7 @@ The historical tables above are not a current backlog: later closure records in 
 ### Profile/account controls — 15 November 2026
 
 [Native profile/photo/save/reference/deletion recovery and handler boundary evidence](PROFILE_ACCOUNT_RECOVERY_2026_11_15.md) closes the recorded A3 UI/validation cases. Saved-but-failed-refresh now retains drafts honestly; no real account was deleted. Broader staff/account/configuration exceptions remain separate.
+
+### Catering controls and list coverage — 15 November 2026
+
+[Named staff, quotes/status/notes, edit/retry/concurrency and paginated search evidence](ADMIN_CATERING_CONTROLS_2026_11_15.md) closes the request-editor/list batch. The first-50 search gap and selected-campus filtering are corrected; zero quotes display correctly. Event-tab failures no longer block requests. Provider status-email process-loss capture remains a shared delivery follow-up rather than a completed UI assertion.

@@ -16,3 +16,5 @@ Verification:
 - Full backend checkpoint **1,843 passed** before integrating the other chat's subsequent community-gift additions. The final identical-edit re-read adjustment also passes the focused suite and local concurrency harness. TypeScript, edited-component lint and full client/SSR/prerender build pass. No migration required.
 
 Remaining explicit limits: event registrant export/host-email retains its earlier evidence; actual host/customer email receipt and worker/provider interruption acceptance are separate. Existing status email code starts a send thread after the database update, so process-loss durability across that boundary needs review with the shared worker/settings owner; it is not proven by these UI/handler tests. Broader A5 and other owners' remaining items stay in the master list. No whole-Catering provider-delivery certification is implied.
+
+Merged-main verification after community-gift integration: **1,868 backend tests passed**, and the complete production build passed again. The final identical-edit re-read path is additionally exercised by the focused and independent-session tests.
