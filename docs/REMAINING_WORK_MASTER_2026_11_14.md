@@ -36,6 +36,9 @@ Existing chat: **A1, A2, A3, A5, A6**. Other chat: **A4, A7, O4, O5**. Coordinat
 
 - **A5 locks/carts:** native date/status race handling, recovered-cart history, search, contact links and reminder pending/failure/retry now pass in `ADMIN_LOCK_CART_CONTROLS_2026_11_15.md`. The subsequent `ADMIN_READ_PAGINATION_2026_11_15.md` closes historical browsing beyond the first 100 rows and wallet-ledger empty/error/Previous/race controls. Cart search is explicitly local to the current page.
 
+- **A1 action map:** all 38 current registry sections now map to named control evidence and explicit limits in `ADMIN_ACTION_RECONCILIATION_2026_11_15.md`. This replaces an inventory-only conclusion.
+- **A2/A3 prizes/campuses:** dedicated native campus lifecycle/role/replay/default protection and Hall-of-Fame prepare/fulfil/cancel/pending/history cases pass in `ADMIN_CAMPUS_PRIZE_CONTROLS_2026_11_15.md`.
+
 ### Next execution order
 
 Existing chat: A1 navigation/action coverage → A2 reporting/leaderboard gaps → A3 identity/configuration exceptions → uncovered A5/A6 actions. Other chat proceeds independently with A4 settings/system consumers and A7 object/policy inventory, plus O4/O5 configuration review. Fix reproduced defects and push in batches. Existing passing cases remain regression anchors. New findings will be added under their ID rather than silently expanding the backlog.

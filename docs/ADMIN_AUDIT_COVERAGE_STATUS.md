@@ -1,3 +1,5 @@
+> Current 38-section action/evidence reconciliation: [15 November matrix](ADMIN_ACTION_RECONCILIATION_2026_11_15.md). Use it with the master, not historical “still open” rows.
+
 > Latest public-contact/preferences/popup closure: [15 November evidence](PUBLIC_CONTACT_PREFERENCES_POPUPS_2026_11_15.md). Historical open rows below are superseded by the [current master](REMAINING_WORK_MASTER_2026_11_14.md), not new findings.
 
 > Complete consolidated remaining list: [remaining work master](REMAINING_WORK_MASTER_2026_11_14.md). This supersedes earlier next-step/backlog wording; completed evidence remains valid.

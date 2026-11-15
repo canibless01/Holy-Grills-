@@ -16,6 +16,7 @@ export default function AdminLeaderboard() {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const loadVersion = useRef(0);
+  const writeLock = useRef(false);
   const [advance, setAdvance] = useState(null); // { id, name, nextStatus, notes }
   const [lbNotes, setLbNotes] = useState({}); // per-prize notes for leaderboard fulfilment
 
@@ -32,8 +33,8 @@ export default function AdminLeaderboard() {
       setRewards(pending || []);
       setRewardHistory(fulfilled || []);
       const all = hofAll || [];
-      setHof(all.filter((h) => h.status !== 'fulfilled'));
-      setHofHistory(all.filter((h) => h.status === 'fulfilled'));
+      setHof(all.filter((h) => !['fulfilled', 'cancelled'].includes(h.status)));
+      setHofHistory(all.filter((h) => ['fulfilled', 'cancelled'].includes(h.status)));
     } catch { if (version === loadVersion.current) setLoadError(true); }
     finally { if (version === loadVersion.current) setLoaded(true); }
   };
@@ -41,6 +42,8 @@ export default function AdminLeaderboard() {
   useEffect(() => { void load(); return () => { loadVersion.current++; }; }, []);
 
   const fulfillReward = async (id, _userName) => {
+    if (writeLock.current) return;
+    writeLock.current = true;
     setBusy(id);
     try {
       const res = await mockApi.admin.fulfillLeaderboardReward(id, { status: 'fulfilled', notes: lbNotes[id] || '' });
@@ -50,11 +53,13 @@ export default function AdminLeaderboard() {
     } catch (e) {
       toast({ title: msg('FE_ADMIN_LEADERBOARD_FULFILLMENT_FAILED', 'Fulfillment failed'), description: e.message, variant: 'destructive' });
     }
+    writeLock.current = false;
     setBusy(null);
   };
 
   const submitAdvance = async () => {
-    if (!advance) return;
+    if (!advance || writeLock.current) return;
+    writeLock.current = true;
     setBusy(advance.id);
     try {
       const res = await mockApi.admin.updateHallOfFameReward(advance.id, { status: advance.nextStatus, notes: advance.notes || '' });
@@ -64,6 +69,7 @@ export default function AdminLeaderboard() {
     } catch (e) {
       toast({ title: msg('FE_ADMIN_LEADERBOARD_UPDATE_FAILED', 'Update failed'), description: e.message, variant: 'destructive' });
     }
+    writeLock.current = false;
     setBusy(null);
   };
 
@@ -99,11 +105,12 @@ export default function AdminLeaderboard() {
                         {r.phone && <div className="text-[11px] text-muted-foreground mt-0.5">{r.phone}</div>}
                       </div>
                       <Pill tone="amber"><Clock className="w-3 h-3 inline mr-0.5" />Pending</Pill>
-                      <button onClick={() => fulfillReward(r.id, r.user_name || r.full_name)} disabled={busy === r.id} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-success text-white text-xs font-bold disabled:opacity-50">
+                      <button onClick={() => fulfillReward(r.id, r.user_name || r.full_name)} disabled={!!busy} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-success text-white text-xs font-bold disabled:opacity-50">
                         <Check className="w-3.5 h-3.5" /> {busy === r.id ? '...' : 'Fulfill'}
                       </button>
                     </div>
                     <input
+                      disabled={!!busy}
                       value={lbNotes[r.id] || ''}
                       onChange={(e) => setLbNotes((prev) => ({ ...prev, [r.id]: e.target.value }))}
                       placeholder="Fulfilment notes (optional)…"
@@ -155,7 +162,7 @@ export default function AdminLeaderboard() {
                           <div className="text-xs text-muted-foreground">Inducted {(h.inducted_at || h.induction_date) ? new Date(h.inducted_at || h.induction_date).toLocaleDateString() : '—'}{h.phone ? ` · ${h.phone}` : ''}</div>
                         </div>
                         {isCancelled ? (
-                          <Pill tone="red">Cancelled</Pill>
+                          <Pill tone="red">{msg('FE_ADMIN_PRIZE_CANCELLED','Cancelled')}</Pill>
                         ) : isBoxPrepared ? (
                           <Pill tone="blue">Box prepared</Pill>
                         ) : (
@@ -164,14 +171,14 @@ export default function AdminLeaderboard() {
                         {!isCancelled && (
                           <div className="flex items-center gap-1.5">
                             {!isBoxPrepared && (
-                              <button onClick={() => setAdvance({ id: h.id, name: h.user_name || h.full_name, nextStatus: 'box_prepared', notes: h.notes || '' })} disabled={busy === h.id} className="px-3 py-1.5 rounded-full bg-info text-white text-xs font-bold disabled:opacity-50">
+                              <button onClick={() => setAdvance({ id: h.id, name: h.user_name || h.full_name, nextStatus: 'box_prepared', notes: h.notes || '' })} disabled={!!busy} className="px-3 py-1.5 rounded-full bg-info text-white text-xs font-bold disabled:opacity-50">
                                 {busy === h.id ? '...' : 'Box prepared'}
                               </button>
                             )}
-                            <button onClick={() => setAdvance({ id: h.id, name: h.user_name || h.full_name, nextStatus: 'fulfilled', notes: h.notes || '' })} disabled={busy === h.id} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-success text-white text-xs font-bold disabled:opacity-50">
+                            <button onClick={() => setAdvance({ id: h.id, name: h.user_name || h.full_name, nextStatus: 'fulfilled', notes: h.notes || '' })} disabled={!!busy} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-success text-white text-xs font-bold disabled:opacity-50">
                               <Check className="w-3.5 h-3.5" /> {busy === h.id ? '...' : 'Fulfill'}
                             </button>
-                            <button onClick={() => setAdvance({ id: h.id, name: h.user_name || h.full_name, nextStatus: 'cancelled', notes: h.notes || '' })} disabled={busy === h.id} className="px-3 py-1.5 rounded-full tone-error text-xs font-bold disabled:opacity-50">
+                            <button onClick={() => setAdvance({ id: h.id, name: h.user_name || h.full_name, nextStatus: 'cancelled', notes: h.notes || '' })} disabled={!!busy} className="px-3 py-1.5 rounded-full tone-error text-xs font-bold disabled:opacity-50">
                               Cancel
                             </button>
                           </div>
@@ -195,7 +202,7 @@ export default function AdminLeaderboard() {
                       <div className="font-semibold text-sm text-foreground">{h.user_name || h.full_name}</div>
                       <div className="text-xs text-muted-foreground">Inducted {(h.inducted_at || h.induction_date) ? new Date(h.inducted_at || h.induction_date).toLocaleDateString() : '—'}</div>
                     </div>
-                    <Pill tone="green"><Check className="w-3 h-3 inline mr-0.5" />Fulfilled</Pill>
+                    {h.status === 'cancelled' ? <Pill tone="red">{msg('FE_ADMIN_PRIZE_CANCELLED','Cancelled')}</Pill> : <Pill tone="green"><Check className="w-3 h-3 inline mr-0.5" />Fulfilled</Pill>}
                   </div>
                 ))}
               </div>
@@ -203,11 +210,11 @@ export default function AdminLeaderboard() {
           )}
 
           {advance && (
-            <Modal open onClose={() => setAdvance(null)} title={`Advance — ${advance.name}`}>
+            <Modal open onClose={() => { if (!writeLock.current) setAdvance(null); }} title={`Advance — ${advance.name}`}>
               <div className="space-y-3">
                 <div className="rounded-xl bg-muted p-3 text-xs text-muted-foreground">Move this inductee to <b className="capitalize">{advance.nextStatus.replace(/_/g, ' ')}</b>. This is logged to the audit trail.</div>
-                <Field label="Notes (optional)"><TextInput value={advance.notes} onChange={(e) => setAdvance({ ...advance, notes: e.target.value })} placeholder="e.g. Box handed to student" /></Field>
-                <button onClick={submitAdvance} disabled={busy === advance.id} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold disabled:opacity-50">{busy === advance.id ? 'Updating...' : `Mark ${advance.nextStatus.replace(/_/g, ' ')}`}</button>
+                <Field label="Notes (optional)"><TextInput disabled={!!busy} value={advance.notes} onChange={(e) => setAdvance({ ...advance, notes: e.target.value })} placeholder="e.g. Box handed to student" /></Field>
+                <button onClick={submitAdvance} disabled={!!busy} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold disabled:opacity-50">{busy === advance.id ? 'Updating...' : `Mark ${advance.nextStatus.replace(/_/g, ' ')}`}</button>
               </div>
             </Modal>
           )}
