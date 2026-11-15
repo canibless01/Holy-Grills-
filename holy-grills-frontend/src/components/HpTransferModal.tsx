@@ -23,7 +23,7 @@ const DEFAULT_MIN_TRANSFER = 10;
  */
 export default function HpTransferModal({ open, onClose, initialRecipient = null }) {
   const { hpBalance, refreshHp, user, getSetting } = useHolyGrill();
-  const MIN_AMOUNT = getSetting('hp_transfer_min_amount', DEFAULT_MIN_TRANSFER);
+  const configuredMinimum = getSetting('hp_transfer_min_amount', DEFAULT_MIN_TRANSFER);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(null);
   const [amount, setAmount] = useState('');
@@ -65,6 +65,7 @@ export default function HpTransferModal({ open, onClose, initialRecipient = null
 
   if (!open) return null;
 
+  const MIN_AMOUNT = eligibility?.minimum_amount ?? configuredMinimum;
   const activeHp = hpBalance?.active || 0;
   const amt = Number(amount);
   const amountValid = Number.isInteger(amt) && amt > 0 && amt >= MIN_AMOUNT && amt <= activeHp;

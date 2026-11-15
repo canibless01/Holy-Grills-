@@ -41,7 +41,18 @@ def render(db, row):
     prefix = 'Holy Grills · ' + (campus.get('name') or 'Campus')
     kind = row['kind']
     payload = row.get('payload') or {}
-    if kind in ('daily_report', 'weekly_report'):
+    if kind == 'catering_status':
+        from app.messages import MSG
+        request = db.table('catering_requests').select('id,email,organizer_name,status,quoted_amount,campus_id').eq('id', payload['request_id']).single().execute()
+        if not request or request.get('status') != payload.get('status') or str(request.get('email') or '').strip().lower() != row['recipient'] or request.get('campus_id') != row['campus_id']:
+            return None
+        name = request.get('organizer_name') or 'there'
+        subject = MSG.CATERING_STATUS_SUBJECT.format(status=request['status'].replace('_', ' ').title())
+        text = MSG.CATERING_STATUS_BODY.format(name=name, status=request['status'].replace('_', ' '))
+        if request.get('quoted_amount') is not None:
+            text += MSG.CATERING_QUOTE_LINE.format(amount=float(request['quoted_amount']))
+        return subject, _build_html(name, text, 'Holy Grills')
+    elif kind in ('daily_report', 'weekly_report'):
         labels = [('signups', 'New accounts'), ('paid_orders', 'Paid orders'),
                   ('order_value', 'Order value'), ('refunds_on_orders', 'Refunds on these orders'),
                   ('wallet_funded', 'Wallet funding'), ('auto_funding_setups', 'New confirmed auto-funding setups'),
@@ -103,9 +114,12 @@ def render(db, row):
     return subject, _build_html('Campus team', '\n'.join(lines))
 
 
-def dispatch_pending(db=None):
+def dispatch_pending(db=None, catering_request_id=None):
     db = db or get_db()
-    rows = db.rpc('hg_operations_email_outbox', {'p_action': 'claim'}) or []
+    claim = {'p_action': 'claim'}
+    if catering_request_id:
+        claim['p_data'] = {'catering_request_id': catering_request_id}
+    rows = db.rpc('hg_operations_email_outbox', claim) or []
     result = {'accepted': 0, 'failed': 0, 'uncertain': 0, 'cancelled': 0}
     for row in rows:
         params = {'p_id': row['id'], 'p_token': row['token']}
@@ -121,7 +135,8 @@ def dispatch_pending(db=None):
         state = 'cancelled'
         if message:
             try:
-                accepted = send_email_routed(row['recipient'], 'Campus team', *message,
+                recipient_name = (row.get('payload') or {}).get('name') or 'there' if row.get('kind') == 'catering_status' else 'Campus team'
+                accepted = send_email_routed(row['recipient'], recipient_name, *message,
                                              provider=get_email_provider(), receipt=receipt, transactional=True)
                 state = 'accepted' if accepted else ('failed' if receipt.get('state') in ('not_configured', 'skipped') else 'uncertain')
             except Exception as exc:
@@ -137,3 +152,22 @@ def capture_and_dispatch():
     db = get_db()
     captured = db.rpc('hg_capture_operations_emails')
     return {'capture': captured, 'mail': dispatch_pending(db)}
+
+
+def start_catering_dispatch(request_id):
+    """Wake the already committed status email; scheduled recovery survives a lost wake."""
+    try:
+        import threading
+        from flask import current_app
+        app = current_app._get_current_object()
+        def wake():
+            try:
+                with app.app_context():
+                    dispatch_pending(catering_request_id=request_id)
+            except Exception:
+                logger.warning('Saved catering status email wake deferred for %s', request_id)
+        threading.Thread(target=wake, daemon=True).start()
+        return True
+    except Exception:
+        logger.warning('Saved catering status email wake deferred for %s', request_id)
+        return False

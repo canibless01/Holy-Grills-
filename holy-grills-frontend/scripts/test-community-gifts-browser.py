@@ -14,7 +14,7 @@ try:
  with sync_playwright() as p:
   browser=p.chromium.launch(executable_path='/usr/bin/chromium',args=['--no-sandbox']);expect.set_options(timeout=15000)
   for width in (393,1280):
-   state={'hp':[],'cash':[],'caps':True,'birthday_fail':True,'anon':False};errors=[]
+   state={'hp':[],'cash':[],'caps':True,'birthday_fail':True,'anon':False,'minimum':10};errors=[]
    def api(route):
     req=route.request;path=urlparse(req.url).path;data=[]
     if path.endswith('/auth/me'):data={'id':OWNER,'full_name':'Sender','role':'student','campus_id':OWNER,'is_active':True,'hp_balance':100,'wallet':{'balance':1000}}
@@ -24,7 +24,7 @@ try:
      if state['birthday_fail']:
       state['birthday_fail']=False;route.fulfill(status=503,json={'error':'Birthday list temporarily unavailable'});return
      data={'recipient':{'id':FRIEND,'name':'Birthday Friend','code':'FRIEND123','department':'Computing'}}
-    elif path.endswith('/hp/transfer-eligibility'):data={'eligible':True,'delivered_orders':2,'minimum_orders':1,'gift_options_supported':state['caps']}
+    elif path.endswith('/hp/transfer-eligibility'):data={'eligible':True,'delivered_orders':2,'minimum_orders':1,'minimum_amount':state['minimum'],'gift_options_supported':state['caps']}
     elif path.endswith('/hp/transfer'):
      state['hp'].append(req.post_data_json)
      if len(state['hp'])==1:route.fulfill(status=503,json={'error':'Response interrupted','code':'transfer_uncertain'});return
@@ -51,7 +51,7 @@ try:
    page.get_by_role('button',name='Open received gift').click();dialog=page.get_by_role('dialog');expect(dialog.get_by_role('link',name='Call to say thank you',exact=False)).to_have_attribute('href','tel:+2348000000000');dialog.get_by_role('button',name='Close dialog',exact=True).click()
    state['anon']=True;page.get_by_role('button',name='Open received gift').click();dialog=page.get_by_role('dialog');expect(dialog.get_by_text('From Anonymous')).to_be_visible();expect(dialog.get_by_role('link')).to_have_count(0);dialog.get_by_role('button',name='Close dialog',exact=True).click()
    page.get_by_role('button',name='Send wallet money',exact=True).click();dialog=page.get_by_role('dialog');expect(dialog.get_by_text('Birthday Friend',exact=True)).to_be_visible();dialog.get_by_label('Amount (₦)').fill('100');dialog.get_by_label('Share my registered',exact=False).check();dialog.get_by_role('button',name='Review transfer').click();expect(dialog.get_by_text('Your name and registered phone number will be shared.')).to_be_visible();dialog.get_by_role('button',name='Send ₦100',exact=False).click();expect(dialog.get_by_text('Sent successfully')).to_be_visible();assert state['cash'][-1]['share_contact'] is True and state['cash'][-1]['anonymous'] is False and state['cash'][-1]['recipient_id']==FRIEND;dialog.get_by_role('button',name='Done',exact=True).click()
-   state['caps']=False;page.get_by_role('button',name='Send HP',exact=True).click();dialog=page.get_by_role('dialog');expect(dialog.get_by_text('Ready to send HP',exact=False)).to_be_visible();expect(dialog.get_by_label('Send anonymously',exact=False)).to_have_count(0)
+   state['caps']=False;state['minimum']=25;page.get_by_role('button',name='Send HP',exact=True).click();dialog=page.get_by_role('dialog');expect(dialog.get_by_text('Ready to send HP',exact=False)).to_be_visible();expect(dialog.get_by_label('Send anonymously',exact=False)).to_have_count(0);expect(dialog.get_by_text('Amount (min 25 HP)',exact=True)).to_be_visible();dialog.get_by_role('button',name='10',exact=True).click();expect(dialog.get_by_role('button',name='Send 10 HP',exact=False)).to_be_disabled();dialog.get_by_role('button',name='25',exact=True).click();expect(dialog.get_by_role('button',name='Send 25 HP',exact=False)).to_be_enabled()
    assert not errors,errors;context.close();print(f'PASS {width}: birthday retry/prefill, explicit anonymity/contact, uncertain gift retry after reload uses same intent, owned named/anonymous receipts, cash birthday gift review/send, old-backend capability gate',flush=True)
   browser.close()
 finally:

@@ -341,6 +341,8 @@ class TableQuery:
     def _headers(self) -> dict:
         use_user = getattr(self, "_use_user_headers", False) or bool(self._user_jwt)
         h = self._client._user_headers(self._user_jwt) if use_user else self._client._service_headers()
+        if getattr(self, '_write_protocol', None) == 'catering-status-v1':
+            h['X-HG-Write-Protocol'] = 'catering-status-v1'
         if self._single:
             h["Accept"] = "application/vnd.pgrst.object+json"
         if self._count:

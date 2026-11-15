@@ -202,3 +202,7 @@ Combined birthday/gifting rollout: latest-main backend **1,849 passed**, full fr
 ### 15 November — Settings/System editor and diagnostic recovery
 
 [Evidence](SETTINGS_SYSTEM_RECOVERY_2026_11_15.md): JSON/type-safe settings edits and 409 version guards preserve drafts; failed reads no longer invent empty cron/audit results or never-run history; health reads nested connection checks; pending cron actions are guarded; empty later audit pages retain back navigation. Full backend **1,891**, frontend lint/typecheck/build and native mobile/desktop pass. No live values/jobs/messages changed. Continuing A4 consumer reconciliation and A7 historical metadata/dependency inventory.
+
+### 15 November — settings consumers and catering email capture
+
+[Evidence](SETTINGS_CONSUMERS_CATERING_RECOVERY_2026_11_15.md): HP transfer minimums now honor scoped settings/zero and fail closed; the form uses the returned minimum. Monthly birthday capture/handoff agree on their default-on switch. Catering status email saves transactionally into the existing leased outbox, suppresses stale/changed-contact receipts and retains uncertainty holds. Rolling API header prevents legacy-thread/outbox duplicate sends. Service API submission retained; raw public catering INSERT no longer bypasses validation/rate limits. Migration applied; fresh before/after rollback proof, 76 focused and **1,924 full backend tests**, frontend build/type/lint and native gift checks pass. No live customer email/test payment or configuration-value change.

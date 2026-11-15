@@ -1270,6 +1270,7 @@ def update_catering_request(request_id):
     query = db.table("catering_requests").eq("id", request_id).eq("status", row["status"])
     if saved_version:
         query = query.eq("updated_at", saved_version)
+    query._write_protocol = 'catering-status-v1'
     result = query.update(safe)
     if not result:
         fresh = db.table("catering_requests").select("*").eq("id", request_id).single().execute()
@@ -1277,25 +1278,9 @@ def update_catering_request(request_id):
             return jsonify(fresh), 200
         return jsonify({"error": MSG.CATERING_STALE_EDIT}), 409
 
-    if "status" in safe and safe["status"] != row.get("status") and row.get("email"):
-        try:
-            from app.utils.email import send_email_raw, _build_html
-            requester_name = row.get("organizer_name") or "there"
-            new_status = safe["status"]
-            subject = MSG.CATERING_STATUS_SUBJECT.format(status=new_status.title())
-            body_text = MSG.CATERING_STATUS_BODY.format(name=requester_name, status=new_status)
-            if safe.get("quoted_amount") is not None:
-                body_text += MSG.CATERING_QUOTE_LINE.format(amount=float(safe['quoted_amount']))
-
-            html_body = _build_html(requester_name, body_text, "Holy Grills")
-            import threading
-            threading.Thread(
-                target=send_email_raw,
-                args=(row["email"], requester_name, subject, html_body),
-                daemon=True,
-            ).start()
-        except Exception as e:
-            logger.warning("update_catering_request: email notification failed for %s: %s", row.get("email"), e)
+    if "status" in safe and safe["status"] != row.get("status"):
+        from app.services.operations_email import start_catering_dispatch
+        start_catering_dispatch(request_id)
 
     return jsonify(result[0] if isinstance(result, list) else result), 200
 

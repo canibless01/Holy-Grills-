@@ -536,13 +536,24 @@ def purchase_hp_bundle():
         return jsonify({"error": str(e)}), 400
 
 
+def _transfer_setting(db, key, config_key, default):
+    from decimal import Decimal, InvalidOperation
+    from app.utils.settings import get_validated_setting, MalformedSettingError
+    value = get_validated_setting(db, key, default=current_app.config.get(config_key, default))
+    try:
+        number = Decimal(str(value))
+        if isinstance(value, bool) or not number.is_finite() or number < 0 or number > 2147483647 or number != number.to_integral_value():
+            raise ValueError()
+        return int(number)
+    except (InvalidOperation, ValueError, TypeError):
+        raise MalformedSettingError('Invalid HP transfer setting') from None
+
+
 def _transfer_order_eligibility(db, user_id):
     # §Rule: sender must have completed at least hp_transfer_min_orders delivered orders.
     # min_orders is read from system_settings first (admin-editable), falling back to
     # the HP_TRANSFER_MIN_ORDERS config value (env-configurable), then hard default 3.
-    min_orders_setting = db.table("system_settings").select("value").eq("key", "hp_transfer_min_orders").is_("campus_id", "null").single().execute()
-    _config_default = int(current_app.config.get("HP_TRANSFER_MIN_ORDERS", 3))
-    min_orders = int((min_orders_setting or {}).get("value", _config_default) or _config_default)
+    min_orders = _transfer_setting(db, 'hp_transfer_min_orders', 'HP_TRANSFER_MIN_ORDERS', 3)
     completed_orders = (
         db.table("orders")
         .select("id")
@@ -563,8 +574,14 @@ def _transfer_order_eligibility(db, user_id):
 @hp_bp.route("/transfer-eligibility", methods=["GET"])
 @require_auth
 def transfer_order_eligibility():
-    minimum, delivered = _transfer_order_eligibility(get_user_client(), g.user_id)
-    return jsonify({"minimum_orders": minimum, "delivered_orders": delivered, "eligible": delivered >= minimum, "gift_options_supported": True}), 200
+    from app.utils.settings import SettingError
+    try:
+        db = get_user_client()
+        minimum, delivered = _transfer_order_eligibility(db, g.user_id)
+        amount = _transfer_setting(db, 'hp_transfer_min_amount', 'HP_TRANSFER_MIN_AMOUNT', 10)
+    except SettingError:
+        return jsonify({'error': MSG.SERVICE_UNAVAILABLE}), 503
+    return jsonify({"minimum_amount": amount, "minimum_orders": minimum, "delivered_orders": delivered, "eligible": delivered >= minimum, "gift_options_supported": True}), 200
 
 
 @hp_bp.route("/transfer", methods=["POST"])
@@ -638,7 +655,11 @@ def transfer_hp():
     except (TypeError, ValueError, ArithmeticError):
         return jsonify({"error": MSG.REQUIRED_FIELD_MISSING}), 400
 
-    min_transfer = int(current_app.config.get("HP_TRANSFER_MIN_AMOUNT", 10))
+    from app.utils.settings import SettingError
+    try:
+        min_transfer = _transfer_setting(get_user_client(), 'hp_transfer_min_amount', 'HP_TRANSFER_MIN_AMOUNT', 10)
+    except SettingError:
+        return jsonify({'error': MSG.SERVICE_UNAVAILABLE}), 503
     if amount < min_transfer:
         return jsonify({"error": resolve_msg(MSG.HP_TRANSFER_MIN, min=min_transfer)}), 400
 
@@ -647,7 +668,10 @@ def transfer_hp():
 
     db = get_user_client()
 
-    min_orders, completed_count = _transfer_order_eligibility(db, g.user_id)
+    try:
+        min_orders, completed_count = _transfer_order_eligibility(db, g.user_id)
+    except SettingError:
+        return jsonify({'error': MSG.SERVICE_UNAVAILABLE}), 503
     if completed_count < min_orders:
         return jsonify({
             "error": resolve_msg(MSG.HP_TRANSFER_MIN_ORDERS, min_orders=min_orders, completed=completed_count),
