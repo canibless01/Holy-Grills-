@@ -17,6 +17,7 @@ from app.utils.campus_scope import assert_can_modify, resolve_write_campus, as_c
 from app.utils.admin_helpers import as_int, as_number, as_instant, as_text, page_args
 from datetime import datetime, timezone
 import math
+import re
 from app.utils.event_questions import validate_questions, validate_answers
 
 logger = get_logger(__name__)
@@ -1161,10 +1162,19 @@ def list_catering_requests():
     q = db.table("catering_requests").select("*")
     if is_kitchen:
         q = q.eq("assigned_to", g.user_id).eq("campus_id", g.campus_id)
+    else:
+        scope = resolve_scoped_campus_id()
+        if scope:
+            q = q.eq("campus_id", scope)
     status = request.args.get("status")
     if status:
+        if status not in CATERING_STATUSES:
+            return jsonify({"error": MSG.EVENT_REQUEST_INVALID}), 400
         q = q.eq("status", status)
-    rows = q.order("created_at", ascending=False).limit(limit).offset(offset).execute() or []
+    term = re.sub(r"[,()*%\\]", " ", request.args.get("q", "")).strip()[:100]
+    if term:
+        q = q.or_(f"organizer_name.ilike.*{term}*,event_name.ilike.*{term}*,email.ilike.*{term}*")
+    rows = q.order("created_at.desc,id", ascending=False).limit(limit).offset(offset).execute() or []
     return jsonify({"requests": rows, "count": len(rows)}), 200
 
 
@@ -1194,6 +1204,8 @@ def update_catering_request(request_id):
       404:
         description: Not found
     """
+    if not validate_uuid(request_id):
+        return jsonify({"error": MSG.EVENT_CATERING_NOT_FOUND}), 404
     is_kitchen = getattr(g, "user_role", None) == "kitchen"
     db = get_db() if is_kitchen else get_user_client()
     row = db.table("catering_requests").select("*").eq("id", request_id).single().execute()
@@ -1224,9 +1236,10 @@ def update_catering_request(request_id):
             return jsonify({"error": err}), 400
 
     if "quoted_amount" in safe and safe["quoted_amount"] is not None:
-        ok, err = validate_non_negative_number(safe["quoted_amount"], "quoted_amount")
-        if not ok:
-            return jsonify({"error": err}), 400
+        try:
+            safe["quoted_amount"] = as_number(safe["quoted_amount"], minimum=0, maximum=999999999999.99)
+        except (TypeError, ValueError):
+            return jsonify({"error": MSG.CATERING_QUOTE_INVALID}), 400
 
     if "notes" in safe and safe["notes"] is not None:
         if not isinstance(safe["notes"], str) or len(safe["notes"]) > 2000:
@@ -1240,9 +1253,29 @@ def update_catering_request(request_id):
         if not assignee or not assignee.get("is_active") or assignee.get("role") not in (*ADMIN_ROLES, "kitchen") or (assignee.get("role") != "super_admin" and assignee.get("campus_id") != row.get("campus_id")):
             return jsonify({"error": MSG.EVENT_ASSIGNED_TO_NOT_STAFF}), 400
 
-    result = db.table("catering_requests").eq("id", request_id).eq("status", row["status"]).update(safe)
+    expected_version = data.get("expected_updated_at", row.get("updated_at"))
+    try:
+        expected_version = as_instant(expected_version) if expected_version else None
+        saved_version = as_instant(row["updated_at"]) if row.get("updated_at") else None
+    except (TypeError, ValueError):
+        return jsonify({"error": MSG.CATERING_VERSION_INVALID}), 400
+    def unchanged(key, value, saved=row):
+        if key == "quoted_amount" and value is not None and saved.get(key) is not None:
+            return float(value) == float(saved[key])
+        return saved.get(key) == value
+    if all(unchanged(key, value) for key, value in safe.items()):
+        return jsonify(row), 200
+    if expected_version and saved_version and datetime.fromisoformat(expected_version) != datetime.fromisoformat(saved_version):
+        return jsonify({"error": MSG.CATERING_STALE_EDIT}), 409
+    query = db.table("catering_requests").eq("id", request_id).eq("status", row["status"])
+    if saved_version:
+        query = query.eq("updated_at", saved_version)
+    result = query.update(safe)
     if not result:
-        return jsonify({"error": MSG.CATERING_TRANSITION_INVALID}), 409
+        fresh = db.table("catering_requests").select("*").eq("id", request_id).single().execute()
+        if fresh and all(unchanged(key, value, fresh) for key, value in safe.items()):
+            return jsonify(fresh), 200
+        return jsonify({"error": MSG.CATERING_STALE_EDIT}), 409
 
     if "status" in safe and safe["status"] != row.get("status") and row.get("email"):
         try:

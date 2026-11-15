@@ -51,40 +51,59 @@ export default function AdminCatering() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [q, setQ] = useState('');
+  const [search,setSearch] = useState('');
+  const [page,setPage] = useState(0);
+  const pageSize = 25;
+  const [eventsLoaded,setEventsLoaded] = useState(false);
+  const [eventsLoading,setEventsLoading] = useState(false);
+  const eventsVersion = useRef(0);
   const [detail, setDetail] = useState(null);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [eventsError,setEventsError] = useState(false);
+  const loadVersion = useRef(0);
+  const saveLock = useRef(false);
+  const staffVersion = useRef(0);
+  const [staff,setStaff] = useState([]);
+  const [staffLoading,setStaffLoading] = useState(false);
+  const [staffError,setStaffError] = useState(false);
 
   const load = async () => {
-    setLoading(true);
-    setLoadError(false);
+    const version = ++loadVersion.current;setLoading(true);setLoadError(false);
     try {
-      const [reqs, evs] = await Promise.allSettled([
-        liveApi.admin.getCateringRequests(),
-        liveApi.admin.getEvents(),
-      ]);
-      setRequests(reqs.status === 'fulfilled' ? reqs.value : []);
-      setEvents(evs.status === 'fulfilled' ? evs.value : []);
-      setLoadError(reqs.status === 'rejected' || evs.status === 'rejected');
-    } catch { setRequests([]); }
-    setLoading(false);
+      const rows = await liveApi.admin.getCateringRequests({limit:pageSize,offset:page*pageSize,...(statusFilter==='all'?{}:{status:statusFilter}),...(search?{q:search}:{})});
+      if (version === loadVersion.current) setRequests(rows);
+    } catch { if (version === loadVersion.current) setLoadError(true); }
+    finally { if (version === loadVersion.current) setLoading(false); }
   };
-  useEffect(() => { load(); }, []);
-
-  const filtered = requests.filter((r) => {
-    const okStatus = statusFilter === 'all' || r.status === statusFilter;
-    const name = (r.organizer_name || '').toLowerCase();
-    const event = (r.event_name || '').toLowerCase();
-    const okQ = !q || name.includes(q.toLowerCase()) || event.includes(q.toLowerCase());
-    return okStatus && okQ;
-  });
+  const loadEvents = async () => {
+    const version = ++eventsVersion.current;setEventsLoading(true);setEventsError(false);
+    try { const rows=await liveApi.admin.getEvents();if(version===eventsVersion.current){setEvents(rows);setEventsLoaded(true);} }
+    catch { if(version===eventsVersion.current)setEventsError(true); }
+    finally { if(version===eventsVersion.current)setEventsLoading(false); }
+  };
+  useEffect(()=>{const timer=setTimeout(()=>{setSearch(q.trim());setPage(0);},300);return()=>clearTimeout(timer);},[q]);
+  useEffect(() => { void load(); return () => { loadVersion.current++; }; }, [page,statusFilter,search]);
+  useEffect(()=>{if(tab==='event-catering'&&!eventsLoaded)void loadEvents();},[tab,eventsLoaded]);
+  useEffect(()=>()=>{staffVersion.current++;eventsVersion.current++;},[]);
+  const filtered = requests;
 
   const statusCounts = STATUS_FLOW.reduce((acc, s) => {
     acc[s] = requests.filter((r) => r.status === s).length;
     return acc;
   }, {});
 
+  const loadStaff = async (campusId) => {
+    const version = ++staffVersion.current;setStaffLoading(true);setStaffError(false);
+    try {
+      const lists = await Promise.all(['kitchen','admin','super_admin'].map(role=>liveApi.admin.getUsers({role,limit:100,...(campusId?{campus_id:campusId}:{})})));
+      if (version === staffVersion.current) setStaff([...new Map(lists.flat().filter(person=>person.is_active!==false && ['kitchen','admin','super_admin'].includes(person.role) && (person.role==='super_admin' || !campusId || person.campus_id===campusId)).map(person=>[person.id,person])).values()]);
+    } catch { if (version === staffVersion.current) setStaffError(true); }
+    finally { if (version === staffVersion.current) setStaffLoading(false); }
+  };
+  const closeDetail = () => { if (!saveLock.current) { setDetail(null);staffVersion.current++; } };
   const openDetail = (r) => {
+    void loadStaff(r.campus_id);
     setDetail({
       ...r,
       _status: r.status || 'new',
@@ -95,14 +114,15 @@ export default function AdminCatering() {
   };
 
   const saveDetail = async () => {
-    if (!detail) return;
-    setSaving(true);
+    if (!detail || saveLock.current || staffLoading || staffError) return;
+    saveLock.current=true;setSaving(true);
     try {
       const body = {
         status: detail._status,
         notes: detail._notes,
         quoted_amount: detail._quoted_amount !== '' ? Number(detail._quoted_amount) : null,
         assigned_to: detail._assigned_to || null,
+        expected_updated_at: detail.updated_at,
       };
       await liveApi.admin.updateCateringRequest(detail.id, body);
       toast({ title: msg('FE_ADMIN_CATERING_CATERING_REQUEST_UPDATED', '✅ Catering request updated'), description: msg('FE_ADMIN_CATERING_STATUS_STATUS', 'Status: {status}', { status: detail._status }) });
@@ -111,11 +131,8 @@ export default function AdminCatering() {
     } catch (e) {
       toast({ title: msg('FE_ADMIN_CATERING_UPDATE_FAILED', 'Update failed'), description: e.message, variant: 'destructive' });
     }
-    setSaving(false);
+    saveLock.current=false;setSaving(false);
   };
-
-  if (loading) return <StaffPanelSkeleton />;
-  if (loadError) return <div className="text-center py-10 space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="font-bold text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;
 
   return (
     <div className="space-y-4">
@@ -133,11 +150,11 @@ export default function AdminCatering() {
         <>
           {/* Status summary chips */}
           <div className="flex gap-2 flex-wrap">
-            <button onClick={() => setStatusFilter('all')} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${statusFilter === 'all' ? 'bg-foreground text-white' : 'bg-card border border-border text-muted-foreground'}`}>
-              All ({requests.length})
+            <button onClick={() => {setStatusFilter('all');setPage(0);}} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${statusFilter === 'all' ? 'bg-foreground text-white' : 'bg-card border border-border text-muted-foreground'}`}>
+              All ({loading || loadError ? '—' : requests.length})
             </button>
             {STATUS_FLOW.map((s) => statusCounts[s] > 0 && (
-              <button key={s} onClick={() => setStatusFilter(s)} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${statusFilter === s ? 'bg-foreground text-white' : 'bg-card border border-border text-muted-foreground'}`}>
+              <button key={s} onClick={() => {setStatusFilter(s);setPage(0);}} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${statusFilter === s ? 'bg-foreground text-white' : 'bg-card border border-border text-muted-foreground'}`}>
                 <span className="capitalize">{s}</span> ({statusCounts[s]})
               </button>
             ))}
@@ -147,12 +164,13 @@ export default function AdminCatering() {
           <div className="flex items-center gap-2">
             <div className="relative flex-1 min-w-[180px]">
               <Search className="absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-muted-foreground" />
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search organizer or event..." className="w-full pl-9 pr-3 py-2 rounded-xl border border-border text-sm" />
+              <input value={q} onChange={(e) => setQ(e.target.value)} aria-label={msg('FE_CATERING_SEARCH','Search catering requests')} placeholder={msg('FE_CATERING_SEARCH_HINT','Search organizer, event or email…')} className="w-full pl-9 pr-3 py-2 rounded-xl border border-border text-sm" />
             </div>
-            <button onClick={load} className="p-2 rounded-xl border border-border"><RefreshCw className="w-4 h-4 text-muted-foreground" /></button>
+            <button aria-label={msg('FE_CATERING_REFRESH','Refresh catering requests')} onClick={load} className="p-2 rounded-xl border border-border"><RefreshCw className="w-4 h-4 text-muted-foreground" /></button>
           </div>
 
-          {filtered.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{msg('FE_CATERING_PAGE_COUNTS','Counts refer to the current page. Search and status filters include all requests.')}</p>
+          {loading ? <StaffPanelSkeleton /> : loadError ? <div role="alert" className="space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED',"We couldn't load this page. Please try again.")}</p><button onClick={()=>{void load();}} className="font-bold text-primary">{msg('FE_LOOKUP_RETRY','Retry')}</button></div> : filtered.length === 0 ? (
             <div className="text-center py-10 text-muted-foreground">
               <UtensilsCrossed className="w-10 h-10 mx-auto mb-2 text-muted-foreground" />
               No catering requests found.
@@ -174,7 +192,7 @@ export default function AdminCatering() {
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      {r.quoted_amount ? (
+                      {r.quoted_amount !== null && r.quoted_amount !== undefined ? (
                         <div className="font-heading font-bold text-foreground">{formatNaira(r.quoted_amount)}</div>
                       ) : r.budget ? (
                         <div className="text-xs text-muted-foreground">Budget: {formatNaira(r.budget)}</div>
@@ -185,19 +203,24 @@ export default function AdminCatering() {
               ))}
             </div>
           )}
+          <div className="flex items-center justify-between gap-3">
+            <button disabled={loading || page===0} onClick={()=>setPage(value=>value-1)} className="rounded-full border border-border px-3 py-2 text-sm disabled:opacity-50">{msg('FE_CATERING_PREVIOUS','Previous page')}</button>
+            <span className="text-xs">{msg('FE_CATERING_PAGE','Page {page}',{page:page+1})}</span>
+            <button disabled={loading || loadError || requests.length<pageSize} onClick={()=>setPage(value=>value+1)} className="rounded-full border border-border px-3 py-2 text-sm disabled:opacity-50">{msg('FE_CATERING_NEXT','Next page')}</button>
+          </div>
         </>
       )}
 
-      {tab === 'event-catering' && <EventCateringTab events={events} />}
+      {tab === 'event-catering' && (eventsLoading ? <StaffPanelSkeleton /> : eventsError ? <div role="alert" className="space-y-3"><p>{msg('FE_CATERING_EVENTS_FAILED','Event catering could not be loaded. Catering requests are still available.')}</p><button onClick={()=>{void loadEvents();}} className="font-bold text-primary">{msg('FE_LOOKUP_RETRY','Retry')}</button></div> : <EventCateringTab events={events} />)}
 
       {/* Detail modal */}
       {detail && (
         <ModalPortal>
-        <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center hg-scrim p-4" onClick={() => setDetail(null)}>
-          <div className="bg-card rounded-3xl w-full max-w-lg max-h-[85vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center hg-scrim p-4" onClick={closeDetail}>
+          <form role="dialog" aria-modal="true" aria-label={msg('FE_CATERING_DETAIL','Catering Request')} onSubmit={e=>{e.preventDefault();void saveDetail();}} className="bg-card rounded-3xl w-full max-w-lg max-h-[85vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}><fieldset disabled={saving}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-heading font-bold text-lg text-foreground">Catering Request</h3>
-              <button onClick={() => setDetail(null)} className="p-2 rounded-full hover:bg-muted"><X className="w-5 h-5 text-muted-foreground" /></button>
+              <button type="button" aria-label={msg('FE_CATERING_CLOSE','Close catering request')} onClick={closeDetail} className="p-2 rounded-full hover:bg-muted"><X className="w-5 h-5 text-muted-foreground" /></button>
             </div>
 
             {/* Organizer info */}
@@ -220,28 +243,34 @@ export default function AdminCatering() {
             <div className="space-y-3">
               <div>
                 <label className="text-xs font-bold text-foreground mb-1 block">Status</label>
-                <select value={detail._status} onChange={(e) => setDetail({ ...detail, _status: e.target.value })} className="w-full p-2 rounded-xl border border-border text-sm">
+                <select aria-label={msg('FE_CATERING_STATUS','Status')} value={detail._status} onChange={(e) => setDetail({ ...detail, _status: e.target.value })} className="w-full p-2 rounded-xl border border-border text-sm">
                   {STATUS_FLOW.map((s) => <option key={s} value={s} className="capitalize">{s}</option>)}
                 </select>
               </div>
               <div>
                 <label className="text-xs font-bold text-foreground mb-1 block">Quoted Amount (₦)</label>
-                <input type="number" value={detail._quoted_amount} onChange={(e) => setDetail({ ...detail, _quoted_amount: e.target.value })} placeholder="e.g. 200000" className="w-full p-2 rounded-xl border border-border text-sm" />
+                <input aria-label={msg('FE_CATERING_QUOTE','Quoted Amount (₦)')} type="number" min="0" step="0.01" value={detail._quoted_amount} onChange={(e) => setDetail({ ...detail, _quoted_amount: e.target.value })} placeholder="e.g. 200000" className="w-full p-2 rounded-xl border border-border text-sm" />
               </div>
               <div>
                 <label className="text-xs font-bold text-foreground mb-1 block">Assign to staff</label>
-                <input value={detail._assigned_to} onChange={(e) => setDetail({ ...detail, _assigned_to: e.target.value })} placeholder="Staff UUID or name" className="w-full p-2 rounded-xl border border-border text-sm" />
+                <select aria-label={msg('FE_CATERING_ASSIGN','Assign to staff')} disabled={staffLoading || staffError} value={detail._assigned_to} onChange={e=>setDetail({...detail,_assigned_to:e.target.value})} className="w-full p-2 rounded-xl border border-border text-sm">
+                  <option value="">{msg('FE_CATERING_UNASSIGNED','Unassigned')}</option>
+                  {detail._assigned_to && !staff.some(person=>person.id===detail._assigned_to) && <option value={detail._assigned_to}>{msg('FE_CATERING_CURRENT_STAFF','Current assignment')} · {detail._assigned_to.slice(0,8)}</option>}
+                  {staff.map(person=><option key={person.id} value={person.id}>{person.full_name || person.email} · {person.role}</option>)}
+                </select>
+                {staffLoading && <p role="status">{msg('FE_LOOKUP_LOADING','Loading…')}</p>}
+                {staffError && <div role="alert"><p>{msg('FE_CATERING_STAFF_FAILED','Staff could not be loaded. Retry before saving.')}</p><button type="button" onClick={()=>{void loadStaff(detail.campus_id);}} className="font-bold text-primary">{msg('FE_LOOKUP_RETRY','Retry')}</button></div>}
               </div>
               <div>
                 <label className="text-xs font-bold text-foreground mb-1 block">Admin Notes</label>
-                <textarea value={detail._notes} onChange={(e) => setDetail({ ...detail, _notes: e.target.value })} rows={3} placeholder="Internal notes..." className="w-full p-2 rounded-xl border border-border text-sm" />
+                <textarea aria-label={msg('FE_CATERING_NOTES','Admin Notes')} maxLength={2000} value={detail._notes} onChange={(e) => setDetail({ ...detail, _notes: e.target.value })} rows={3} placeholder="Internal notes..." className="w-full p-2 rounded-xl border border-border text-sm" />
               </div>
             </div>
 
-            <button onClick={saveDetail} disabled={saving} className="w-full mt-4 py-3 rounded-full bg-primary text-white font-bold text-sm disabled:opacity-50">
+            <button type="submit" disabled={saving || staffLoading || staffError} className="w-full mt-4 py-3 rounded-full bg-primary text-white font-bold text-sm disabled:opacity-50">
               {saving ? 'Saving…' : 'Save Changes'}
             </button>
-          </div>
+          </fieldset></form>
         </div>
         </ModalPortal>
       )}
