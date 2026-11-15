@@ -31,6 +31,8 @@ Existing chat: **A1, A2, A3, A5, A6**. Other chat: **A4, A7, O4, O5**. Coordinat
 
 - **A6:** shared campus contact failure/Retry, all six notification preferences, independent push-update rollback, and five popup account/viewport/page-target cases now pass in `PUBLIC_CONTACT_PREFERENCES_POPUPS_2026_11_15.md`. Remaining unmatched action reconciliation stays explicit.
 
+- **A2 dashboard:** nested delivery pipeline counts, common Lagos date range, HP tier fallback, missing-versus-zero feeds, Retry and delayed campus/role cases now pass in `ADMIN_DASHBOARD_CONTRACT_2026_11_15.md`. Independent report endpoints are not represented as a transactionally synchronized snapshot.
+
 ### Next execution order
 
 Existing chat: A1 navigation/action coverage → A2 reporting/leaderboard gaps → A3 identity/configuration exceptions → uncovered A5/A6 actions. Other chat proceeds independently with A4 settings/system consumers and A7 object/policy inventory, plus O4/O5 configuration review. Fix reproduced defects and push in batches. Existing passing cases remain regression anchors. New findings will be added under their ID rather than silently expanding the backlog.

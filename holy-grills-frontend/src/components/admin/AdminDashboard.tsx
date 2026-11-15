@@ -9,18 +9,19 @@ import { liveApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
 import { Card, Skeleton, StatTile, EmptyState, SectionTitle, Pill, body } from './ui/AdminKit';
 import { msg } from '@/lib/messages';
+import { watCalendarDay } from '@/lib/watCalendar';
 
 const FLAME = ['#E70E0E', '#F2B84B', '#FF9500', '#6A1F00', '#A8301A', '#C47B3A'];
 const STATUS_COLORS = ['#94a3b8', '#E70E0E', '#F2B84B', '#3b82f6', '#06b6d4', '#22c55e'];
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
-const daysAgoStr = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+const todayStr = () => watCalendarDay();
+const daysAgoStr = (n) => watCalendarDay(-n);
 
 // Dashboard Overview — GET /analytics/dashboard (today's pipeline, batch
 // status, revenue snapshot) + /analytics/sales|users|items (30d) +
 // /analytics/hp via admin.getAnalyticsHp + /menu/kitchen-capacity.
 // Auto-refreshes every 30s. Every field is guarded — live values render
-// where the shape matches, honest zeros otherwise.
+// where the shape matches, unavailable values stay distinct from confirmed zeros.
 export default function AdminDashboard() {
   const [data, setData] = useState(null);
   const [sales, setSales] = useState(null);
@@ -39,12 +40,12 @@ export default function AdminDashboard() {
   const load = useCallback(async () => {
     if (pending.current) return;
     pending.current = true;
-    const range = { from_date: daysAgoStr(30), to_date: todayStr() };
+    const range = { from_date: daysAgoStr(29), to_date: todayStr() };
     const feeds = [
       ['dashboard', () => liveApi.analytics.dashboard(), value => setData(body(value))],
       ['sales', () => liveApi.analytics.sales(range), value => setSales(body(value))],
       ['users', () => liveApi.analytics.users(range), value => setUsers(body(value))],
-      ['hp', () => liveApi.admin.getAnalyticsHp(), value => setHp(value)],
+      ['hp', () => liveApi.admin.getAnalyticsHp(range), value => setHp(value)],
       ['items', () => liveApi.analytics.items(range), value => { const v = body(value); setItems(Array.isArray(v) ? v : (v?.items || [])); }],
       ['capacity', () => liveApi.menu.getKitchenCapacity(), value => setCapacity(body(value))],
     ] as const;
@@ -116,7 +117,7 @@ export default function AdminDashboard() {
     { label: 'Orders Today', value: data ? (d.total_orders ?? d.today?.total_orders ?? 0) : '—', icon: Package, iconClass: 'text-primary', iconBg: 'bg-primary/10' },
     { label: 'Revenue Delivered (Today)', value: data ? formatNaira(d.revenue_delivered ?? d.today?.revenue_delivered ?? 0) : '—', icon: DollarSign, iconClass: 'text-success', iconBg: 'bg-success/15' },
     { label: 'Active Orders', value: data ? (d.active_orders ?? d.today?.active_orders ?? 0) : '—', icon: Activity, iconClass: 'text-accent-foreground', iconBg: 'bg-accent/25' },
-    { label: 'Delivered Today', value: d.delivered_orders ?? d.today?.delivered_orders ?? 0, icon: CheckCircle2, iconClass: 'text-success', iconBg: 'bg-success/15' },
+    { label: 'Delivered Today', value: data ? (d.delivered_orders ?? d.today?.delivered_orders ?? 0) : '—', icon: CheckCircle2, iconClass: 'text-success', iconBg: 'bg-success/15' },
   ];
 
   const statusData = Object.entries(d.orders_by_status ?? d.today?.orders_by_status ?? {})
@@ -127,11 +128,14 @@ export default function AdminDashboard() {
     name: (it.name_snapshot || it.item_name || it.name || '').replace(/🔥/g, '').trim(),
     quantity: it.qty_sold ?? it.total_quantity ?? it.quantity ?? 0,
   }));
-  const tierData = Object.entries(users?.tier_breakdown ?? users?.tier_distribution ?? hp?.tier_distribution ?? {})
-    .map(([name, value], i) => ({ name, value: Number(value) || 0, fill: FLAME[i % FLAME.length] }));
-  const opsOpenWindows = (d.open_windows ?? []).length;
-  const opsActiveBatches = (d.active_batches ?? []).length;
-  const opsUnassigned = d.unassigned_orders ?? 0;
+  const tiers = users?.tier_breakdown ?? users?.tier_distribution ?? hp?.tier_distribution ?? {};
+  const tierEntries = Array.isArray(tiers) ? tiers.map(t => [t.tier ?? t.name ?? t.slug, t.count]) : Object.entries(tiers);
+  const tierData = tierEntries.map(([name, value], i) => ({ name: String(name), value: Number(value) || 0, fill: FLAME[i % FLAME.length] }));
+  const pipeline = d.delivery_pipeline ?? d;
+  const opsOpenWindows = data ? (pipeline.open_windows ?? []).length : '—';
+  const opsActiveBatches = data ? (pipeline.active_batches ?? []).length : '—';
+  const opsUnassigned = data ? (pipeline.unassigned_orders ?? 0) : '—';
+  const unavailable = msg('FE_ADMIN_DASHBOARD_FEED_UNAVAILABLE', 'This insight could not be loaded. Retry to refresh it.');
   const dailyCapacity = capacity ? (capacity.daily_order_capacity ?? capacity.daily_capacity ?? capacity.max_daily_orders ?? null) : null;
 
   return (
@@ -139,13 +143,13 @@ export default function AdminDashboard() {
       {/* Partial-failure strip — the page still shows every tile that loaded;
           only the failed refreshes are called out, with a manual retry. */}
       {partialWarning && (
-        <div className="rounded-2xl tone-warn border border-warn/40 p-3 flex items-center justify-between gap-3">
+        <div role="alert" className="rounded-2xl tone-warn border border-warn/40 p-3 flex items-center justify-between gap-3">
           <span className="text-xs font-semibold flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
-            Some insights couldn't refresh just now.
+            {msg('FE_ADMIN_DASHBOARD_PARTIAL_FAILED', 'Some insights could not refresh. Previously loaded values are retained.')}
           </span>
           <button onClick={load} className="px-3 py-1.5 rounded-full bg-warn text-white text-[11px] font-bold shrink-0 flex items-center gap-1">
-            <RefreshCw className="w-3 h-3" /> Retry
+            <RefreshCw className="w-3 h-3" /> {msg('FE_PLATFORM_RETRY', 'Retry')}
           </button>
         </div>
       )}
@@ -160,7 +164,7 @@ export default function AdminDashboard() {
             <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" /> Auto-refresh 30s
           </Pill>
           {lastUpdated && <span className="text-[10px] font-semibold text-muted-foreground">Updated {lastUpdated.toLocaleTimeString()}</span>}
-          <button onClick={load} className="p-2 rounded-xl bg-card border border-border text-muted-foreground hover:text-primary hover:border-primary/40 active:scale-95 transition" title="Refresh now">
+          <button onClick={load} className="p-2 rounded-xl bg-card border border-border text-muted-foreground hover:text-primary hover:border-primary/40 active:scale-95 transition" title={msg('FE_ADMIN_DASHBOARD_REFRESH', 'Refresh now')} aria-label={msg('FE_ADMIN_DASHBOARD_REFRESH', 'Refresh now')}>
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -190,7 +194,7 @@ export default function AdminDashboard() {
       <div className="grid lg:grid-cols-2 gap-4">
         <Card className="p-5">
           <SectionTitle icon={Package} title="Orders by Status" sub="Today" />
-          {!data ? <Skeleton className="mt-3 h-52" /> : statusData.length === 0 ? (
+          {!data ? (initialPending.has('dashboard') ? <Skeleton className="mt-3 h-52" /> : <p className="mt-3 text-sm text-muted-foreground">{unavailable}</p>) : statusData.length === 0 ? (
             <EmptyState icon={Package} title="No orders today" body="The pipeline will light up as orders arrive." />
           ) : (
             <>
@@ -219,7 +223,7 @@ export default function AdminDashboard() {
 
         <Card className="p-5">
           <SectionTitle icon={DollarSign} title="Payment Methods" sub="Today" />
-          {!data ? <Skeleton className="mt-3 h-52" /> : paymentData.length === 0 ? (
+          {!data ? (initialPending.has('dashboard') ? <Skeleton className="mt-3 h-52" /> : <p className="mt-3 text-sm text-muted-foreground">{unavailable}</p>) : paymentData.length === 0 ? (
             <EmptyState icon={DollarSign} title="No payments today" />
           ) : (
             <div className="h-60">
@@ -242,7 +246,7 @@ export default function AdminDashboard() {
       <div className="grid lg:grid-cols-2 gap-4">
         <Card className="p-5">
           <SectionTitle icon={UtensilsCrossed} title="Top Items" sub="30d delivered · GET /analytics/items" />
-          {initialPending.has('items') ? <Skeleton className="mt-3 h-56" /> : itemsData.length === 0 ? (
+          {initialPending.has('items') ? <Skeleton className="mt-3 h-56" /> : failedFeeds.current.has('items') && !itemsData.length ? <p className="mt-3 text-sm text-muted-foreground">{unavailable}</p> : itemsData.length === 0 ? (
             <EmptyState icon={UtensilsCrossed} title="No item sales yet" body="Item performance appears once orders are delivered." />
           ) : (
             <div className="h-56">
@@ -262,7 +266,7 @@ export default function AdminDashboard() {
         <div className="space-y-4">
           <Card className="p-5">
             <SectionTitle icon={Flame} title="Users by Tier" sub="GET /analytics/users" />
-            {!users && !hp && (initialPending.has('users') || initialPending.has('hp')) ? <Skeleton className="mt-3 h-36" /> : tierData.length === 0 ? (
+            {!users && !hp && (initialPending.has('users') || initialPending.has('hp')) ? <Skeleton className="mt-3 h-36" /> : !users && !hp ? <p className="mt-3 text-sm text-muted-foreground">{unavailable}</p> : tierData.length === 0 ? (
               <EmptyState icon={Users} title="No tier data yet" />
             ) : (
               <div className="flex items-center gap-4">
@@ -297,10 +301,10 @@ export default function AdminDashboard() {
               <span className="ml-auto text-[10px] font-bold text-white/50 uppercase tracking-wide">30d</span>
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
-              <div><div className="text-white/60 text-[10px] font-bold uppercase tracking-wide">Earned (active)</div><div className="font-extrabold">{(hp?.hp_earned_active ?? 0).toLocaleString()}</div></div>
-              <div><div className="text-white/60 text-[10px] font-bold uppercase tracking-wide">Spent</div><div className="font-extrabold">{(hp?.hp_spent ?? 0).toLocaleString()}</div></div>
-              <div><div className="text-white/60 text-[10px] font-bold uppercase tracking-wide">Expired</div><div className="font-extrabold text-accent">{(hp?.hp_expired ?? 0).toLocaleString()}</div></div>
-              <div><div className="text-white/60 text-[10px] font-bold uppercase tracking-wide">In Circulation</div><div className="font-extrabold">{(hp?.hp_in_circulation ?? 0).toLocaleString()}</div></div>
+              <div><div className="text-white/60 text-[10px] font-bold uppercase tracking-wide">Earned (active)</div><div className="font-extrabold">{hp ? (hp.hp_earned_active ?? 0).toLocaleString() : '—'}</div></div>
+              <div><div className="text-white/60 text-[10px] font-bold uppercase tracking-wide">Spent</div><div className="font-extrabold">{hp ? (hp.hp_spent ?? 0).toLocaleString() : '—'}</div></div>
+              <div><div className="text-white/60 text-[10px] font-bold uppercase tracking-wide">Expired</div><div className="font-extrabold text-accent">{hp ? (hp.hp_expired ?? 0).toLocaleString() : '—'}</div></div>
+              <div><div className="text-white/60 text-[10px] font-bold uppercase tracking-wide">In Circulation</div><div className="font-extrabold">{hp ? (hp.hp_in_circulation ?? 0).toLocaleString() : '—'}</div></div>
             </div>
           </div>
         </div>

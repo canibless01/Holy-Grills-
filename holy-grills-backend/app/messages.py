@@ -17,6 +17,9 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_ADMIN_DASHBOARD_FEED_UNAVAILABLE = "This insight could not be loaded. Retry to refresh it."
+    FE_ADMIN_DASHBOARD_PARTIAL_FAILED = "Some insights could not refresh. Previously loaded values are retained."
+    FE_ADMIN_DASHBOARD_REFRESH = "Refresh now"
     FE_CONTACT_READ_FAILED = "Contact details could not be loaded. Please retry."
     ADMIN_USER_STATE_CHANGED = "This account changed. Refresh the directory before changing its role or access."
     FE_ADMIN_USERS_REFRESH_DIRECTORY = "Refresh directory"
