@@ -30,3 +30,14 @@ def test_unknown_cart_status_fails_before_table_query(status):
   g.user_role='admin';g.campus_id=A
   _,code=admin.abandoned_carts.__wrapped__()
  assert code==400;db.table.assert_not_called()
+
+def test_cart_page_uses_offset_limit_and_stable_tie_breaker():
+ db=MagicMock();q=db.table.return_value
+ for name in ('select','eq','order','limit','offset'):getattr(q,name).return_value=q
+ q.execute.return_value=[]
+ with Flask(__name__).test_request_context('/?status=all&limit=25&offset=125'),patch.object(admin,'get_user_client',return_value=db):
+  g.user_role='admin';g.campus_id=A
+  response,code=admin.abandoned_carts.__wrapped__()
+ assert code==200 and response.json==[]
+ q.limit.assert_called_once_with(25);q.offset.assert_called_once_with(125)
+ q.order.assert_called_once_with('last_active_at.desc,id',ascending=False)

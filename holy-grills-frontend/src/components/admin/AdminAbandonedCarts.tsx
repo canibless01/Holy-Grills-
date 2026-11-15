@@ -6,13 +6,13 @@ import { formatNaira, formatDateTime } from '@/lib/hgUtils';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
+import { Pagination } from './ui/AdminKit';
+
+const PAGE_SIZE = 25;
 
 const STATUS_TONE = {
   pending: 'tone-warn',
-  pending_unrecovered: 'tone-warn',
   recovered: 'tone-success',
-  exhausted: 'bg-secondary text-foreground',
-  cleared: 'bg-secondary text-muted-foreground',
 };
 
 /**
@@ -33,14 +33,16 @@ export default function AdminAbandonedCarts() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(null);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
 
   const load = async () => {
     const request = ++generation.current;
     setLoading(true); setError('');
-    try { const rows = await liveApi.admin.getAbandonedCarts({ status: statusFilter }); if (request === generation.current) setCarts(rows); } catch (e) { if (request === generation.current) setError(e.message || msg('FE_ADMIN_CARTS_LOAD_FAILED','Could not load carts. Please retry.')); }
+    try { const rows = await liveApi.admin.getAbandonedCarts({ status: statusFilter, limit: PAGE_SIZE, offset: page * PAGE_SIZE }); if (request === generation.current) { setCarts(rows); setHasMore(rows.length === PAGE_SIZE); } } catch (e) { if (request === generation.current) setError(e.message || msg('FE_ADMIN_CARTS_LOAD_FAILED','Could not load carts. Please retry.')); }
     if (request === generation.current) setLoading(false);
   };
-  useEffect(() => { setCarts([]); load(); return () => { generation.current++; }; }, [adminCampusId, statusFilter]);
+  useEffect(() => { setCarts([]); load(); return () => { generation.current++; }; }, [adminCampusId, statusFilter, page]);
 
   const filtered = carts.filter((c) => {
     const okStatus = statusFilter === 'all' || (c.is_recovered ? 'recovered' : 'pending') === statusFilter;
@@ -64,9 +66,9 @@ export default function AdminAbandonedCarts() {
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-muted-foreground" />
-          <input aria-label={msg('FE_ADMIN_CARTS_SEARCH','Search carts by name or email')} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name or email" className="w-full pl-9 pr-3 py-2 rounded-xl border border-border text-sm" />
+          <input aria-label={msg('FE_ADMIN_CARTS_SEARCH_PAGE','Search this page by name or email')} value={q} onChange={(e) => setQ(e.target.value)} placeholder={msg('FE_ADMIN_CARTS_SEARCH_PAGE','Search this page by name or email')} className="w-full pl-9 pr-3 py-2 rounded-xl border border-border text-sm" />
         </div>
-        <select aria-label={msg('FE_ADMIN_CARTS_STATUS','Cart recovery status')} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="p-2 rounded-xl border border-border text-sm">
+        <select aria-label={msg('FE_ADMIN_CARTS_STATUS','Cart recovery status')} value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(0); setQ(''); }} className="p-2 rounded-xl border border-border text-sm">
           <option value="all">All statuses</option>
           <option value="pending">Pending</option>
 
@@ -128,6 +130,7 @@ export default function AdminAbandonedCarts() {
           })}
         </div>
       )}
+      {(page > 0 || hasMore) && <div className="rounded-xl border border-border p-3"><Pagination page={page} canPrev={page > 0} canNext={hasMore && !error} busy={loading} onPrev={() => { setPage(p => Math.max(0,p-1)); setQ(''); }} onNext={() => { setPage(p => p+1); setQ(''); }} /></div>}
     </div>
   );
 }

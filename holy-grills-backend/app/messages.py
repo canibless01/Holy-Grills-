@@ -17,6 +17,9 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_ADMIN_CARTS_SEARCH_PAGE = "Search this page by name or email"
+    FE_ADMIN_WALLET_READ_FAILED = "Wallet transactions could not be loaded. Retry this page."
+    FE_ADMIN_WALLET_RETRY = "Retry transactions"
     FE_ADMIN_CARTS_LOAD_FAILED = "Could not load carts. Please retry."
     FE_ADMIN_CARTS_SEARCH = "Search carts by name or email"
     FE_ADMIN_CARTS_STATUS = "Cart recovery status"

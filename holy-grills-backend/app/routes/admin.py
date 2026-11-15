@@ -1670,7 +1670,7 @@ def abandoned_carts():
             q = q.eq("is_recovered", status == "recovered")
         if campus_id:
             q = q.eq("campus_id", campus_id)
-        carts = q.order("last_active_at", ascending=False).limit(limit).offset(offset).execute() or []
+        carts = q.order("last_active_at.desc,id", ascending=False).limit(limit).offset(offset).execute() or []
     except (SupabaseError, requests.RequestException) as e:
         return db_error_response(e, "abandoned_carts")
     if carts:

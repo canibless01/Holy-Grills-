@@ -1,8 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Wallet, RefreshCw, ArrowDownLeft, ArrowUpRight, Clock } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
 import { formatNaira, formatDateTime, timeAgo } from '@/lib/hgUtils';
-import { toast } from '@/components/ui/use-toast';
 import { Card, Skeleton, EmptyState, Pill, Pagination, Segmented, SectionTitle } from './ui/AdminKit';
 import { msg } from '@/lib/messages';
 
@@ -50,8 +49,11 @@ export default function AdminWalletTransactions() {
   const [hasMore, setHasMore] = useState(false);
   const [open, setOpen] = useState(null);
 
+  const generation = useRef(0);
+  const [error,setError] = useState(false);
   const load = useCallback(async () => {
-    setLoading(true);
+    const version = ++generation.current;
+    setLoading(true); setError(false);
     try {
       // Was liveApi.wallet.getWalletTransactions — that method does not exist
       // (the route is /wallet/admin/transactions, exposed on liveApi.admin).
@@ -60,20 +62,20 @@ export default function AdminWalletTransactions() {
         offset: page * PAGE_SIZE,
         ...(filter ? { type: filter } : {}),
       });
-      const list = Array.isArray(res) ? res : [];
+      if (version !== generation.current) return;
+      if (!Array.isArray(res)) throw new Error('Invalid wallet list response');
+      const list = res;
       setRows(list);
       setHasMore(list.length === PAGE_SIZE);
-    } catch (e) {
-      toast({ title: msg('FE_ADMIN_WALLET_TRANSACTIONS_COULDN_T_LOAD_WALLET_TRANSACTIONS', "Couldn't load wallet transactions"), description: e.message, variant: 'destructive' });
-      setRows([]);
-      setHasMore(false);
+    } catch {
+      if (version === generation.current) setError(true);
     }
-    setLoading(false);
+    if (version === generation.current) setLoading(false);
   }, [page, filter]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(); return () => { generation.current++; }; }, [load]);
 
-  const onFilter = (id) => { setFilter(id); setPage(0); };
+  const onFilter = (id) => { setFilter(id); setPage(0); setOpen(null); };
 
   return (
     <div className="space-y-4">
@@ -101,11 +103,12 @@ export default function AdminWalletTransactions() {
         </p>
       </Card>
 
-      {loading && rows.length === 0 ? (
+      {error && <div role="alert" className="rounded-xl border border-destructive/30 p-4 text-sm"><p>{msg('FE_ADMIN_WALLET_READ_FAILED','Wallet transactions could not be loaded. Retry this page.')}</p><button onClick={load} className="font-bold underline">{msg('FE_ADMIN_WALLET_RETRY','Retry transactions')}</button></div>}
+      {loading ? (
         <div className="space-y-2.5">
           {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-16" />)}
         </div>
-      ) : rows.length === 0 ? (
+      ) : error ? null : rows.length === 0 ? (
         <Card>
           <EmptyState
             icon={Wallet}
@@ -179,20 +182,20 @@ export default function AdminWalletTransactions() {
             })}
           </div>
 
+        </>
+      )}
           {(page > 0 || hasMore) && (
             <Card className="p-3">
               <Pagination
                 page={page}
                 canPrev={page > 0}
-                canNext={hasMore}
+                canNext={hasMore && !error}
                 onPrev={() => setPage((p) => Math.max(0, p - 1))}
                 onNext={() => setPage((p) => p + 1)}
                 busy={loading}
               />
             </Card>
           )}
-        </>
-      )}
     </div>
   );
 }
