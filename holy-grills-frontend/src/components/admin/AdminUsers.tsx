@@ -72,6 +72,7 @@ function UserWorkspace({ campusId }) {
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [updating, setUpdating] = useState(null);
+  const accountWriteLock = useRef(false);
   const [selected, setSelected] = useState(null);
   const [confirmToggle, setConfirmToggle] = useState(null);
   const [bulkMode, setBulkMode] = useState(false);
@@ -118,7 +119,7 @@ function UserWorkspace({ campusId }) {
   // PATCH /admin/users/:id/role — backend rejects self-changes and
   // non-super-admin → super_admin; mirrored client-side for instant feedback.
   const handleRole = async (u, role, campusId = null) => {
-    if (role === u.role) return;
+    if (accountWriteLock.current || role === u.role) return;
     if (u.id === me?.id) {
       toast({ title: msg('FE_ADMIN_USERS_NOT_ALLOWED', 'Not allowed'), description: msg('FE_ADMIN_USERS_YOU_CANNOT_CHANGE_YOUR_OWN_ROLE', 'You cannot change your own role.'), variant: 'destructive' });
       return;
@@ -137,29 +138,31 @@ function UserWorkspace({ campusId }) {
       }
       return;
     }
-    setUpdating(u.id);
+    accountWriteLock.current = true; setUpdating(u.id);
     try {
-      await liveApi.admin.updateRole(u.id, { role, ...(campusId ? { campus_id: campusId } : {}) });
+      await liveApi.admin.updateRole(u.id, { role, expected_role:u.role, expected_campus_id:u.campus_id || null, expected_is_active:u.is_active, ...(campusId ? { campus_id: campusId } : {}) });
       setRoleChange(null);
       toast({ title: msg('FE_ADMIN_USERS_ROLE_UPDATED', 'Role updated'), description: msg('FE_ADMIN_USERS_NAME_IS_NOW_VALUE', '{name} is now {value}.', { name: u.full_name, value: role.replace('_', ' ') }) });
       load();
     } catch (e) {
       toast({ title: msg('FE_ADMIN_USERS_ROLE_CHANGE_FAILED', 'Role change failed'), description: e.message, variant: 'destructive' });
     }
-    setUpdating(null);
+    accountWriteLock.current = false; setUpdating(null);
   };
 
   // POST /admin/users/:id/deactivate | /activate — backend blocks self-
   // deactivation and non-super-admin deactivating a super_admin.
   const handleToggle = async (u) => {
+    if (accountWriteLock.current) return;
     if (u.id === me?.id) {
       toast({ title: msg('FE_ADMIN_USERS_NOT_ALLOWED', 'Not allowed'), description: msg('FE_ADMIN_USERS_YOU_CANNOT_DEACTIVATE_YOUR_OWN_ACCOUNT', 'You cannot deactivate your own account.'), variant: 'destructive' });
       setConfirmToggle(null);
       return;
     }
-    setUpdating(u.id);
+    accountWriteLock.current = true; setUpdating(u.id);
     try {
-      await (u.is_active ? liveApi.admin.deactivateUser(u.id) : liveApi.admin.activateUser(u.id));
+      const expected={expected_role:u.role,expected_campus_id:u.campus_id || null,expected_is_active:u.is_active};
+      await (u.is_active ? liveApi.admin.deactivateUser(u.id,expected) : liveApi.admin.activateUser(u.id,expected));
       toast({ title: u.is_active ? 'Account deactivated' : 'Account reactivated', description: u.full_name });
       setConfirmToggle(null);
       load();
@@ -167,7 +170,7 @@ function UserWorkspace({ campusId }) {
       toast({ title: msg('FE_ADMIN_USERS_ACTION_FAILED', 'Action failed'), description: e.message, variant: 'destructive' });
       setConfirmToggle(null);
     }
-    setUpdating(null);
+    accountWriteLock.current = false; setUpdating(null);
   };
 
   const toggleSelect = (id) => {
@@ -183,6 +186,7 @@ function UserWorkspace({ campusId }) {
     <div className="space-y-4">
       {/* Controls */}
       <Card className="p-3 flex flex-col lg:flex-row gap-2.5 lg:items-center">
+        <button disabled={updating !== null} onClick={()=>{void load();}} className="rounded-xl border border-border px-3 py-2 text-sm font-bold">{msg('FE_ADMIN_USERS_REFRESH_DIRECTORY','Refresh directory')}</button>
         <div className="relative flex-1 min-w-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
@@ -300,7 +304,7 @@ function UserWorkspace({ campusId }) {
                       <select
                         value={u.role || 'student'}
                         onChange={(e) => handleRole(u, e.target.value)}
-                        disabled={updating === u.id || isSelf || (me?.role !== 'super_admin' && ['admin', 'super_admin', 'community_manager'].includes(u.role))}
+                        disabled={updating !== null || isSelf || (me?.role !== 'super_admin' && ['admin', 'super_admin', 'community_manager'].includes(u.role))}
                         title={isSelf ? 'You cannot change your own role' : 'Change role'}
                         className="flex-1 min-w-0 text-xs px-2.5 py-2 rounded-xl border border-border bg-card text-foreground font-bold focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50"
                       >
@@ -310,7 +314,7 @@ function UserWorkspace({ campusId }) {
                       </select>
                       <button
                         onClick={() => (u.is_active ? setConfirmToggle(u) : handleToggle(u))}
-                        disabled={updating === u.id || isSelf || (['admin', 'super_admin'].includes(u.role) && me?.role !== 'super_admin')}
+                        disabled={updating !== null || isSelf || (['admin', 'super_admin'].includes(u.role) && me?.role !== 'super_admin')}
                         title={isSelf ? msg('FE_ADMIN_USERS_YOU_CANNOT_DEACTIVATE_YOUR_OWN_ACCOUNT', 'You cannot deactivate your own account.')
                           : ['admin', 'super_admin'].includes(u.role) && me?.role !== 'super_admin'
                           ? msg('FE_USER_ADMIN_ACCOUNT_SUPER_ONLY', 'Only a super admin can change this admin account.')
@@ -337,7 +341,7 @@ function UserWorkspace({ campusId }) {
       )}
 
       <AnimatePresence>
-        {roleChange && <Modal open onClose={() => setRoleChange(null)} title={msg('FE_ROLE_CAMPUS_REQUIRED', "Choose the user's campus")}><div className="space-y-3"><Field label={msg('FE_ROLE_CAMPUS', 'Campus')}><select value={roleCampusId} onChange={e => setRoleCampusId(e.target.value)} className="w-full p-3 border border-border rounded-xl"><option value="">{msg('FE_ROLE_SELECT_CAMPUS', 'Select a campus')}</option>{roleCampuses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field><button disabled={!roleCampusId || updating === roleChange.user.id} onClick={() => handleRole(roleChange.user, roleChange.role, roleCampusId)} className="w-full p-3 rounded-full bg-primary text-white font-bold disabled:opacity-50">{msg('FE_ROLE_SAVE', 'Save role')}</button></div></Modal>}
+        {roleChange && <Modal open onClose={() => {if(!accountWriteLock.current)setRoleChange(null);}} title={msg('FE_ROLE_CAMPUS_REQUIRED', "Choose the user's campus")}><div className="space-y-3"><Field label={msg('FE_ROLE_CAMPUS', 'Campus')}><select disabled={updating !== null} value={roleCampusId} onChange={e => setRoleCampusId(e.target.value)} className="w-full p-3 border border-border rounded-xl"><option value="">{msg('FE_ROLE_SELECT_CAMPUS', 'Select a campus')}</option>{roleCampuses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field><button disabled={!roleCampusId || updating === roleChange.user.id} onClick={() => handleRole(roleChange.user, roleChange.role, roleCampusId)} className="w-full p-3 rounded-full bg-primary text-white font-bold disabled:opacity-50">{msg('FE_ROLE_SAVE', 'Save role')}</button></div></Modal>}
         {selected && <UserDrawer key={selected.id} user={selected} onClose={() => setSelected(null)} onUserUpdated={load} />}
       </AnimatePresence>
 
@@ -352,7 +356,7 @@ function UserWorkspace({ campusId }) {
       )}
 
       {/* Destructive confirmation — deactivate */}
-      <Modal open={!!confirmToggle} onClose={() => setConfirmToggle(null)} title="Deactivate account?">
+      <Modal open={!!confirmToggle} onClose={() => {if(!accountWriteLock.current)setConfirmToggle(null);}} title="Deactivate account?">
         <div className="space-y-4">
           <div className="flex items-start gap-3 rounded-xl bg-destructive/10 border border-destructive/20 p-3.5">
             <AlertTriangle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
@@ -361,8 +365,8 @@ function UserWorkspace({ campusId }) {
             </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setConfirmToggle(null)} className="flex-1 py-2.5 rounded-full bg-secondary text-secondary-foreground text-sm font-bold active:scale-95 transition">Cancel</button>
-            <button onClick={() => handleToggle(confirmToggle)} className="flex-1 py-2.5 rounded-full bg-destructive text-white text-sm font-bold active:scale-95 transition">Deactivate</button>
+            <button disabled={updating !== null} onClick={() => setConfirmToggle(null)} className="flex-1 py-2.5 rounded-full bg-secondary text-secondary-foreground text-sm font-bold active:scale-95 transition">Cancel</button>
+            <button disabled={updating !== null} onClick={() => handleToggle(confirmToggle)} className="flex-1 py-2.5 rounded-full bg-destructive text-white text-sm font-bold active:scale-95 transition">Deactivate</button>
           </div>
         </div>
       </Modal>

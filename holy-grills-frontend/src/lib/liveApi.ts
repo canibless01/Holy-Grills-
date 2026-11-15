@@ -713,8 +713,8 @@ const admin = {
   async getUsers(params = {}) { return unwrap(await apiClient.get('/admin/users', params), 'users'); },
   async getUser(userId) { return apiClient.get(`/admin/users/${userId}`); },
   async updateRole(userId, body) { return apiClient.patch(`/admin/users/${userId}/role`, body); },
-  async deactivateUser(userId) { return apiClient.post(`/admin/users/${userId}/deactivate`); },
-  async activateUser(userId) { return apiClient.post(`/admin/users/${userId}/activate`); },
+  async deactivateUser(userId, body = {}) { return apiClient.post(`/admin/users/${userId}/deactivate`, body); },
+  async activateUser(userId, body = {}) { return apiClient.post(`/admin/users/${userId}/activate`, body); },
   async getUserHp(userId) {
     const r = await apiClient.get(`/admin/users/${userId}/hp`);
     const tx = Array.isArray(r?.transactions) ? r.transactions : Array.isArray(r?.hp_transactions) ? r.hp_transactions : Array.isArray(r?.history) ? r.history : Array.isArray(r?.ledger) ? r.ledger : [];

@@ -119,3 +119,7 @@ The historical tables above are not a current backlog: later closure records in 
 ### Catering controls and list coverage — 15 November 2026
 
 [Named staff, quotes/status/notes, edit/retry/concurrency and paginated search evidence](ADMIN_CATERING_CONTROLS_2026_11_15.md) closes the request-editor/list batch. The first-50 search gap and selected-campus filtering are corrected; zero quotes display correctly. Event-tab failures no longer block requests. Provider status-email process-loss capture remains a shared delivery follow-up rather than a completed UI assertion.
+
+### Staff/account concurrent edits — 15 November 2026
+
+[Native, handler and independent-session evidence](ADMIN_IDENTITY_CONCURRENCY_2026_11_15.md) closes compared-state role/access races and pending controls. Full backend 1,880 and production build pass. Existing campus-admin community-manager account control is preserved; no new permission policy or migration.

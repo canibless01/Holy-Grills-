@@ -17,6 +17,8 @@ Rules for editing this file:
 """
 
 class MSG:
+    ADMIN_USER_STATE_CHANGED = "This account changed. Refresh the directory before changing its role or access."
+    FE_ADMIN_USERS_REFRESH_DIRECTORY = "Refresh directory"
     FE_CATERING_SEARCH = "Search catering requests"
     FE_CATERING_SEARCH_HINT = "Search organizer, event or email…"
     FE_CATERING_PAGE_COUNTS = "Counts refer to the current page. Search and status filters include all requests."

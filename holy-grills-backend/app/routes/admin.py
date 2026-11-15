@@ -70,6 +70,27 @@ def _search_term(raw):
     return cleaned[:100] or None
 
 
+def _profile_expected_state(target, data):
+    for key, field in (("expected_role","role"),("expected_campus_id","campus_id"),("expected_is_active","is_active")):
+        if key not in data:
+            continue
+        value = data[key]
+        if (field == "role" and (not isinstance(value,str) or value not in VALID_ROLES)) or (field == "campus_id" and value is not None and not validate_uuid(value)) or (field == "is_active" and not isinstance(value,bool)):
+            return jsonify({"error": MSG.INVALID_INPUT}), 400
+        if target.get(field) != value:
+            return jsonify({"error": MSG.ADMIN_USER_STATE_CHANGED}), 409
+    return None
+
+
+def _profile_snapshot_query(db, target):
+    query = db.table("profiles").eq("id", target["id"]).eq("role", target["role"])
+    if "campus_id" in target:
+        query = query.is_("campus_id", "null") if target["campus_id"] is None else query.eq("campus_id",target["campus_id"])
+    if "is_active" in target:
+        query = query.eq("is_active",target["is_active"])
+    return query
+
+
 def _audit(actor_id, table, target_id, action, after_data=None, before_data=None, target_campus_id=None):
     """Append one row to admin_audit_logs. Returns True if it was written. Never raises."""
     ip = user_agent = None
@@ -283,7 +304,7 @@ def change_user_role(user_id):
         return invalid_role
     db = get_user_client()
     try:
-        profile = db.table("profiles").select("id,full_name,role,campus_id").eq("id", user_id).single().execute()
+        profile = db.table("profiles").select("id,full_name,role,campus_id,is_active").eq("id", user_id).single().execute()
     except (SupabaseError, requests.RequestException) as e:
         return db_error_response(e, "change_user_role.lookup")
     if not profile:
@@ -297,6 +318,10 @@ def change_user_role(user_id):
         return jsonify({"error": MSG.ADMIN_ROLE_CHANGE_SUPER_ONLY}), 403
     if profile.get("role") == new_role:
         return jsonify({"user_id": user_id, "role": new_role, "full_name": profile.get("full_name"), "unchanged": True}), 200
+
+    conflict = _profile_expected_state(profile, data)
+    if conflict:
+        return conflict
 
     patch = {"role": new_role}
     if new_role == "super_admin":
@@ -317,11 +342,11 @@ def change_user_role(user_id):
             return jsonify({"error": MSG.CAMPUS_NOT_AVAILABLE}), 400
         patch["campus_id"] = target_campus
     try:
-        result = db.table("profiles").eq("id", user_id).update(patch)
+        result = _profile_snapshot_query(db, profile).update(patch)
     except (SupabaseError, requests.RequestException) as e:
         return db_error_response(e, "change_user_role")
     if not result:
-        return jsonify({"error": MSG.UPDATE_NOT_PERMITTED}), 403
+        return jsonify({"error": MSG.ADMIN_USER_STATE_CHANGED}), 409
     audit_ok = _audit(
         g.user_id, "profiles", user_id, "change_role",
         {"role": new_role, "campus_id": patch.get("campus_id", profile.get("campus_id"))},
@@ -425,6 +450,9 @@ def deactivate_user(user_id):
         return jsonify({"error": MSG.ADMIN_ACCOUNT_CHANGE_SUPER_ONLY}), 403
     if not target.get("is_active"):
         return jsonify({"message": MSG.ADMIN_USER_ALREADY_DEACTIVATED, "user_id": user_id}), 200
+    conflict = _profile_expected_state(target, data)
+    if conflict:
+        return conflict
     open_orders = 0
     try:
         open_rows = (
@@ -435,7 +463,7 @@ def deactivate_user(user_id):
     except (SupabaseError, requests.RequestException) as e:
         logger.error("deactivate_user: open-order count failed for %s: %s", user_id, e)
     try:
-        result = db.table("profiles").eq("id", user_id).update({
+        result = _profile_snapshot_query(db, target).update({
             "is_active": False,
             "deactivated_at": datetime.now(timezone.utc).isoformat(),
             "deactivated_by": g.user_id,
@@ -444,7 +472,7 @@ def deactivate_user(user_id):
     except (SupabaseError, requests.RequestException) as e:
         return db_error_response(e, "deactivate_user")
     if not result:
-        return jsonify({"error": MSG.UPDATE_NOT_PERMITTED}), 403
+        return jsonify({"error": MSG.ADMIN_USER_STATE_CHANGED}), 409
 
     # The account is now deactivated. Tell the user first (push needs the device tokens), then cut off access.
     try:
@@ -480,6 +508,7 @@ def activate_user(user_id):
     # ADM-21
     if not validate_uuid(user_id):
         return jsonify({"error": MSG.AUTH_USER_NOT_FOUND}), 404
+    data = get_json_object() or {}
     db = get_user_client()
     try:
         profile = db.table("profiles").select("id,is_active,full_name,campus_id,role,email").eq("id", user_id).single().execute()
@@ -495,14 +524,17 @@ def activate_user(user_id):
         return jsonify({"error": MSG.ADMIN_ACCOUNT_ANONYMIZED}), 409
     if profile.get("is_active"):
         return jsonify({"message": MSG.ADMIN_USER_ALREADY_ACTIVE, "user_id": user_id}), 200
+    conflict = _profile_expected_state(profile, data)
+    if conflict:
+        return conflict
     try:
-        result = db.table("profiles").eq("id", user_id).update({
+        result = _profile_snapshot_query(db, profile).update({
             "is_active": True, "deactivated_at": None, "deactivated_by": None, "deactivation_reason": None,
         })
     except (SupabaseError, requests.RequestException) as e:
         return db_error_response(e, "activate_user")
     if not result:
-        return jsonify({"error": MSG.UPDATE_NOT_PERMITTED}), 403
+        return jsonify({"error": MSG.ADMIN_USER_STATE_CHANGED}), 409
     try:
         send_notification(user_id, "account_reactivated", template_data={}, campus_id=profile.get("campus_id"))
     except Exception as e:  # broad on purpose: never undo the reactivation because a message failed
