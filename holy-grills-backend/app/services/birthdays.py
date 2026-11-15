@@ -8,7 +8,7 @@ from app.utils.settings import get_validated_setting
 
 def process_birthdays():
     db = get_db()
-    results = {'processed': 0, 'hp_awarded': 0, 'batches': 0, 'skipped': 0}
+    results = {'processed': 0, 'hp_awarded': 0, 'batches': 0, 'skipped_profiles': 0}
     for _ in range(20):
         people = db.rpc('hg_due_birthdays', {'p_limit': 200}) or []
         if not people:
@@ -22,7 +22,7 @@ def process_birthdays():
                 amount = int(perk) if perk is not None and perk > 0 else base
             result = db.rpc('hg_process_birthday', {'p_user': person['id'], 'p_hp': amount})
             if isinstance(result, dict) and result.get('skipped'):
-                results['skipped'] += 1
+                results['skipped_profiles'] += 1
                 continue
             if not isinstance(result, dict) or not (result.get('processed') or result.get('replayed')):
                 raise RuntimeError('Birthday capture remains pending')

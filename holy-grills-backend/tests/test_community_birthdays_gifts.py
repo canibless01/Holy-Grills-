@@ -73,7 +73,7 @@ def test_disabled_birthday_hp_can_still_celebrate_and_race_skip_is_safe(app):
     db=MagicMock();db.rpc.side_effect=[[{'id':'one','campus_id':'campus'}],{'skipped':True}]
     with app.app_context(),patch.object(birthdays,'get_db',return_value=db),patch.object(birthdays,'is_feature_enabled',return_value=False),patch.object(birthdays,'resolve_perk') as perk:
         result=birthdays.process_birthdays()
-    assert result['skipped']==1 and result['hp_awarded']==0
+    assert result['skipped_profiles']==1 and result['hp_awarded']==0
     assert db.rpc.call_args_list[1].args[1]['p_hp']==0
     perk.assert_not_called()
 

@@ -18,8 +18,8 @@ Reviewed the 165-type central notification registry and 18 email templates. Upda
 
 ## Evidence
 
-- **1,822 backend tests passed**, including 25 new recovery, strict-input, consent, rendering and annual-processing cases.
-- Frontend typecheck, lint and full production build passed. Browser checks at **393 px and 1280 px** exercise real gift components with a controlled API: birthday lookup retry/prefill, anonymous/contact choices, lost-response reload recovery with the same request, named/anonymous owned receipts and capability gating.
+- **1,849 backend tests passed after incorporating main**, including 25 new recovery, strict-input, consent, rendering and annual-processing cases.
+- Frontend typecheck, lint and full production build passed. Browser checks at **393 px and 1280 px** exercise real gift components with a controlled API: birthday lookup retry/prefill, anonymous/contact choices, lost-response reload recovery with the same request, named/anonymous owned receipts, cash gift review/send and capability gating.
 - Disposable local PostgreSQL: **12 simultaneous HP retries and 12 cash retries** create one paired movement each. Competing distinct HP transfers cannot overdraw; balances conserve. This found and fixed the missing-display-name notification failure. Native browser found and fixed the missing receipt-modal open flag.
 - Fresh production rollback matrices pass for birthday grant/replay, same-department/campus boundaries, own and peer channels, monthly-report deduplication/contact payload, cash/HP anonymity, immutable contact, changed-intent rejection, ownership and conservation.
 - Both migrations applied. Catalog verifies all six new RPCs are invokers executable only by service_role; new private table uses RLS. Security advisor adds no finding for this batch. Previously reviewed helper grants and managed extension/password-protection findings remain tracked in the database review.
@@ -27,3 +27,9 @@ Reviewed the 165-type central notification registry and 18 email templates. Upda
 ## Operational limits
 
 Saved outbox rows are durable; actual email/push receipt still depends on provider acceptance, preferences and device subscriptions. Immediate HP-gift wakes reuse the existing outbox; periodic recovery handles interrupted sends. Monthly report timing requires the deployed single beat scheduler and worker. These tests do not claim a real recipient inbox/device test or a real Paystack charge. The broader historical database/configuration inventory remains separate from this completed feature batch.
+
+## Combined rollout follow-up
+
+After rebasing the latest main, the combined backend suite passed **1,849 tests**; frontend typecheck and full build passed. Removed four unused AdminOrders imports exposed by the combined lint run; lint then passed. Expanded native cash birthday gifting also passes at both widths. `d65bdcf` received successful API, worker, single beat and Vercel deployment statuses; the public health response reports that revision with Redis/Supabase/Auth connected. Later normal scheduled execution remains an operational observation, not inferred from build success.
+
+A small follow-up migration aligns birthday query role predicates with the new partial index. EXPLAIN confirms an indexed birthday lookup is available; fresh post-apply birthday rollback proof passes. Birthday race skips use `skipped_profiles`, so skipping one changed/deactivated profile does not mislabel a partly processed successful job as entirely skipped.

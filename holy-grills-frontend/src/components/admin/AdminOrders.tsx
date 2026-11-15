@@ -3,13 +3,12 @@ import AdminAbandonedCarts from './AdminAbandonedCarts';
 import { Link } from 'react-router-dom';
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
 import { useState, useEffect, useRef } from 'react';
-import { Search, Package, ChevronDown, ChevronUp, RotateCcw, Clock, AlertTriangle, ShoppingCart, Bell, DollarSign, Activity, CheckCircle2, Bike } from 'lucide-react';
+import { Search, Package, ChevronDown, ChevronUp, RotateCcw, Clock, AlertTriangle, ShoppingCart, DollarSign, Activity, CheckCircle2, Bike } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatNaira, timeAgo, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, ORDER_STATUS_DOTS, getOrderCustomer } from '@/lib/hgUtils';
 import { toast } from '@/components/ui/use-toast';
 import LoadingSpinner from '@/components/LoadingSpinner';
-import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
-import { Modal, Field, TextInput, Card, Pill } from './AdminShared';
+import { Modal, Field, TextInput } from './AdminShared';
 import { msg, useMessages } from '@/lib/messages';
 import CreateBatchModal from './AdminCreateBatchModal';
 
