@@ -1653,7 +1653,7 @@ def _age_minutes(iso_value, now):
 @admin_bp.route("/abandoned-carts", methods=["GET"])
 @require_role("admin")
 def abandoned_carts():
-    # ADM-39. Only carts that have not been recovered (A-15 marks a cart recovered when the user orders).
+    # ADM-39. Default to the reminder queue; explicit filters can include recovered history.
     db = get_user_client()
     try:
         limit, offset = page_args(default_limit=100)
@@ -1661,8 +1661,13 @@ def abandoned_carts():
     except ValueError:
         return jsonify({"error": MSG.INVALID_INPUT}), 400
     campus_id = resolve_scoped_campus_id(requested)
+    status = request.args.get("status", "pending")
+    if status not in ("all", "pending", "recovered"):
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
     try:
-        q = db.table("reporting_abandoned_carts").select("*,profiles(full_name,email,phone)").eq("is_recovered", False)
+        q = db.table("reporting_abandoned_carts").select("*,profiles(full_name,email,phone)")
+        if status != "all":
+            q = q.eq("is_recovered", status == "recovered")
         if campus_id:
             q = q.eq("campus_id", campus_id)
         carts = q.order("last_active_at", ascending=False).limit(limit).offset(offset).execute() or []

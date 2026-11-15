@@ -26,6 +26,7 @@ const STATUS_TONE = {
 export default function AdminAbandonedCarts() {
   const { adminCampusId } = useCampus();
   const generation = useRef(0);
+  const nudgeLock = useRef(false);
   const [carts, setCarts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -36,10 +37,10 @@ export default function AdminAbandonedCarts() {
   const load = async () => {
     const request = ++generation.current;
     setLoading(true); setError('');
-    try { const rows = await liveApi.admin.getAbandonedCarts(); if (request === generation.current) setCarts(rows); } catch (e) { if (request === generation.current) setError(e.message || 'Could not load carts. Please retry.'); }
+    try { const rows = await liveApi.admin.getAbandonedCarts({ status: statusFilter }); if (request === generation.current) setCarts(rows); } catch (e) { if (request === generation.current) setError(e.message || msg('FE_ADMIN_CARTS_LOAD_FAILED','Could not load carts. Please retry.')); }
     if (request === generation.current) setLoading(false);
   };
-  useEffect(() => { setCarts([]); load(); return () => { generation.current++; }; }, [adminCampusId]);
+  useEffect(() => { setCarts([]); load(); return () => { generation.current++; }; }, [adminCampusId, statusFilter]);
 
   const filtered = carts.filter((c) => {
     const okStatus = statusFilter === 'all' || (c.is_recovered ? 'recovered' : 'pending') === statusFilter;
@@ -49,34 +50,33 @@ export default function AdminAbandonedCarts() {
   });
 
   const nudge = async (id) => {
+    if (nudgeLock.current) return;
+    nudgeLock.current = true;
     setBusy(id);
     try { await liveApi.admin.nudgeAbandonedCart(id); toast({ title: msg('FE_ADMIN_ABANDONED_CARTS_RECOVERY_NUDGE_SENT', '🔔 Reminder queued') }); await load(); }
     catch (e) { toast({ title: msg('FE_ADMIN_ABANDONED_CARTS_NUDGE_FAILED', 'Nudge failed'), description: e.message, variant: 'destructive' }); }
+    nudgeLock.current = false;
     setBusy(null);
   };
-
-  if (loading) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-muted-foreground" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name or email" className="w-full pl-9 pr-3 py-2 rounded-xl border border-border text-sm" />
+          <input aria-label={msg('FE_ADMIN_CARTS_SEARCH','Search carts by name or email')} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name or email" className="w-full pl-9 pr-3 py-2 rounded-xl border border-border text-sm" />
         </div>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="p-2 rounded-xl border border-border text-sm">
+        <select aria-label={msg('FE_ADMIN_CARTS_STATUS','Cart recovery status')} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="p-2 rounded-xl border border-border text-sm">
           <option value="all">All statuses</option>
           <option value="pending">Pending</option>
 
           <option value="recovered">Recovered</option>
-          <option value="exhausted">Exhausted</option>
-          <option value="cleared">Cleared</option>
         </select>
-        <button onClick={load} className="p-2 rounded-xl border border-border"><RefreshCw className="w-4 h-4 text-muted-foreground" /></button>
+        <button aria-label={msg('FE_ADMIN_CARTS_REFRESH','Refresh carts')} onClick={load} className="p-2 rounded-xl border border-border"><RefreshCw className="w-4 h-4 text-muted-foreground" /></button>
       </div>
 
       {error && <p role="alert" className="rounded-xl bg-destructive/10 p-3 text-destructive">{error}</p>}
-      {!error && filtered.length === 0 ? (
+      {loading ? <StaffPanelSkeleton /> : !error && filtered.length === 0 ? (
         <div className="text-center py-10 text-muted-foreground">
           <ShoppingCart className="w-10 h-10 mx-auto mb-2 text-muted-foreground" />
           No abandoned carts found.
@@ -94,7 +94,7 @@ export default function AdminAbandonedCarts() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-sm text-foreground truncate">{userName}</span>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize ${STATUS_TONE[c.status] || 'bg-secondary text-muted-foreground'}`}>{c.is_recovered ? 'recovered' : 'pending'}</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize ${STATUS_TONE[c.is_recovered ? 'recovered' : 'pending']}`}>{c.is_recovered ? 'recovered' : 'pending'}</span>
                     </div>
                     <div className="text-xs text-muted-foreground truncate">{c.profiles?.email || c.guest_email || c.user?.email || c.user_email}</div>
                     <div className="text-xs">{phone && <><a href={`tel:${phone}`}>{phone}</a> · <button onClick={() => navigator.clipboard.writeText(phone).catch(() => toast({ title: 'Copy unavailable; select the phone number.' }))}>Copy</button> · <a href={`https://wa.me/${digits}`} target="_blank" rel="noopener noreferrer">WhatsApp</a></>}</div>
@@ -118,7 +118,7 @@ export default function AdminAbandonedCarts() {
                 )}
                 {(!c.is_recovered && (c.user_id || c.guest_email)) && (
                   <div className="mt-3 flex gap-2">
-                    <button onClick={() => nudge(c.id)} disabled={busy === c.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary text-white text-xs font-bold disabled:opacity-50">
+                    <button onClick={() => nudge(c.id)} disabled={!!busy} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary text-white text-xs font-bold disabled:opacity-50">
                       <Bell className="w-3.5 h-3.5" /> {busy === c.id ? 'Queuing…' : 'Queue reminder'}
                     </button>
                   </div>

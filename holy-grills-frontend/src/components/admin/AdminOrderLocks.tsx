@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Lock } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatDateTime } from '@/lib/hgUtils';
@@ -19,20 +19,21 @@ export default function AdminOrderLocks() {
   const [date, setDate] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  const generation = useRef(0);
   const load = async () => {
+    const version = ++generation.current;
     setLoading(true);
     setError(null);
     try {
       const params: Record<string, unknown> = {};
       if (status) params.status = status;
       if (date) params.date = date;
-      setLocks(await mockApi.admin.getOrderLocks(params));
-    } catch (e) { setError(e.message || msg('FE_ADMIN_LOCKS_LOAD_FAILED', 'Order locks could not be loaded. Please retry.')); }
-    setLoading(false);
+      const rows = await mockApi.admin.getOrderLocks(params);
+      if (version === generation.current) setLocks(rows);
+    } catch (e) { if (version === generation.current) setError(e.message || msg('FE_ADMIN_LOCKS_LOAD_FAILED', 'Order locks could not be loaded. Please retry.')); }
+    if (version === generation.current) setLoading(false);
   };
-  useEffect(() => { load(); }, [status, date]);
-
-  if (loading) return <StaffPanelSkeleton />;
+  useEffect(() => { void load(); return () => { generation.current++; }; }, [status, date]);
 
   return (
     <div className="space-y-4">
@@ -49,7 +50,7 @@ export default function AdminOrderLocks() {
         </select>
         <input aria-label={msg('FE_ADMIN_LOCKS_DATE', 'Locked date')} type="date" value={date} onChange={(e) => setDate(e.target.value)} className="px-4 py-2.5 rounded-xl border border-border text-sm font-semibold text-foreground focus:outline-none focus:border-primary/60" />
       </div>
-      {error ? <div role="alert" className="rounded-xl border border-destructive/30 p-4 text-sm text-destructive">{error} <button className="font-bold underline" onClick={load}>{msg('FE_ADMIN_LOCKS_RETRY', 'Retry')}</button></div> : locks.length === 0 ? (
+      {loading ? <StaffPanelSkeleton /> : error ? <div role="alert" className="rounded-xl border border-destructive/30 p-4 text-sm text-destructive">{error} <button className="font-bold underline" onClick={load}>{msg('FE_ADMIN_LOCKS_RETRY', 'Retry')}</button></div> : locks.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground"><Lock className="w-8 h-8 mx-auto mb-2 text-muted-foreground" /> No order locks found</div>
       ) : (
         <div className="space-y-2">

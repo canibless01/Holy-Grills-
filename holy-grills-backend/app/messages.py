@@ -17,6 +17,10 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_ADMIN_CARTS_LOAD_FAILED = "Could not load carts. Please retry."
+    FE_ADMIN_CARTS_SEARCH = "Search carts by name or email"
+    FE_ADMIN_CARTS_STATUS = "Cart recovery status"
+    FE_ADMIN_CARTS_REFRESH = "Refresh carts"
     FE_ADMIN_DASHBOARD_FEED_UNAVAILABLE = "This insight could not be loaded. Retry to refresh it."
     FE_ADMIN_DASHBOARD_PARTIAL_FAILED = "Some insights could not refresh. Previously loaded values are retained."
     FE_ADMIN_DASHBOARD_REFRESH = "Refresh now"

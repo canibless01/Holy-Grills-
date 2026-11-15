@@ -34,6 +34,8 @@ Existing chat: **A1, A2, A3, A5, A6**. Other chat: **A4, A7, O4, O5**. Coordinat
 
 - **A2 dashboard:** nested delivery pipeline counts, common Lagos date range, HP tier fallback, missing-versus-zero feeds, Retry and delayed campus/role cases now pass in `ADMIN_DASHBOARD_CONTRACT_2026_11_15.md`. Independent report endpoints are not represented as a transactionally synchronized snapshot.
 
+- **A5 locks/carts:** native date/status race handling, recovered-cart history, search, contact links and reminder pending/failure/retry now pass in `ADMIN_LOCK_CART_CONTROLS_2026_11_15.md`. Cart browsing/search beyond the returned page is still a concrete outstanding control.
+
 ### Next execution order
 
 Existing chat: A1 navigation/action coverage → A2 reporting/leaderboard gaps → A3 identity/configuration exceptions → uncovered A5/A6 actions. Other chat proceeds independently with A4 settings/system consumers and A7 object/policy inventory, plus O4/O5 configuration review. Fix reproduced defects and push in batches. Existing passing cases remain regression anchors. New findings will be added under their ID rather than silently expanding the backlog.
@@ -71,4 +73,4 @@ No outstanding newly reproduced launch-blocking code defect is recorded in the c
 - Current legacy reward recovery; tier/grace transitions; challenge/milestone recovery; scheduled reminder implementation; multi-gift/reward/refund recorded combinations.
 - Event owner workspace, settlement contracts, registration/payment/check-in recovery, guest QR/account linking and administrator-only wallet refunds for the documented cases. Deferred event additions are listed above.
 
-Evidence index: `ADMIN_AUDIT_COVERAGE_STATUS.md`, `GENERAL_SITE_AUDIT_PROGRESS_2026_11_04.md`, `ADMIN_CONTINUATION_CHECKPOINT_2026_11_14.md`, `CURRENT_AUDIT_STATUS_2026_11_13.md`. The latest combined backend checkpoint is 1,880 passing tests (15 November identity integration), with a later passing public-controls production build. Neither a passing count nor a working page URL is whole-site sign-off.
+Evidence index: `ADMIN_AUDIT_COVERAGE_STATUS.md`, `GENERAL_SITE_AUDIT_PROGRESS_2026_11_04.md`, `ADMIN_CONTINUATION_CHECKPOINT_2026_11_14.md`, `CURRENT_AUDIT_STATUS_2026_11_13.md`. The latest combined backend checkpoint is 1,895 passing tests (15 November cart-filter integration), with a later passing public-controls production build. Neither a passing count nor a working page URL is whole-site sign-off.
