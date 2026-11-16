@@ -1,0 +1,107 @@
+{
+  "origin": "https://holygrills.online",
+  "commit": "7c91bbe",
+  "mode": "Actual deployed frontend, Render CMS and Cloudinary; guest campus selection; no login, order, provider or database writes",
+  "profiles": [
+    {
+      "profile": "mobile emulation",
+      "errors": [],
+      "cms_reads": [
+        {
+          "path": "storefront/sections",
+          "status": 200
+        },
+        {
+          "path": "storefront/banners",
+          "status": 200
+        },
+        {
+          "path": "storefront/early-supporters",
+          "status": 200
+        },
+        {
+          "path": "storefront/sections",
+          "status": 200
+        },
+        {
+          "path": "storefront/banners",
+          "status": 200
+        },
+        {
+          "path": "storefront/early-supporters",
+          "status": 200
+        }
+      ],
+      "document_navigations": [
+        "https://holygrills.online/",
+        "https://holygrills.online/",
+        "https://holygrills.online/menu",
+        "https://holygrills.online/",
+        "https://holygrills.online/menu",
+        "https://holygrills.online/"
+      ],
+      "initial_sections_ms": 4952,
+      "hero": {
+        "src": "https://res.cloudinary.com/risvlfhx/image/upload/v1792583852/banners/hero/p35hgcipg6ridbhwb1dk.jpg",
+        "decoded": true,
+        "width": 1500,
+        "height": 841
+      },
+      "menu_home_ms": 134,
+      "document_preserved": true,
+      "controlled_offline_return": "PASS: cached content retained on deployed build; simulated offline transport",
+      "final_origin": "https://holygrills.online",
+      "pass": true
+    },
+    {
+      "profile": "desktop",
+      "errors": [],
+      "cms_reads": [
+        {
+          "path": "storefront/early-supporters",
+          "status": 200
+        },
+        {
+          "path": "storefront/sections",
+          "status": 200
+        },
+        {
+          "path": "storefront/banners",
+          "status": 200
+        },
+        {
+          "path": "storefront/banners",
+          "status": 200
+        },
+        {
+          "path": "storefront/sections",
+          "status": 200
+        },
+        {
+          "path": "storefront/early-supporters",
+          "status": 200
+        }
+      ],
+      "document_navigations": [
+        "https://holygrills.online/",
+        "https://holygrills.online/",
+        "https://holygrills.online/menu",
+        "https://holygrills.online/",
+        "https://holygrills.online/menu",
+        "https://holygrills.online/"
+      ],
+      "initial_sections_ms": 9625,
+      "hero": {
+        "src": "https://res.cloudinary.com/risvlfhx/image/upload/v1792583852/banners/hero/p35hgcipg6ridbhwb1dk.jpg",
+        "decoded": true,
+        "width": 1500,
+        "height": 841
+      },
+      "menu_home_ms": 138,
+      "document_preserved": true,
+      "controlled_offline_return": "PASS: cached content retained on deployed build; simulated offline transport",
+      "final_origin": "https://holygrills.online",
+      "pass": true
+    }
+  ]
+}

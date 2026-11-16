@@ -1,0 +1,9 @@
+{
+  "application_http_status": 200,
+  "application_message_id": "01a1832f-9ed8-7ca2-b0e4-98726b688645",
+  "application_accepted": true,
+  "deployed_auth_reset_request_http_status": 200,
+  "auth_delivery_proven": false,
+  "application_status_query_http_status": 200,
+  "application_last_event": "delivered"
+}

@@ -1,0 +1,12 @@
+# Guest and account push opt-in — 14 November 2026
+
+The global prompt now offers Allow notifications to supported guest browsers after a short settled landing, and independently to a newly signed-in account that has not answered its own prompt. It waits for cookie/campus/modal UI, skips authentication forms, never requests native permission automatically and does not require a selected campus. Maybe later persists a seven-day per-browser guest/account cooldown. Granted/denied and unsupported browsers do not get a fresh permission suggestion; iPhone web push still depends on Apple's installed-web-app support. An SDK failure remains retryable rather than displaying success.
+
+Uses the existing v16 SDK/worker/App ID, without a second installation. Anonymous subscription needs no fabricated account, device-token API or account preference write. A real opted-in subscription is required for success (local placeholder IDs are rejected). Login associates the existing subscription with the actual user. A recent explicit guest opt-in is adopted once into that signed-in account's push preference, without another native permission request; unrelated pre-existing account opt-outs are not globally overridden. Logout is serialized before anonymous readiness so the guest path does not borrow an old identity.
+
+Verification:
+- SDK contract suite passes single-flight init/identity, no automatic permission, slow/unavailable readiness, permission-only refusal, backend registration failure, denied state, opt-out, listener cleanup, anonymous success without private API writes, account adoption, waiting for logout and canonical-origin handling.
+- Native Chromium at 393px/1280px uses the actual prompt and SDK wrapper with controlled browser/provider/API: guest suggestion and no automatic native request; Maybe later/reload cooldown; independent post-login suggestion; guest Allow without account writes; subsequent account login attaches the subscription and enables account preference without another native permission request.
+- TypeScript, edited-component/helper ESLint, message registry and complete client/SSR/prerender production build pass.
+
+No real provider message or customer account/price/database mutation. This implements guest subscription/consent and account association. Anonymous subscribers can be addressed through OneSignal audiences; existing application admin blast targeting remains account-based. Secure private guest-order-to-subscription routing is separate from anonymous opt-in and is not claimed by this change.

@@ -24,6 +24,35 @@ class MalformedSettingError(SettingError):
     pass
 
 
+def setting_or_config(db, key: str, config_value, minimum=None, maximum=None):
+    """A system setting if one is set, else the environment config value.
+
+    This is the bridge for business numbers that used to live only in env config
+    while the admin UI (and the frontend) read the same name from
+    system_settings — so an admin could change a value and nothing happened.
+    Precedence: per-campus setting -> global setting -> the env value.
+
+    A settings-table failure falls back to the env value with a warning: a copy
+    of the number must never break checkout or a pay-out.
+    """
+    try:
+        value = get_validated_setting(db, key, default=None, minimum=minimum, maximum=maximum)
+    except SettingError:
+        logger.warning("setting '%s' unreadable — using the configured default", key, exc_info=True)
+        return config_value
+    return config_value if value is None else value
+
+
+def setting_bool(db, key: str, config_value: bool) -> bool:
+    """Boolean flavour of setting_or_config ('true'/'false', 1/0 or a real bool)."""
+    value = setting_or_config(db, key, None)
+    if value is None:
+        return config_value
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("true", "1", "yes", "on")
+
+
 def get_validated_setting(db, key: str, default=None, minimum=None, maximum=None, required=False, campus_id=None):
     """
     Retrieves and validates a setting from the system_settings table.

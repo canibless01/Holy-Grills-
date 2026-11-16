@@ -1,0 +1,15 @@
+{
+  "date": "2026-10-21",
+  "mode": "Actual local frontend/backend with isolated Test Two accounts; synthetic paid delivered history supplies eligibility, not payment/delivery proof",
+  "cases": {
+    "ineligible_student_has_no_graduation_claim_advertisement": true,
+    "three_concurrent_claims_one_award_and_stale_browser_click_no_duplicate": true,
+    "claimed_reward_hidden_after_reload": true
+  },
+  "concurrent_awards": [
+    1000,
+    0,
+    0
+  ],
+  "fixtures_retained": true
+}

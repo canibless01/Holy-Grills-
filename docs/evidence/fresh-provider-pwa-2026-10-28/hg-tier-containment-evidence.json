@@ -1,0 +1,19 @@
+{
+  "origin": "actual local audit frontend/backend; real Cloudinary",
+  "case": "rendered tier artwork containment",
+  "images": [
+    {
+      "fit": "contain",
+      "natural": [
+        1200,
+        630
+      ],
+      "box": [
+        20,
+        20
+      ],
+      "cloudinary": true
+    }
+  ],
+  "contained": true
+}

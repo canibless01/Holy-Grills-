@@ -1,0 +1,48 @@
+{
+  "date": "2026-10-20",
+  "scope": "Native local frontend and Flask backend against isolated Test Two fixtures; gateway transport controlled, not Paystack provider proof.",
+  "checkout": {
+    "native_wallet_global_addon_and_persisted_delivery": {
+      "food_spend": 1500.0,
+      "base_hp": 150
+    },
+    "native_gate_only_without_pin_saves_gate_and_fee": {
+      "fee": 150.0
+    },
+    "native_scheduled_card_opens_gateway_before_confirmation": {
+      "gateway_requests": 1,
+      "saved_payment_status": "pending"
+    }
+  },
+  "split": {
+    "native_scheduled_split_opens_gateway_for_exact_remainder": {
+      "wallet": 500,
+      "card": 750
+    }
+  },
+  "missing_provider": {
+    "native_missing_gateway_configuration_keeps_honest_pending_retry": true
+  },
+  "delivery_api": {
+    "coordinate_resolves_nearest_own_campus_gate": {
+      "fee": 201.57,
+      "gate": "West Gate"
+    },
+    "explicit_gate_override_is_preserved": {
+      "fee": 259.2,
+      "gate": "East Gate"
+    },
+    "outside_campus_radius_is_rejected": true
+  },
+  "fixture_accounting": {
+    "orders_cancelled": true,
+    "wallet_restored_by_refunds": 50000,
+    "catalogue_and_actors_retained_for_followup": true
+  },
+  "limits": [
+    "No real Paystack authorization/settlement verified.",
+    "No real geocoder or map provider verified.",
+    "Delivered food HP payout has regression evidence; this native batch does not include rider delivery.",
+    "Full batching, split/reassignment and reward delivery loops remain open."
+  ]
+}

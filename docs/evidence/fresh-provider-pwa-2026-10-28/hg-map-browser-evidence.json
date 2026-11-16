@@ -1,0 +1,13 @@
+{
+  "origin": "http://127.0.0.1:5250",
+  "mode": "actual map UI; normal complete audit session; real map providers and Supabase",
+  "phase": "complete",
+  "tile_statuses": [
+    200,
+    200,
+    200,
+    200
+  ],
+  "real_search_pin_saved_and_reloaded": true,
+  "valid_tile_response_seen": true
+}

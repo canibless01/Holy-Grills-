@@ -1,0 +1,13 @@
+# Application email quota fallback — 22 October 2026
+
+Application email now attempts the preferred provider once and switches once to the alternate only when the provider explicitly rejects the request for a rate/quota limit. Resend 429/recognized daily/monthly quota refusals can use OneSignal. OneSignal 429/recognized monthly email quota refusals can use Resend. If both reject or the alternate is unconfigured, the send returns false; there is no recursive flip or setting mutation.
+
+Templates, raw guest status/confirmation and QR emails, preferred OneSignal email sends, and asynchronous account notifications use the same router. Existing transactional/blast defaults and explicit provider preferences remain the preferred first attempt; this change does not silently rewrite the agreed categories or global settings. Limits are enforced by the provider response, rather than an inaccurate per-process count or hardcoded free-plan allowance.
+
+Timeouts, connection errors, HTTP 5xx, authorization errors and unrelated validation failures do not cross providers. These outcomes may be uncertain, so trying another provider could deliver a duplicate. Email HTTP transport no longer silently retries uncertain sends; push transport retains its existing separate retry policy. This does not introduce durable dispatch/outbox recovery.
+
+Raw newsletters carrying explicit List-Unsubscribe / List-Unsubscribe-Post headers retain the Resend path, including those exact headers. They do not fall back to an undocumented OneSignal header format. Their body unsubscribe link remains intact, and a refused send returns false for the existing campaign result handling. Provider-specific newsletter header integration remains separate work.
+
+Supabase Auth's signup-verification/reset SMTP delivery is outside this application router. Resend SMTP can be configured in Supabase Auth, but failover for those messages requires a supported SMTP gateway or Auth email-hook arrangement; it is not implemented by changing application HTTP senders. Ordinary password login does not send a verification email each time.
+
+Verification: 11 focused fallback/dispatch tests and 20 existing media/publication tests passed (31 executions). They cover preferred success, both directions of explicit quota refusal, no duplicate transport after timeouts/unknown failures, bounded double refusal, preserved unsubscribe headers, and common routing for raw and notification paths. HTTP providers were mocked; no real email was sent and no provider delivery/inbox placement is claimed. No migration, database mutation or production configuration change occurred.

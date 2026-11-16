@@ -1,0 +1,38 @@
+[
+  {
+    "case": "card",
+    "order_id": "d337ba53-4592-44bc-8659-6eac3be1684c",
+    "reference": "HG-ORDER-d337ba53459244bc86596eac3be1684c",
+    "provider_status": "success",
+    "provider_amount": 10153,
+    "provider_fees": 153,
+    "provider_requested_amount": 10000,
+    "application_verify_http": 200,
+    "application_payment_status": "paid",
+    "application_error": null
+  },
+  {
+    "case": "split",
+    "order_id": "3b993492-c9c9-4ebb-845a-f632aae73964",
+    "reference": "HG-ORDER-3b993492c9c94ebb845af632aae73964",
+    "provider_status": "success",
+    "provider_amount": 6092,
+    "provider_fees": 92,
+    "provider_requested_amount": 6000,
+    "application_verify_http": 200,
+    "application_payment_status": "paid",
+    "application_error": null
+  },
+  {
+    "case": "guest",
+    "order_id": "8bce8095-7adc-4606-9035-c85b64503045",
+    "reference": "HG-ORDER-8bce80957adc46069035c85b64503045",
+    "provider_status": "success",
+    "provider_amount": 10153,
+    "provider_fees": 153,
+    "provider_requested_amount": 10000,
+    "application_verify_http": 200,
+    "application_payment_status": "paid",
+    "application_error": null
+  }
+]

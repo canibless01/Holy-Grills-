@@ -133,6 +133,8 @@ def _rider_order_view(order):
     """
     order = order or {}
     view = {k: order.get(k) for k in ("id", "status", "out_for_delivery_at", "delivered_at", "delivery_attempted_at")}
+    if order.get("rewards_pending"):
+        view["rewards_pending"] = True
     if order.get("unchanged"):
         view["unchanged"] = True          # a repeated tap: nothing was done twice
     return view
@@ -253,8 +255,8 @@ def my_batch():
             logger.warning("my_batch: customer names unavailable for rider %s", g.user_id, exc_info=True)
     items_by_order = {}
     try:
-        for it in _select_in(db, "order_items", "order_id,name_snapshot,quantity", "order_id", [o["id"] for o in all_orders]):
-            items_by_order.setdefault(it["order_id"], []).append({"name_snapshot": it.get("name_snapshot"), "quantity": it.get("quantity")})
+        for it in _select_in(db, "order_items", "order_id,name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity)", "order_id", [o["id"] for o in all_orders]):
+            items_by_order.setdefault(it["order_id"], []).append(it)
     except SupabaseError:
         logger.warning("my_batch: order items unavailable for rider %s", g.user_id, exc_info=True)
 
@@ -276,6 +278,8 @@ def my_batch():
             "notes": order.get("notes"),
             "customer_name": names.get(order.get("user_id")) or order.get("guest_name"),      # D08-B03: guest orders now show the guest's name
             "delivery_address": order.get("delivery_address_snapshot"),
+            "delivery_location_lat": order.get("delivery_location_lat"),
+            "delivery_location_lon": order.get("delivery_location_lon"),
             "items": items_by_order.get(order["id"], []),
             "delivery_rank": rank,
         } for rank, order in enumerate(pending + finished, 1)]
@@ -644,16 +648,24 @@ def get_customer_call_link(order_id):
     if not validate_uuid(order_id):
         return jsonify({"error": MSG.RIDER_ORDER_NOT_FOUND}), 404
     db = get_user_client()
-    order = db.table("orders").select("user_id,guest_phone,status").eq("id", order_id).single().execute()      # RLS: rider -> assigned orders only
+    order = db.table("orders").select("user_id,guest_phone,status,delivery_address_snapshot").eq("id", order_id).single().execute()      # RLS: rider -> assigned orders only
     if not order:
         return jsonify({"error": MSG.RIDER_ORDER_NOT_FOUND}), 404
     if getattr(g, "user_role", None) == "rider" and order.get("status") not in _LIVE_ORDER_STATUSES:            # D08-B08
         return jsonify({"error": MSG.RIDER_ORDER_NOT_ACTIVE}), 403
 
-    phone = order.get("guest_phone")
-    if order.get("user_id"):
-        profile = get_db().table("profiles").select("phone").eq("id", order["user_id"]).single().execute()
-        phone = (profile.get("phone") if profile else None) or phone                            # D08-B08: fall back to the order's phone
+    from app.services.order_contact import order_call_phone
+    snapshot = order.get('delivery_address_snapshot')
+    try:
+        if isinstance(snapshot, dict) and snapshot.get('contact_phone'):
+            phone = order_call_phone(order)
+        elif order.get('user_id'):
+            profile = get_db().table('profiles').select('phone').eq('id', order['user_id']).single().execute()
+            phone = order_call_phone(order, profile.get('phone') if profile else None)
+        else:
+            phone = order_call_phone(order)
+    except ValueError:
+        return jsonify({'error': MSG.RIDER_NO_PHONE}), 404
     phone = re.sub(r"[^\d+]", "", phone or "")                                                 # D08-B08: only digits and '+' go into the tel: link
     if len(re.sub(r"\D", "", phone)) < 7:
         return jsonify({"error": MSG.RIDER_NO_PHONE}), 404
@@ -787,7 +799,7 @@ def admin_set_batch_pay(batch_id):
         return jsonify({"error": MSG.RIDER_PAY_BATCH_CANCELLED}), 400
     amount = round(float(data["rider_pay_total"]), 2)
     # only while it is still unpaid: an admin marking it paid at the same moment must win
-    updated = db.table("delivery_batches").eq("id", batch_id).eq("rider_paid_at", None).update({"rider_pay_total": amount})
+    updated = db.table("delivery_batches").eq("id", batch_id).eq("rider_paid_at", None).neq("status", "cancelled").update({"rider_pay_total": amount})
     if not updated:
         return jsonify({"error": MSG.RIDER_PAY_ALREADY_PAID}), 409
     _log_rider_admin_action(
@@ -897,12 +909,12 @@ def _set_batches_paid_state(paid):
             # only a completed batch with a total that is not already paid; the write repeats those conditions
             if row["status"] != "completed" or row.get("rider_pay_total") is None or row.get("rider_paid_at"):
                 continue
-            done = (db.table("delivery_batches").eq("id", batch_id).eq("status", "completed").eq("rider_paid_at", None)
+            done = (db.table("delivery_batches").eq("id", batch_id).eq("status", "completed").eq("rider_paid_at", None).eq("rider_pay_total", row["rider_pay_total"])
                     .update({"rider_paid_at": now_iso, "rider_paid_by": g.user_id}))
         else:
             if not row.get("rider_paid_at"):
                 continue
-            done = db.table("delivery_batches").eq("id", batch_id).update({"rider_paid_at": None, "rider_paid_by": None})
+            done = db.table("delivery_batches").eq("id", batch_id).eq("rider_paid_at", row["rider_paid_at"]).update({"rider_paid_at": None, "rider_paid_by": None})
         if not done:
             continue
         updated.append(batch_id)

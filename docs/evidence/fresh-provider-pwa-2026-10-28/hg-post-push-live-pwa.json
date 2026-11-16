@@ -1,0 +1,362 @@
+{
+  "origin": "https://holygrills.online",
+  "mode": "real CDP; headless browser; clean persistent profiles; live application API; not visible Chrome omnibox or physical Android",
+  "profiles": [
+    {
+      "profile": "desktop",
+      "final_url": "https://www.holygrills.online/",
+      "browser": "154.0.8037.57",
+      "engagement_seconds": 46,
+      "manifest_url": "https://www.holygrills.online/manifest.json",
+      "manifest_errors": [],
+      "installability": {
+        "installabilityErrors": []
+      },
+      "manifest": {
+        "id": "/",
+        "name": "Holy Grill \u2014 FUTA's Only Flame Grill",
+        "short_name": "HolyGrill",
+        "description": "FUTA's Only Flame Grill \u2014 Real flame-grilled chicken, wings, kebabs + crispy sides. Earn Holy Points, climb the leaderboard, unlock rewards.",
+        "start_url": "/",
+        "scope": "/",
+        "display": "standalone",
+        "orientation": "portrait",
+        "background_color": "#FFF5F0",
+        "theme_color": "#E01616",
+        "lang": "en",
+        "dir": "ltr",
+        "categories": [
+          "food",
+          "shopping",
+          "lifestyle"
+        ],
+        "icons": [
+          {
+            "src": "/icons/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+          },
+          {
+            "src": "/icons/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+          },
+          {
+            "src": "/icons/maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+          },
+          {
+            "src": "/icons/maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+          },
+          {
+            "src": "/icons/icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any"
+          }
+        ],
+        "shortcuts": [
+          {
+            "name": "Order Food",
+            "short_name": "Order",
+            "description": "Browse the menu and place an order",
+            "url": "/menu",
+            "icons": [
+              {
+                "src": "/icons/icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png"
+              }
+            ]
+          },
+          {
+            "name": "My Holy Points",
+            "short_name": "HP",
+            "description": "View your Holy Points and rewards",
+            "url": "/rewards",
+            "icons": [
+              {
+                "src": "/icons/icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png"
+              }
+            ]
+          },
+          {
+            "name": "Events",
+            "short_name": "Events",
+            "description": "Campus events and check-ins",
+            "url": "/events",
+            "icons": [
+              {
+                "src": "/icons/icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png"
+              }
+            ]
+          }
+        ]
+      },
+      "icons": [
+        {
+          "url": "https://www.holygrills.online/icons/icon-192.png",
+          "status": 200,
+          "content_type": "image/png",
+          "declared": "192x192",
+          "pixels": [
+            192,
+            192
+          ]
+        },
+        {
+          "url": "https://www.holygrills.online/icons/icon-512.png",
+          "status": 200,
+          "content_type": "image/png",
+          "declared": "512x512",
+          "pixels": [
+            512,
+            512
+          ]
+        },
+        {
+          "url": "https://www.holygrills.online/icons/maskable-192.png",
+          "status": 200,
+          "content_type": "image/png",
+          "declared": "192x192",
+          "pixels": [
+            192,
+            192
+          ]
+        },
+        {
+          "url": "https://www.holygrills.online/icons/maskable-512.png",
+          "status": 200,
+          "content_type": "image/png",
+          "declared": "512x512",
+          "pixels": [
+            512,
+            512
+          ]
+        },
+        {
+          "url": "https://www.holygrills.online/icons/icon.svg",
+          "status": 200,
+          "content_type": "image/svg+xml",
+          "declared": "any"
+        }
+      ],
+      "start_url_status": 200,
+      "service_worker": {
+        "secureContext": true,
+        "controller": "https://www.holygrills.online/service-worker.js",
+        "registrations": [
+          {
+            "scope": "https://www.holygrills.online/",
+            "script": "https://www.holygrills.online/service-worker.js",
+            "state": "activated"
+          }
+        ]
+      },
+      "events": [],
+      "manifest_links": 1,
+      "asset_headers": {
+        "/manifest.json": {
+          "status": 200,
+          "cache-control": "no-cache",
+          "content-type": "application/manifest+json; charset=utf-8"
+        },
+        "/service-worker.js": {
+          "status": 200,
+          "cache-control": "no-cache",
+          "content-type": "application/javascript; charset=utf-8",
+          "service-worker-allowed": "/"
+        }
+      }
+    },
+    {
+      "profile": "mobile emulation",
+      "final_url": "https://www.holygrills.online/",
+      "browser": "154.0.8037.57",
+      "engagement_seconds": 41,
+      "manifest_url": "https://www.holygrills.online/manifest.json",
+      "manifest_errors": [],
+      "installability": {
+        "installabilityErrors": []
+      },
+      "manifest": {
+        "id": "/",
+        "name": "Holy Grill \u2014 FUTA's Only Flame Grill",
+        "short_name": "HolyGrill",
+        "description": "FUTA's Only Flame Grill \u2014 Real flame-grilled chicken, wings, kebabs + crispy sides. Earn Holy Points, climb the leaderboard, unlock rewards.",
+        "start_url": "/",
+        "scope": "/",
+        "display": "standalone",
+        "orientation": "portrait",
+        "background_color": "#FFF5F0",
+        "theme_color": "#E01616",
+        "lang": "en",
+        "dir": "ltr",
+        "categories": [
+          "food",
+          "shopping",
+          "lifestyle"
+        ],
+        "icons": [
+          {
+            "src": "/icons/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+          },
+          {
+            "src": "/icons/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+          },
+          {
+            "src": "/icons/maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+          },
+          {
+            "src": "/icons/maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+          },
+          {
+            "src": "/icons/icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any"
+          }
+        ],
+        "shortcuts": [
+          {
+            "name": "Order Food",
+            "short_name": "Order",
+            "description": "Browse the menu and place an order",
+            "url": "/menu",
+            "icons": [
+              {
+                "src": "/icons/icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png"
+              }
+            ]
+          },
+          {
+            "name": "My Holy Points",
+            "short_name": "HP",
+            "description": "View your Holy Points and rewards",
+            "url": "/rewards",
+            "icons": [
+              {
+                "src": "/icons/icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png"
+              }
+            ]
+          },
+          {
+            "name": "Events",
+            "short_name": "Events",
+            "description": "Campus events and check-ins",
+            "url": "/events",
+            "icons": [
+              {
+                "src": "/icons/icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png"
+              }
+            ]
+          }
+        ]
+      },
+      "icons": [
+        {
+          "url": "https://www.holygrills.online/icons/icon-192.png",
+          "status": 200,
+          "content_type": "image/png",
+          "declared": "192x192",
+          "pixels": [
+            192,
+            192
+          ]
+        },
+        {
+          "url": "https://www.holygrills.online/icons/icon-512.png",
+          "status": 200,
+          "content_type": "image/png",
+          "declared": "512x512",
+          "pixels": [
+            512,
+            512
+          ]
+        },
+        {
+          "url": "https://www.holygrills.online/icons/maskable-192.png",
+          "status": 200,
+          "content_type": "image/png",
+          "declared": "192x192",
+          "pixels": [
+            192,
+            192
+          ]
+        },
+        {
+          "url": "https://www.holygrills.online/icons/maskable-512.png",
+          "status": 200,
+          "content_type": "image/png",
+          "declared": "512x512",
+          "pixels": [
+            512,
+            512
+          ]
+        },
+        {
+          "url": "https://www.holygrills.online/icons/icon.svg",
+          "status": 200,
+          "content_type": "image/svg+xml",
+          "declared": "any"
+        }
+      ],
+      "start_url_status": 200,
+      "service_worker": {
+        "secureContext": true,
+        "controller": "https://www.holygrills.online/service-worker.js",
+        "registrations": [
+          {
+            "scope": "https://www.holygrills.online/",
+            "script": "https://www.holygrills.online/service-worker.js",
+            "state": "activated"
+          }
+        ]
+      },
+      "events": [],
+      "manifest_links": 1,
+      "asset_headers": {
+        "/manifest.json": {
+          "status": 200,
+          "cache-control": "no-cache",
+          "content-type": "application/manifest+json; charset=utf-8"
+        },
+        "/service-worker.js": {
+          "status": 200,
+          "cache-control": "no-cache",
+          "content-type": "application/javascript; charset=utf-8",
+          "service-worker-allowed": "/"
+        }
+      }
+    }
+  ]
+}

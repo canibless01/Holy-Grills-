@@ -1,0 +1,19 @@
+{
+  "order_id": "3f2e57a3-f05e-4967-8f06-18ddc5ee3c3e",
+  "mode": "real Supabase/order/provider recovery; controlled connection refusal only in one-off audit process",
+  "before_status": "pending",
+  "initialization_connection_failure_observed": true,
+  "recovered_reference": "HG-ORDER-3f2e57a3f05e49678f0618ddc5ee3c3e",
+  "same_reference_on_resume": true,
+  "same_url_on_resume": true,
+  "verification_connection_failure_observed": true,
+  "restored_unpaid_verify": "pending",
+  "payments": [
+    {
+      "id": "55475d1d-a7a9-4c92-9200-4b84b52b5c3e",
+      "reference": "HG-ORDER-3f2e57a3f05e49678f0618ddc5ee3c3e",
+      "status": "pending",
+      "amount": 100.0
+    }
+  ]
+}

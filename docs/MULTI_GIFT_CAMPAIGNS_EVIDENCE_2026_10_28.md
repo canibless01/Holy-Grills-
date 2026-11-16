@@ -1,0 +1,13 @@
+# Multi-gift campaigns and signup checkpoint — 28 October 2026
+
+Admin → Onboarding & Graduation now includes a scoped campaign editor. A campaign can combine HP, free-side credits, a capped percentage delivery discount and a one-order food HP multiplier. It has start/end timestamps, eligibility and order-benefit validity. Exclusive spins cannot be granted here. Existing base signup credits remain separate and additive.
+
+The campaign ID is stable on edits. New campaign explicitly creates a new identity. Each user/campaign has one atomic receipt; retries do not refill gifts. Earned terms remain in the receipt after campaign edits. Order-benefit expiry is checked at reservation, while an already attached order keeps its promised terms. Refund/cancellation restores reserved benefits without extending expiry. No campaign was enabled by this audit.
+
+Reuses system_settings, HP/free-side ledgers and typed entitlement receipts. Migration typed_multi_gift_campaigns is applied once. Both claim and the existing 38-argument order function are executable by service_role only; no stale order overload was added.
+
+Verification: rolled-back Supabase fixture covers all four gifts → checkout → cancellation/refund, replay, original terms, invalid bundle rollback, dates/eligibility and expired-benefit refusal. Controlled browser test covers four-choice editor, Lagos timestamps on a New York browser, stale-save recovery, customer claim/history, successful claim during a balance-read outage, immutable earned display and the saved homepage teaser. Production build, TypeScript and message registry checks pass.
+
+Signup: removed a function-local get_db import that caused UnboundLocalError before account validation. Required phone/birthday/department/level now return actionable field messages. Reference lookup outages return a retryable response. Optional promotional email consent has its own unchecked box, persists to notification_preferences, and opt-in reuses the existing newsletter audience. Transactional email preference is retained. Campus choices remain visible if academic lists fail. Added route tests that reach the service rather than only testing auth service helpers. Backend checkpoint: 679 tests pass.
+
+Latest main was incorporated at 38da146, preserving the ambassador features. Its four migrations were applied in dependency order; settings seed required an explicit jsonb cast. Inactive actors were excluded from the new RLS staff helper. Ambassador financial concurrency/lifecycle and scheduling UI remain under active audit; this checkpoint does not certify those new flows yet.

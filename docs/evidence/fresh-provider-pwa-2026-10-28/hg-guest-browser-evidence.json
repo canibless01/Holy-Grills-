@@ -1,0 +1,9 @@
+{
+  "mode": "real Paystack TEST hosted checkout; real local frontend/backend and Supabase; no response fixtures",
+  "case": "guest",
+  "returned_origin": "http://127.0.0.1:5250",
+  "returned_path": "/order-confirmation/8bce8095-7adc-4606-9035-c85b64503045",
+  "confirmed_heading": true,
+  "guest_fragment_removed": false,
+  "confirmation_reload_passed": true
+}

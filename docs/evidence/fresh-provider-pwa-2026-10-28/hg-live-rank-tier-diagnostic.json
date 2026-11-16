@@ -1,0 +1,29 @@
+[
+  {
+    "path": "/auth/me",
+    "status": 200,
+    "role": "student",
+    "campus_present": true
+  },
+  {
+    "path": "/leaderboard?period_type=monthly",
+    "status": 200,
+    "count": 0
+  },
+  {
+    "path": "/leaderboard/my-rank?period_type=monthly",
+    "status": 200,
+    "rank": null,
+    "rank_entry_present": false
+  },
+  {
+    "path": "/hp/tiers",
+    "status": 200,
+    "count": 4
+  },
+  {
+    "path": "/rewards",
+    "status": 200,
+    "count": 24
+  }
+]
