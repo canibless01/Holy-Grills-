@@ -29,7 +29,7 @@ from contextlib import ExitStack
 from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 for name in ('SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY',
              'JWT_SECRET', 'SECRET_KEY'):
@@ -1396,5 +1396,13 @@ class AdminPageContinuationTests(AmbassadorTestBase):
             with self.subTest(change=change),self.assertRaises(ValueError):routes._milestone_values({**base,**change})
 
     def test_promo_assignments_scope_is_applied_before_fetch(self):
-        self.db.seed('ambassador_promo_assignments',[{'id':AMB,'message_id':ADMIN_ID,'ambassador_id':AMB,'campus_id':CAMPUS_A},{'id':AMB2,'message_id':ADMIN_ID,'ambassador_id':AMB2,'campus_id':CAMPUS_B}])
-        self.assertEqual([r['id'] for r in svc.promo_assignments(self.db,ADMIN_ID,CAMPUS_A)],[AMB])
+        db=MagicMock();q=db.table.return_value
+        q.select.return_value=q;q.eq.return_value=q
+        q.execute.return_value=[{'id':AMB,'message_id':ADMIN_ID,'ambassador_id':AMB,'scope_ambassador':{'campus_id':CAMPUS_A}}]
+        with patch.object(svc,'_profile_basics',return_value={AMB:{'id':AMB,'campus_id':CAMPUS_A}}):
+            result=svc.promo_assignments(db,ADMIN_ID,CAMPUS_A)
+        self.assertEqual([r['id'] for r in result],[AMB])
+        q.select.assert_called_once_with('*,scope_ambassador:ambassadors!ambassador_id!inner(campus_id)')
+        q.eq.assert_any_call('scope_ambassador.campus_id',CAMPUS_A)
+        self.assertNotIn(('campus_id',CAMPUS_A),[c.args for c in q.eq.call_args_list])
+        self.assertNotIn('scope_ambassador',result[0])

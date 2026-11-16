@@ -671,9 +671,15 @@ def list_promo_messages(db, month: str, campus_id: str | None, is_super: bool) -
 
 
 def promo_assignments(db, message_id: str, campus_id=None) -> list[dict]:
-    query = db.table("ambassador_promo_assignments").select("*").eq("message_id", message_id)
-    if campus_id:query=query.eq("campus_id",campus_id)
-    rows=query.execute() or []
+    # Assignments have no campus_id. Scope through their existing ambassador FK
+    # before fetching recipients; the route also checks the attached profile.
+    selection = "*,scope_ambassador:ambassadors!ambassador_id!inner(campus_id)" if campus_id else "*"
+    query = db.table("ambassador_promo_assignments").select(selection).eq("message_id", message_id)
+    if campus_id:
+        query = query.eq("scope_ambassador.campus_id", campus_id)
+    rows = query.execute() or []
+    for row in rows:
+        row.pop("scope_ambassador", None)
     ids = [r["ambassador_id"] for r in rows]
     profiles = _profile_basics(db, ids)
     for r in rows:
