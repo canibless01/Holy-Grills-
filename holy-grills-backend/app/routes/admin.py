@@ -2504,6 +2504,7 @@ def create_spin_pool_prize():
     try:
         safe = validate_spin_prize(data)
         requested = as_campus_id(data.get('campus_id'))
+        request_id = as_uuid(data.get('request_id')) or str(uuid.uuid4())
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
     if getattr(g, 'user_role', None) == 'super_admin':
@@ -2514,7 +2515,16 @@ def create_spin_pool_prize():
         campus_id = getattr(g, 'campus_id', None)
     if campus_id and not get_db().table('campuses').select('id').eq('id', campus_id).eq('is_active', True).single().execute():
         return jsonify({'error': MSG.CAMPUS_NOT_FOUND}), 400
-    result = db.table('exclusive_spin_prizes').insert({**safe, 'is_active': safe.get('is_active', True), 'campus_id': campus_id}).execute()
+    row = {**safe, 'id': request_id, 'is_active': safe.get('is_active', True), 'campus_id': campus_id}
+    try:
+        result = db.table('exclusive_spin_prizes').insert(row).execute()
+    except SupabaseError as exc:
+        if str((exc.details or {}).get('code')) == '23505':
+            existing = db.table('exclusive_spin_prizes').select('*').eq('id', request_id).single().execute()
+            if existing and all(existing.get(k) == v for k, v in row.items()):
+                return jsonify(existing), 200
+            return jsonify({'error': MSG.SPIN_POOL_WRITE_CONFLICT}), 409
+        return db_error_response(exc, 'create_spin_pool_prize')
 
     row = result[0] if isinstance(result, list) else result
     return jsonify(row), 201
@@ -2622,13 +2632,15 @@ def grant_exclusive_spins():
 @require_role("admin")
 def update_spin_pool_prize(prize_id):
     """Update an exclusive spin prize-pool entry."""
+    if not validate_uuid(prize_id):
+        return jsonify({"error": MSG.SPIN_POOL_PRIZE_NOT_FOUND}), 404
     db = get_user_client()
     data = get_json_object()
     try:
         safe = validate_spin_prize(data, partial=True)
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
-    existing = db.table('exclusive_spin_prizes').select('id,campus_id').eq('id', prize_id).single().execute()
+    existing = db.table('exclusive_spin_prizes').select('*').eq('id', prize_id).single().execute()
     if not existing:
         return jsonify({'error': MSG.SPIN_POOL_PRIZE_NOT_FOUND}), 404
     assert_can_modify(existing.get('campus_id'))
@@ -2640,10 +2652,25 @@ def update_spin_pool_prize(prize_id):
         if requested != existing.get('campus_id'):
             return jsonify({'error': MSG.SPIN_POOL_SCOPE_IMMUTABLE}), 400
 
+    try:
+        raw_expected = data.get('expected_updated_at', existing.get('updated_at'))
+        expected = as_instant(raw_expected) if raw_expected is not None else None
+    except ValueError:
+        return jsonify({'error': MSG.INVALID_INPUT}), 400
+    stored_version = as_instant(existing['updated_at']) if existing.get('updated_at') else None
+    if expected != stored_version:
+        if all(existing.get(k) == v for k, v in safe.items()):
+            return jsonify(existing), 200
+        return jsonify({'error': MSG.SPIN_POOL_WRITE_CONFLICT}), 409
     safe["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = db.table("exclusive_spin_prizes").eq("id", prize_id).update(safe).execute()
+    query = db.table("exclusive_spin_prizes").eq("id", prize_id)
+    query = query.is_('updated_at', 'null') if expected is None else query.eq('updated_at', expected)
+    result = query.update(safe).execute()
     if not result:
-        return jsonify({"error": MSG.SPIN_POOL_UPDATE_FAILED}), 404
+        latest = db.table('exclusive_spin_prizes').select('*').eq('id', prize_id).single().execute()
+        if latest and all(latest.get(k) == v for k, v in safe.items() if k != 'updated_at'):
+            return jsonify(latest), 200
+        return jsonify({"error": MSG.SPIN_POOL_WRITE_CONFLICT}), 409
 
     row = result[0] if isinstance(result, list) else result
     return jsonify(row), 200

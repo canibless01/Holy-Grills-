@@ -17,6 +17,8 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_ADMIN_SPIN_RELOAD_POOL = "Reload prize pool"
+    SPIN_POOL_WRITE_CONFLICT = "This prize changed or the save conflicts with an earlier request. Reload the pool before editing again."
     FE_ADMIN_PRIZE_CANCELLED = "Cancelled"
     FE_ADMIN_CARTS_SEARCH_PAGE = "Search this page by name or email"
     FE_ADMIN_WALLET_READ_FAILED = "Wallet transactions could not be loaded. Retry this page."

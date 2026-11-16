@@ -1,6 +1,7 @@
 import { useStudentSearch } from '@/hooks/useStudentSearch';
 import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect, useRef } from 'react';
+import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
 import { localStore } from '@/lib/storage';
 import { Plus, Pencil, Trash2, Save, Zap, Clock, Gift, Check, Search } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
@@ -40,6 +41,9 @@ export default function AdminExclusiveSpin() {
   const [grantReason, setGrantReason] = useState('');
   const [granting, setGranting] = useState(false);
   const grantingRef = useRef(false);
+  const savingItem = useRef(false);
+  const [saveConflict,setSaveConflict] = useState(false);
+  const createIntent = useCmsCreateIntent();
 
   useEffect(() => { load(); }, []);
 
@@ -100,20 +104,26 @@ export default function AdminExclusiveSpin() {
   const totalWeight = template.reduce((sum, t) => sum + (t.weight || 0), 0);
 
   const saveItem = async (item) => {
+    if (savingItem.current) return;
+    savingItem.current = true;
+    setSaveConflict(false);
     setBusy('item');
     try {
       const body = { name: item.name, weight: Number(item.weight), campus_id: item.campus_id || null, is_active: item.is_active, reward_config: item.reward_config };
       if (item.id && !item.id.startsWith('new_')) {
-        await mockApi.admin.updateExclusiveSpinTemplateItem(item.id, body);
+        await mockApi.admin.updateExclusiveSpinTemplateItem(item.id, { ...body, expected_updated_at: item.updated_at });
       } else {
-        await mockApi.admin.createExclusiveSpinTemplateItem(body);
+        await mockApi.admin.createExclusiveSpinTemplateItem(createIntent.body(body));
       }
       toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_PRIZE_SAVED', '✅ Prize saved'), description: msg('FE_ADMIN_EXCLUSIVE_SPIN_NAME_UPDATED_IN_THE_EXCLUSIVE_SPIN', '"{name}" updated in the exclusive spin template.', { name: item.name }) });
+      createIntent.clear();
       setEditItem(null); setAdding(false);
       await load();
     } catch (e) {
+      setSaveConflict(e.status === 409);
       toast({ title: msg('FE_ADMIN_EXCLUSIVE_SPIN_FAILED_TO_SAVE_PRIZE', 'Failed to save prize'), description: e.message, variant: 'destructive' });
     }
+    savingItem.current = false;
     setBusy(null);
   };
 
@@ -163,7 +173,7 @@ export default function AdminExclusiveSpin() {
       <div>
         <SectionHeader
           title={msg('FE_ADMIN_SPIN_EXCLUSIVE_SPIN_PRIZES', "Exclusive Spin Prizes")}
-          action={<button onClick={() => setAdding(true)} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold"><Plus className="w-4 h-4" /> {msg('FE_ADMIN_SPIN_ADD_TITLE', 'Add Prize')}</button>}
+          action={<button onClick={() => { createIntent.clear(); setSaveConflict(false); setAdding(true); }} className="flex items-center gap-1 px-3 py-2 rounded-full bg-primary text-white text-xs font-bold"><Plus className="w-4 h-4" /> {msg('FE_ADMIN_SPIN_ADD_TITLE', 'Add Prize')}</button>}
         />
         <p className="text-xs text-muted-foreground mb-1">{msg('FE_ADMIN_SPIN_POOL_HELP', 'Configure the spin prizes, their reward categories and relative odds. Credits come from leaderboard finishes, tier perks or admin grants.')}</p>
         <div className="rounded-xl tone-warn border border-warn/40 p-2.5 text-[11px] text-warn mb-3">
@@ -187,7 +197,7 @@ export default function AdminExclusiveSpin() {
                         : <Pill tone="outline">{campusName(t.campus_id)}</Pill>}
                     </div>
                   </div>
-                  <button aria-label={msg('FE_ADMIN_SPIN_EDIT_NAME', 'Edit {name}', { name: t.name })} disabled={!isSuperAdmin && t.campus_id !== user?.campus_id} onClick={() => setEditItem(t)} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
+                  <button aria-label={msg('FE_ADMIN_SPIN_EDIT_NAME', 'Edit {name}', { name: t.name })} disabled={!isSuperAdmin && t.campus_id !== user?.campus_id} onClick={() => { setSaveConflict(false); setEditItem(t); }} className="p-2 rounded-lg hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
                   <button aria-label={msg('FE_ADMIN_SPIN_DEACTIVATE_NAME', 'Deactivate {name}', { name: t.name })} onClick={() => deleteItem(t.id, t.name || t.label)} disabled={busy === t.id || (!isSuperAdmin && t.campus_id !== user?.campus_id)} className="p-2 rounded-lg hover:tone-error"><Trash2 className="w-4 h-4 text-destructive" /></button>
                 </div>
               </Card>
@@ -291,23 +301,23 @@ export default function AdminExclusiveSpin() {
       </div>
 
       {(editItem || adding) && (
-        <PrizeModal item={editItem} campuses={campuses} isSuperAdmin={isSuperAdmin} ownCampus={user?.campus_id} onClose={() => { setEditItem(null); setAdding(false); }} onSave={saveItem} busy={busy === 'item'} />
+        <PrizeModal item={editItem} campuses={campuses} isSuperAdmin={isSuperAdmin} ownCampus={user?.campus_id} onClose={() => { setEditItem(null); setAdding(false); }} onSave={saveItem} busy={busy === 'item'} onReload={saveConflict ? () => { setEditItem(null); setAdding(false); setSaveConflict(false); void load(); } : null} />
       )}
     </div>
   );
 }
 
-function PrizeModal({ item, campuses = [], isSuperAdmin, ownCampus, onClose, onSave, busy }) {
+function PrizeModal({ item, campuses = [], isSuperAdmin, ownCampus, onClose, onSave, busy, onReload }) {
   useMessages();
   const [form, setForm] = useState(item ? { ...item, reward_config: item.reward_config || { kind: 'physical' } } : { name: '', weight: 10, campus_id: isSuperAdmin ? null : ownCampus, is_active: true, reward_config: { kind: 'physical' } });
   const kind = form.reward_config.kind;
   const fields = { hp: 'amount', free_delivery: 'cap', hp_multiplier: 'multiplier' };
   const field = fields[kind];
   return (
-    <Modal open onClose={onClose} title={item ? msg('FE_ADMIN_SPIN_EDIT_TITLE', 'Edit Prize') : msg('FE_ADMIN_SPIN_ADD_TITLE', 'Add Prize')}>
-      <div className="space-y-3">
-        <Field label={msg('FE_ADMIN_SPIN_PRIZE_NAME', "Prize Name")}><TextInput value={form.name || form.label || ''} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={msg('FE_ADMIN_SPIN_E_G_FREE_SAUSAGE_2_HP_JACKPOT_750', "e.g. Free Sausage ×2, HP Jackpot +750")} /></Field>
-        <Field label={msg('FE_ADMIN_SPIN_WEIGHT', 'Relative weight')} hint={msg('FE_ADMIN_SPIN_WEIGHT_HELP', 'Higher weight means a larger share of the active campus pool.')}><TextInput type="number" value={form.weight} onChange={(e) => setForm({ ...form, weight: e.target.value })} /></Field>
+    <Modal open onClose={() => { if (!busy) onClose(); }} title={item ? msg('FE_ADMIN_SPIN_EDIT_TITLE', 'Edit Prize') : msg('FE_ADMIN_SPIN_ADD_TITLE', 'Add Prize')}>
+      <fieldset disabled={busy} className="space-y-3">
+        <Field label={msg('FE_ADMIN_SPIN_PRIZE_NAME', "Prize Name")}><TextInput maxLength={120} value={form.name || form.label || ''} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={msg('FE_ADMIN_SPIN_E_G_FREE_SAUSAGE_2_HP_JACKPOT_750', "e.g. Free Sausage ×2, HP Jackpot +750")} /></Field>
+        <Field label={msg('FE_ADMIN_SPIN_WEIGHT', 'Relative weight')} hint={msg('FE_ADMIN_SPIN_WEIGHT_HELP', 'Higher weight means a larger share of the active campus pool.')}><TextInput type="number" min={1} max={100000} step={1} value={form.weight} onChange={(e) => setForm({ ...form, weight: e.target.value })} /></Field>
         <Field label={msg('FE_ADMIN_SPIN_CAMPUS_SCOPE', "Campus Scope")} hint={msg('FE_ADMIN_SPIN_CAMPUS_HELP', 'Campus scope is fixed after creation. Global prizes are the fallback where no campus prizes are active.')}>
           <select aria-label={msg('FE_ADMIN_SPIN_CAMPUS_SCOPE', 'Campus Scope')} disabled={!!item || !isSuperAdmin} value={form.campus_id || ''} onChange={(e) => setForm({ ...form, campus_id: e.target.value || null })} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm bg-card">
             {isSuperAdmin && <option value="">{msg('FE_ADMIN_SPIN_GLOBAL_ALL_CAMPUSES', "🌐 Global (all campuses)")}</option>}
@@ -327,8 +337,9 @@ function PrizeModal({ item, campuses = [], isSuperAdmin, ownCampus, onClose, onS
         </Field>}
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form,is_active:e.target.checked })} />{msg('FE_ADMIN_SPIN_ACTIVE', 'Available in the spin pool')}</label>
         <p className="text-xs text-muted-foreground">{msg('FE_ADMIN_SPIN_SNAPSHOT_HELP', 'Category and value determine fulfilment. Renaming or editing a prize does not change rewards already won.')}</p>
+        {onReload && <button type="button" onClick={onReload} className="font-bold underline">{msg('FE_ADMIN_SPIN_RELOAD_POOL','Reload prize pool')}</button>}
         <button onClick={() => onSave({ ...form, name: form.name || form.label })} disabled={busy || !form.name} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm disabled:opacity-50">{busy ? msg('FE_ADMIN_SPIN_SAVING', 'Saving...') : msg('FE_ADMIN_SPIN_SAVE_PRIZE', 'Save Prize')}</button>
-      </div>
+      </fieldset>
     </Modal>
   );
 }
