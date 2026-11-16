@@ -206,3 +206,7 @@ Combined birthday/gifting rollout: latest-main backend **1,849 passed**, full fr
 ### 15 November — settings consumers and catering email capture
 
 [Evidence](SETTINGS_CONSUMERS_CATERING_RECOVERY_2026_11_15.md): HP transfer minimums now honor scoped settings/zero and fail closed; the form uses the returned minimum. Monthly birthday capture/handoff agree on their default-on switch. Catering status email saves transactionally into the existing leased outbox, suppresses stale/changed-contact receipts and retains uncertainty holds. Rolling API header prevents legacy-thread/outbox duplicate sends. Service API submission retained; raw public catering INSERT no longer bypasses validation/rate limits. Migration applied; fresh before/after rollback proof, 76 focused and **1,924 full backend tests**, frontend build/type/lint and native gift checks pass. No live customer email/test payment or configuration-value change.
+
+### 16 November — historical global-policy stale-token fix
+
+[Evidence](ACTIVE_GLOBAL_STAFF_POLICIES_2026_11_16.md): a fresh rolled-back deactivated super-admin identity reproduced a global measurement-unit write through older inline role policies. Five global policies now use the persisted active-account helper; direct kitchen order policy includes active status. New active/inactive/global/campus/student/token-reuse/insert/delete matrix and existing staff/helper plus paid-order→kitchen→rider matrices pass. Migration applied; no real account/data mutation. Wider metadata reconciliation is being finalized separately.
