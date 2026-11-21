@@ -17,6 +17,18 @@ Rules for editing this file:
 """
 
 class MSG:
+    FE_ORG_DATE_PENDING = "Date to be confirmed"
+    FE_ORG_CONTROL_ROOM = "Your event control room"
+    FE_ORG_WORKSPACE_INTRO = "Bring people together. Keep every detail in view."
+    FE_ORG_WORKSPACE_HELP = "Plan your event, welcome your guests and follow your organizer earnings in one workspace."
+    FE_ORG_EVENT_LIBRARY = "Your events"
+    FE_ORG_START_HERE = "Your next event starts here"
+    FE_ORG_START_HELP = "Create a draft to begin, or select an event to manage its tickets and guests."
+    FE_ORG_EVENT_ACTIONS = "Event actions"
+    FE_ORG_EVENT_SECTIONS = "Event sections"
+    FE_ORG_OVERVIEW = "Overview"
+    FE_ORG_ATTENDEE_NAV = "Guest list"
+    FE_ORG_SETTLEMENT_NAV = "Settlement"
     FE_AMBASSADOR_NO_ASSIGNMENTS = "No ambassadors are assigned to this message in your campus."
     FE_AMBASSADOR_DIRECT_SHARE_HELP = "Open the ambassador’s WhatsApp chat with their personalized caption. Save the graphic and attach it before sending. If no phone is available, WhatsApp asks you to choose a contact."
     FE_ADMIN_SPIN_RELOAD_POOL = "Reload prize pool"

@@ -6,7 +6,6 @@ import { Menu, ExternalLink, LogOut, UtensilsCrossed, Bike, Search, X, Users } f
 import AdminGlobalSearch from '@/components/admin/AdminGlobalSearch';
 import AdminCampusSelector from '@/components/admin/AdminCampusSelector';
 import InlineNotificationBell from '@/components/InlineNotificationBell';
-import PanelSwitcher from '@/components/PanelSwitcher';
 import BrandLogo from '@/components/BrandLogo';
 
 /**
@@ -56,9 +55,6 @@ export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, 
 
         {/* Right — campus + actions */}
         <div className="flex w-full 2xl:w-auto items-center justify-between 2xl:justify-end gap-1 shrink-0">
-          {/* One-icon panel switcher: on /admin → student page (an admin
-              visiting Kitchen/Rider gets "back to /admin" there instead). */}
-          <PanelSwitcher className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors" />
           <AdminCampusSelector />
           {/* Mobile search toggle */}
           <button
@@ -95,9 +91,11 @@ export default function AdminHeader({ title, subtitle, onOpenMobile, onSignOut, 
           </>}
           <Link
             to="/"
-            className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-muted-foreground hover:text-primary hover:bg-primary/10 active:scale-95 transition"
+            aria-label={msg('FE_PANEL_STUDENT', 'View student page')}
+            title={msg('FE_PANEL_STUDENT', 'View student page')}
+            className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 rounded-xl text-xs font-bold text-muted-foreground hover:text-primary hover:bg-primary/10 active:scale-95 transition"
           >
-            View Site <ExternalLink className="w-3 h-3" />
+            <span className="hidden md:inline">{msg('FE_PANEL_STUDENT', 'View student page')}</span><ExternalLink className="w-4 h-4" />
           </Link>
           <button
             onClick={onSignOut}
