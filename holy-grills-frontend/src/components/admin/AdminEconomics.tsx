@@ -175,9 +175,10 @@ function EconomicsWorkspace({ campusId }) {
         </div>
       </Card>
 
+      <p className="text-xs text-muted-foreground">{msg('FE_ECON_BALANCE_NOTE', 'Active, pending and outstanding HP are current balances. Revenue, HP issued/redeemed and redemption costs use the selected dates.')}</p>
       {/* 2. Tier Breakdown */}
       <Card className="p-5">
-        <SectionTitle icon={Coins} title="Tier Breakdown" sub="One row per tier — scan for the outlier" />
+        <SectionTitle icon={Coins} title="Tier Breakdown" sub={msg('FE_ECON_CURRENT_TIER_NOTE', 'Selected-period activity grouped by each member’s current tier. This is not their tier at the time of purchase. Guests and untiered accounts are outside these rows.')} />
         {tiers.length === 0 ? (
           <EmptyState icon={Coins} title="No tier data yet" body="A freshly launched campus starts at ₦0 — tiers appear as HP flows." />
         ) : (

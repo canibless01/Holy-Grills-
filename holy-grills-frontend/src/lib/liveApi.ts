@@ -1290,15 +1290,17 @@ const admin = {
     const r = await apiClient.get('/analytics/hp', params);
     if (!r || typeof r !== 'object' || Array.isArray(r)) return { hp_earned_active: 0, hp_spent: 0, hp_expired: 0, hp_pending: 0, hp_in_circulation: 0, redemption_rate: 0, tier_distribution: {} };
     const sub = r.summary || r.totals || r.hp || r.analytics || r.data || {};
-    const pick = (keys) => {
+    const pick = (keys, fallback: number | null = 0) => {
       for (const k of keys) {
         const v = r[k] ?? sub[k];
         if (v != null && v !== '') { const n = Number(v); if (!isNaN(n)) return n; }
       }
-      return 0;
+      return fallback;
     };
     return {
       hp_earned_active: pick(['hp_earned_active', 'hp_earned', 'earned_active', 'total_earned', 'earned', 'hp_earned_total', 'total_hp_earned']),
+      hp_value_naira: pick(['hp_value_naira', 'hp_value'], null),
+      avg_hp_per_student: pick(['avg_hp_per_student', 'avg_hp'], null),
       hp_spent: pick(['hp_spent', 'spent', 'total_spent', 'hp_redeemed', 'redeemed', 'total_hp_spent']),
       hp_expired: pick(['hp_expired', 'expired', 'total_expired']),
       hp_pending: pick(['hp_pending', 'pending', 'hp_reserved', 'reserved', 'pending_hp']),

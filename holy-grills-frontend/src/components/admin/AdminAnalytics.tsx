@@ -97,7 +97,7 @@ export default function AdminAnalytics() {
     const [s, u, h, o, it, rt, rf, gf, mp, ab] = await Promise.allSettled([
       liveApi.analytics.sales(range),
       liveApi.analytics.users(range),
-      liveApi.admin.getAnalyticsHp(),
+      liveApi.admin.getAnalyticsHp(range),
       liveApi.analytics.orders(range),
       liveApi.analytics.items(range),
       liveApi.analytics.retention({ weeks: 12 }),
@@ -239,7 +239,7 @@ export default function AdminAnalytics() {
         </div>
       </Card>
 
-      <p className="text-xs text-muted-foreground">{msg('FE_ANALYTICS_RANGE_SCOPE','Dates filter sales, orders, menu-item and user reports. Other panels use their own reporting periods. All calendar dates use Lagos time.')}</p>
+      <p className="text-xs text-muted-foreground">{msg('FE_ANALYTICS_RANGE_SCOPE','Dates filter sales, orders, menu items, HP activity, timing, add-ons, delivery locations, squads, demographics and payment charts. Tier membership and user exports are current snapshots. Referrals, gifts, engagement, marketplace and cart totals are all time; retention uses its own cohorts and the academic baseline uses 90 days. Calendar dates use Lagos time.')}</p>
       {loading ? <div role="status" aria-label={msg('FE_LOOKUP_LOADING','Loading…')}><Skeleton className="h-64" /></div> : loadError ? <Card className="p-5"><div role="alert" className="space-y-3"><p>{loadError}</p><button onClick={() => { void load(); }} className="rounded-full bg-primary px-4 py-2 text-sm font-bold text-white">{msg('FE_LOOKUP_RETRY','Retry')}</button></div></Card> : <>
       {/* KPIs — headline metrics */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -318,10 +318,10 @@ export default function AdminAnalytics() {
         )}
       </Card>
 
-      <RevenueDashboard />
-      <PaymentMethodDashboard />
-      <AddonAcceptanceDashboard />
-      <OrderSourcesDashboard />
+      <RevenueDashboard range={range} />
+      <PaymentMethodDashboard range={range} />
+      <AddonAcceptanceDashboard range={range} />
+      <OrderSourcesDashboard range={range} />
 
       <div className="grid lg:grid-cols-2 gap-4">
         <Card className="p-5">
@@ -424,17 +424,17 @@ export default function AdminAnalytics() {
         )}
       </Card>
 
-      <DemographicsDashboard />
+      <DemographicsDashboard range={range} />
       <EngagementDashboard />
-      <SquadOrdersDashboard />
-      <HpEcosystemDashboard />
+      <SquadOrdersDashboard range={range} />
+      <HpEcosystemDashboard range={range} />
       </>
       )}
 
       {tab === 'operations' && (
       <>
-      <OrderTimingDashboard />
-      <DeliveryLocationDashboard />
+      <OrderTimingDashboard range={range} />
+      <DeliveryLocationDashboard range={range} />
       <AcademicCalendarDashboard />
       </>
       )}

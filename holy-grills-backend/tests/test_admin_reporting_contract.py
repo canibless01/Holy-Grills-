@@ -46,3 +46,25 @@ def test_csv_export_applies_scope_bounds_limit_and_formula_protection():
         q.eq.assert_called_once_with('campus_id',A)
         q.gte.assert_called_once_with('created_at','2026-11-04T23:00:00+00:00')
         q.lt.assert_called_once_with('created_at','2026-11-05T23:00:00+00:00')
+
+
+@pytest.mark.parametrize('kind,table', [('hp_transactions','hp_transactions'),('wallet_transactions','wallet_transactions'),('users','profiles')])
+def test_other_csv_families_scope_order_and_protect_strings(kind,table):
+    db=MagicMock();q=db.table.return_value
+    for name in ('select','gte','lt','eq','order'):getattr(q,name).return_value=q
+    q.execute.return_value=[{'id':'controlled','full_name':'=FORMULA','source':'@unsafe','reason':'+unsafe','amount':-10}]
+    with app.test_request_context('/?type='+kind+'&from_date=2026-11-05&to_date=2026-11-05&campus_id='+B),patch.object(analytics,'get_user_client',return_value=db):
+        g.user_role='admin';g.campus_id=A
+        response=analytics.export_csv.__wrapped__()
+    assert response.status_code==200
+    db.table.assert_called_once_with(table);q.eq.assert_called_once_with('campus_id',A)
+    q.order.assert_called_once_with('created_at.desc,id',ascending=False)
+    rows=list(csv.DictReader(io.StringIO(response.get_data(as_text=True))))
+    assert len(rows)==1 and rows[0]['id']=='controlled'
+    for key in ('full_name','source','reason'):
+        if key in rows[0]:assert rows[0][key].startswith("'")
+    if kind=='users':q.gte.assert_not_called();q.lt.assert_not_called()
+    else:
+        q.gte.assert_called_once_with('created_at','2026-11-04T23:00:00+00:00')
+        q.lt.assert_called_once_with('created_at','2026-11-05T23:00:00+00:00')
+        assert rows[0]['amount']=='-10'

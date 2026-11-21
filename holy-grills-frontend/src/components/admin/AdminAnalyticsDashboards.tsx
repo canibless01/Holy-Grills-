@@ -105,15 +105,15 @@ function DashLoader() {
 // ════════════════════════════════════════════════════════
 // 1. ORDER TIMING — bar (by day), line (by hour), line (30-day trend), KPIs
 // ════════════════════════════════════════════════════════
-export function OrderTimingDashboard() {
-  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.orderTiming());
+export function OrderTimingDashboard({ range = {} }: { range?: { from_date?: string; to_date?: string } } = {}) {
+  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.orderTiming(range), [range.from_date, range.to_date]);
   if (loading) return <DashLoader />;
   if (error) return <DashboardError retry={retry} />;
-  const byDay = data?.by_day || data?.orders_by_day || [];
-  const byHour = data?.by_hour || data?.orders_by_hour || [];
+  const byDay = data?.by_day || data?.orders_by_day || Object.entries(data?.day_of_week_distribution || {}).map(([day, orders]) => ({ day, orders }));
+  const byHour = data?.by_hour || data?.orders_by_hour || Object.entries(data?.hourly_distribution || {}).map(([hour, orders]) => ({ hour, orders }));
   const trend = data?.trend || data?.daily_trend || [];
-  const peakHour = data?.peak_hour ?? '—';
-  const peakDay = data?.peak_day ?? '—';
+  const peakHour = data?.peak_hour ?? [...byHour].filter(d => Number(d.orders) > 0).sort((a, b) => Number(b.orders) - Number(a.orders))[0]?.hour ?? '—';
+  const peakDay = data?.peak_day ?? [...byDay].filter(d => Number(d.orders) > 0).sort((a, b) => Number(b.orders) - Number(a.orders))[0]?.day ?? '—';
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
@@ -172,14 +172,14 @@ export function OrderTimingDashboard() {
 // ════════════════════════════════════════════════════════
 // 2. ADD-ON ACCEPTANCE — KPIs, horizontal bar (popularity), pie (revenue split)
 // ════════════════════════════════════════════════════════
-export function AddonAcceptanceDashboard() {
-  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.addonAcceptance());
+export function AddonAcceptanceDashboard({ range = {} }: { range?: { from_date?: string; to_date?: string } } = {}) {
+  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.addonAcceptance(range), [range.from_date, range.to_date]);
   if (loading) return <DashLoader />;
   if (error) return <DashboardError retry={retry} />;
-  const rate = data?.acceptance_rate ?? data?.acceptance_pct ?? 0;
-  const avgAddons = data?.avg_addons_per_order ?? data?.average_addons ?? 0;
-  const popularity = data?.popularity || data?.top_addons || [];
-  const revenueSplit = data?.revenue_split || [];
+  const rate = data?.attachment_rate ?? data?.acceptance_rate ?? data?.acceptance_pct ?? 0;
+  const avgAddons = data?.avg_addons_per_order ?? data?.average_addons ?? '—';
+  const popularity = (data?.popularity || data?.top_addons || []).map(d => ({ ...d, count: d.count ?? d.quantity ?? 0 }));
+  const revenueSplit = data?.revenue_split || data?.top_addons || [];
   const pieData = revenueSplit.map((r) => ({ name: r.name || r.addon, value: r.revenue || r.amount || 0 }));
   return (
     <div className="space-y-4">
@@ -204,18 +204,19 @@ export function AddonAcceptanceDashboard() {
 // ════════════════════════════════════════════════════════
 // 3. DELIVERY LOCATION — pie (on/off campus), bars (top hostels/gates), KPI
 // ════════════════════════════════════════════════════════
-export function DeliveryLocationDashboard() {
-  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.deliveryLocations());
+export function DeliveryLocationDashboard({ range = {} }: { range?: { from_date?: string; to_date?: string } } = {}) {
+  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.deliveryLocations(range), [range.from_date, range.to_date]);
   if (loading) return <DashLoader />;
   if (error) return <DashboardError retry={retry} />;
-  const onOff = data?.on_off_campus || data?.split || [];
+  const locations = data?.locations || [];
+  const onOff = data?.on_off_campus || data?.split || Object.entries(locations.reduce((acc, d) => { acc[d.delivery_type] = (acc[d.delivery_type] || 0) + Number(d.order_count || 0); return acc; }, {})).map(([type, count]) => ({ type, count }));
   const pieData = onOff.map((d) => ({ name: d.label || d.type, value: d.count || d.value || 0 }));
-  const hostels = data?.top_hostels || [];
-  const gates = data?.top_gates || [];
-  const feeTotal = data?.total_delivery_fees ?? data?.delivery_fee_total ?? 0;
+  const hostels = data?.top_hostels || locations.filter(d => d.delivery_type === 'on_campus').map(d => ({ name: d.location, count: d.order_count }));
+  const gates = data?.top_gates || locations.filter(d => d.delivery_type === 'off_campus').map(d => ({ name: d.location, count: d.order_count }));
+  const feeTotal = data?.total_delivery_fees ?? data?.delivery_fee_total;
   return (
     <div className="space-y-4">
-      <StatTile icon={DollarSign} label="Total Delivery Fees" value={formatNaira(feeTotal)} iconClass="text-success" iconBg="bg-success/15" />
+      <StatTile icon={DollarSign} label="Total Delivery Fees" value={feeTotal == null ? '—' : formatNaira(feeTotal)} iconClass="text-success" iconBg="bg-success/15" />
       {pieData.length > 0 && (
         <Card className="p-5">
           <SectionTitle icon={MapPin} title="On-Campus vs Off-Campus" />
@@ -239,21 +240,21 @@ export function DeliveryLocationDashboard() {
 // ════════════════════════════════════════════════════════
 // 4. SQUAD ORDERS — pie, KPI, line, table, KPI
 // ════════════════════════════════════════════════════════
-export function SquadOrdersDashboard() {
-  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.squadOrders());
+export function SquadOrdersDashboard({ range = {} }: { range?: { from_date?: string; to_date?: string } } = {}) {
+  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.squadOrders(range), [range.from_date, range.to_date]);
   if (loading) return <DashLoader />;
   if (error) return <DashboardError retry={retry} />;
-  const split = data?.squad_vs_individual || data?.split || [];
+  const split = data?.squad_vs_individual || data?.split || (data?.squad_orders_count != null ? [{ label: 'Squad', count: data.squad_orders_count }, { label: 'Individual', count: Math.max(0, Number(data.total_orders || 0) - Number(data.squad_orders_count)) }] : []);
   const pieData = split.map((d) => ({ name: d.label || d.type, value: d.count || d.value || 0 }));
-  const avgSize = data?.avg_squad_size ?? data?.average_squad_size ?? 0;
+  const avgSize = data?.avg_squad_group_size ?? data?.avg_squad_size ?? data?.average_squad_size ?? 0;
   const trend = data?.trend || [];
   const topSquads = data?.top_squads || [];
-  const revenuePct = data?.squad_revenue_pct ?? data?.squad_revenue_percentage ?? 0;
+  const revenuePct = data?.squad_revenue_pct ?? data?.squad_revenue_percentage;
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <StatTile icon={Users} label="Avg Squad Size" value={avgSize} iconClass="text-primary" iconBg="bg-primary/10" />
-        <StatTile icon={DollarSign} label="Squad Revenue %" value={`${revenuePct}%`} iconClass="text-success" iconBg="bg-success/15" />
+        <StatTile icon={DollarSign} label="Squad Revenue %" value={revenuePct == null ? '—' : `${revenuePct}%`} iconClass="text-success" iconBg="bg-success/15" />
       </div>
       {pieData.length > 0 && (
         <Card className="p-5">
@@ -305,19 +306,19 @@ export function SquadOrdersDashboard() {
 // ════════════════════════════════════════════════════════
 // 5. DEMOGRAPHICS — bars (dept, faculty), stacked bar (level), pie, KPI
 // ════════════════════════════════════════════════════════
-export function DemographicsDashboard() {
-  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.demographics());
+export function DemographicsDashboard({ range = {} }: { range?: { from_date?: string; to_date?: string } } = {}) {
+  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.demographics(range), [range.from_date, range.to_date]);
   if (loading) return <DashLoader />;
   if (error) return <DashboardError retry={retry} />;
-  const byDept = data?.by_department || data?.departments || [];
-  const byFaculty = data?.by_faculty || data?.faculties || [];
-  const byLevel = data?.by_academic_level || data?.by_level || [];
+  const byDept = (data?.by_department || data?.departments || []).map(d => ({ ...d, name: d.name ?? d.department, count: d.count ?? d.order_count }));
+  const byFaculty = (data?.by_faculty || data?.faculties || []).map(d => ({ ...d, name: d.name ?? d.faculty, count: d.count ?? d.order_count }));
+  const byLevel = (data?.by_academic_level || data?.by_level || []).map(d => ({ ...d, level: d.level ?? d.academic_level, count: d.count ?? d.order_count }));
   const distribution = data?.customer_distribution || [];
-  const avgSpend = data?.avg_spend_by_level ?? data?.average_spend ?? 0;
+  const avgSpend = data?.avg_spend_by_level ?? data?.average_spend;
   const pieData = distribution.map((d) => ({ name: d.label || d.level, value: d.count || d.value || 0 }));
   return (
     <div className="space-y-4">
-      <StatTile icon={DollarSign} label="Avg Spend by Level" value={formatNaira(avgSpend)} iconClass="text-primary" iconBg="bg-primary/10" />
+      <StatTile icon={DollarSign} label="Avg Spend by Level" value={avgSpend == null ? '—' : formatNaira(avgSpend)} iconClass="text-primary" iconBg="bg-primary/10" />
       <div className="grid lg:grid-cols-2 gap-4">
         <Card className="p-5">
           <SectionTitle icon={GraduationCap} title="By Department" />
@@ -366,6 +367,11 @@ export function EngagementDashboard() {
   const byDept = data?.by_department || [];
   return (
     <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-4">
+        <StatTile icon={Activity} label="Reviews Left" value={data?.total_reviews_left ?? '—'} />
+        <StatTile icon={Share2} label="Referrals Made" value={data?.total_referrals_made ?? '—'} />
+        <StatTile icon={Users} label="Event Check-ins" value={data?.total_event_checkins ?? '—'} />
+      </div>
       {tiers.length > 0 && (
         <Card className="p-5">
           <SectionTitle icon={Activity} title="Engagement Tiers" />
@@ -456,13 +462,13 @@ const PAYMENT_META = {
   hp_or_free: { label: 'Points / Free', color: '#2E7D32' },
 };
 
-export function PaymentMethodDashboard() {
-  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.paymentMethods());
+export function PaymentMethodDashboard({ range = {} }: { range?: { from_date?: string; to_date?: string } } = {}) {
+  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.paymentMethods(range), [range.from_date, range.to_date]);
   if (loading) return <DashLoader />;
   if (error) return <DashboardError retry={retry} />;
   // Accepts either an array of {method, count} entries or a keyed object
   // {wallet, card, split, hp_or_free} — normalize both to fixed slices.
-  const raw = data?.split || data?.payment_methods || [];
+  const raw = data?.counts || data?.split || data?.payment_methods || [];
   const entries = Array.isArray(raw)
     ? raw.map((d) => ({ key: String(d.method || d.label || '').toLowerCase(), value: d.count ?? d.value ?? 0 }))
     : Object.entries(raw || {}).map(([k, v]) => ({ key: String(k).toLowerCase(), value: Number(v) || 0 }));
@@ -473,12 +479,12 @@ export function PaymentMethodDashboard() {
     })
     .filter((d) => d.value > 0);
   const walletTrend = data?.wallet_trend || [];
-  const avgBalance = data?.avg_wallet_balance ?? data?.average_wallet_balance ?? 0;
+  const avgBalance = data?.avg_wallet_balance ?? data?.average_wallet_balance;
   const topupFreq = data?.topup_frequency ?? data?.top_up_frequency ?? '—';
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
-        <StatTile icon={CreditCard} label="Avg Wallet Balance" value={formatNaira(avgBalance)} iconClass="text-primary" iconBg="bg-primary/10" />
+        <StatTile icon={CreditCard} label="Avg Wallet Balance" value={avgBalance == null ? '—' : formatNaira(avgBalance)} iconClass="text-primary" iconBg="bg-primary/10" />
         <StatTile icon={CreditCard} label="Top-up Frequency" value={topupFreq} iconClass="text-success" iconBg="bg-success/15" />
       </div>
       {pieData.length > 0 && (
@@ -516,8 +522,8 @@ export function PaymentMethodDashboard() {
 // ════════════════════════════════════════════════════════
 // 8. REVENUE — line (daily), stacked bar (by payment), KPIs, bar (day of week)
 // ════════════════════════════════════════════════════════
-export function RevenueDashboard() {
-  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.revenue());
+export function RevenueDashboard({ range = {} }: { range?: { from_date?: string; to_date?: string } } = {}) {
+  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.revenue(range), [range.from_date, range.to_date]);
   if (loading) return <DashLoader />;
   if (error) return <DashboardError retry={retry} />;
   const daily = data?.daily_revenue || data?.daily || [];
@@ -587,21 +593,20 @@ export function RevenueDashboard() {
 // ════════════════════════════════════════════════════════
 // HP ECOSYSTEM — enhanced with 4-tier pie (Ember/Flame/Blaze/Holy)
 // ════════════════════════════════════════════════════════
-export function HpEcosystemDashboard() {
-  const { data, loading, error, retry } = useDashboard(() => liveApi.admin.getAnalyticsHp());
+export function HpEcosystemDashboard({ range = {} }: { range?: { from_date?: string; to_date?: string } } = {}) {
+  const { data, loading, error, retry } = useDashboard(() => liveApi.admin.getAnalyticsHp(range), [range.from_date, range.to_date]);
   if (loading) return <DashLoader />;
   if (error) return <DashboardError retry={retry} />;
   const inCirc = data?.hp_in_circulation ?? 0;
   const earned = data?.hp_earned_active ?? 0;
   const spent = data?.hp_spent ?? 0;
-  const hpValue = data?.hp_value_naira ?? data?.hp_value ?? 0;
-  const avgHp = data?.avg_hp_per_student ?? data?.avg_hp ?? 0;
+  const hpValue = data?.hp_value_naira ?? data?.hp_value;
+  const avgHp = data?.avg_hp_per_student ?? data?.avg_hp;
   const tierDist = data?.tier_distribution || {};
-  // Always show all 4 tiers — never drop Blaze/Inferno
-  const pieData = ['ember', 'flame', 'blaze', 'holy'].map((t) => ({
-    name: TIER_LABELS[t],
-    value: tierDist[t] ?? tierDist[TIER_LABELS[t]] ?? 0,
-  })).filter((d) => d.value > 0);
+  const pieData = (Array.isArray(tierDist)
+    ? tierDist.map(t => ({ name: t.tier ?? t.name ?? t.slug, slug: t.slug, value: Number(t.count) || 0 }))
+    : Object.entries(tierDist).map(([name, value]) => ({ name: TIER_LABELS[name.toLowerCase()] || name, slug: name.toLowerCase(), value: Number(value) || 0 })))
+    .filter(d => d.value > 0);
   const earnedVsSpent = [
     { name: 'Earned', value: earned },
     { name: 'Spent', value: spent },
@@ -610,8 +615,8 @@ export function HpEcosystemDashboard() {
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatTile icon={Flame} label="HP in Circulation" value={inCirc.toLocaleString()} iconClass="text-primary" iconBg="bg-primary/10" />
-        <StatTile icon={DollarSign} label="HP Value (₦)" value={formatNaira(hpValue)} iconClass="text-success" iconBg="bg-success/15" />
-        <StatTile icon={Users} label="Avg HP / Student" value={avgHp.toLocaleString()} iconClass="text-accent-foreground" iconBg="bg-accent/25" />
+        <StatTile icon={DollarSign} label="HP Value (₦)" value={hpValue == null ? '—' : formatNaira(hpValue)} iconClass="text-success" iconBg="bg-success/15" />
+        <StatTile icon={Users} label="Avg HP / Student" value={avgHp == null ? '—' : avgHp.toLocaleString()} iconClass="text-accent-foreground" iconBg="bg-accent/25" />
         <StatTile icon={Flame} label="Redemption Rate" value={`${data?.redemption_rate ?? 0}%`} iconClass="text-destructive" iconBg="bg-destructive/10" />
       </div>
       <div className="grid lg:grid-cols-2 gap-4">
@@ -630,12 +635,12 @@ export function HpEcosystemDashboard() {
           ) : <EmptyState icon={Flame} title="No HP data yet" />}
         </Card>
         <Card className="p-5">
-          <SectionTitle icon={Flame} title="Tier Distribution (4 tiers)" />
+          <SectionTitle icon={Flame} title="Current Tier Distribution" />
           {pieData.length > 0 ? (
             <div className="h-56"><ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, value }) => `${name}: ${value}`}>
-                  {pieData.map((d, i) => <Cell key={i} fill={TIER_COLORS[['ember', 'flame', 'blaze', 'holy'][i]] || COLORS[i]} />)}
+                  {pieData.map((d, i) => <Cell key={i} fill={TIER_COLORS[d.slug || String(d.name).toLowerCase()] || COLORS[i]} />)}
                 </Pie>
                 <Tooltip contentStyle={tooltipStyle} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -702,8 +707,8 @@ export function AcademicCalendarDashboard() {
 // ════════════════════════════════════════════════════════
 // B2. ORDER SOURCES — breakdown by channel (website, whatsapp, instagram, etc.)
 // ════════════════════════════════════════════════════════
-export function OrderSourcesDashboard() {
-  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.orderSources());
+export function OrderSourcesDashboard({ range = {} }: { range?: { from_date?: string; to_date?: string } } = {}) {
+  const { data, loading, error, retry } = useDashboard(() => liveApi.analytics.orderSources(range), [range.from_date, range.to_date]);
   if (loading) return <DashLoader />;
   if (error) return <DashboardError retry={retry} />;
   const sources = data?.order_sources || [];

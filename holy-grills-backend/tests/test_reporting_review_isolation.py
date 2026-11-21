@@ -74,3 +74,29 @@ def test_menu_review_fallback_counts_each_review_once_for_repeated_item_lines():
  with app.app_context(),patch.object(menu,'get_db',return_value=db):summary=menu._review_stats(db,['meal'])
  assert summary=={'meal':{'avg_rating':3,'review_count':2}}
  assert menu._attach_review_stats([{'id':'meal'},{'id':'unreviewed'}],summary)==[{'id':'meal','avg_rating':3,'review_count':2},{'id':'unreviewed','avg_rating':0,'review_count':0}]
+
+
+def test_historical_tier_report_tracks_current_membership_without_rewriting_activity():
+ db=DB()
+ db.data['hp_tiers'].append({'id':'ember','name':'Ember','sort_order':0})
+ before=econ.get_tier_breakdown(db,'2026-11-05','2026-11-06',A)
+ db.data['profiles'][0]['current_tier_id']='ember'
+ after=econ.get_tier_breakdown(db,'2026-11-05','2026-11-06',A)
+ assert before[0]['revenue']==1000 and before[1]['revenue']==0
+ assert after[0]['revenue']==0 and after[1]['revenue']==1000
+ for field in ('revenue','hp_issued','hp_redeemed','actual_cost'):
+  assert sum(r[field] for r in before)==sum(r[field] for r in after)
+ # The report groups the same dated records by today's tier; it never updates them.
+ assert db.data['orders'][0]['total_amount']==1000
+ assert db.data['hp_transactions'][0]['amount']==100
+
+
+def test_period_economics_changes_activity_but_not_current_balances():
+ db=DB()
+ with patch.object(econ,'get_hp_value',return_value=2.5),patch.object(econ,'_get_econ_setting',return_value=.025):
+  populated=econ.get_economics_overview(db,'2026-11-05','2026-11-06',A)
+  empty=econ.get_economics_overview(db,'2026-11-06','2026-11-07',A)
+ assert (populated['food_revenue'],populated['hp_issued'],populated['actual_redemption_cost'])==(1000,120,20)
+ assert (empty['food_revenue'],empty['hp_issued'],empty['actual_redemption_cost'])==(0,0,0)
+ assert empty['active_hp']==populated['active_hp']==70
+ assert empty['pending_hp']==populated['pending_hp']==7
