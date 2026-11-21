@@ -41,6 +41,8 @@ Existing chat: **A1, A2, A3, A5, A6**. Other chat: **A4, A7, O4, O5**. Coordinat
 
 - **A5 spin editor:** create replay/duplicate prevention, immutable scope, versioned edits, failed draft/Reload and pending controls pass in `ADMIN_SPIN_POOL_RECOVERY_2026_11_16.md`, including independent PostgreSQL sessions.
 
+- **Community manager report:** the actual recipient-schema mismatch is fixed; direct WhatsApp links, scoped promo uploads and roster/promo/recommendation controls pass in `COMMUNITY_MANAGER_SHARING_2026_11_21.md`. No schema/grant expansion or real message.
+
 ### Next execution order
 
 Existing chat: A1 navigation/action coverage → A2 reporting/leaderboard gaps → A3 identity/configuration exceptions → uncovered A5/A6 actions. Other chat proceeds independently with A4 settings/system consumers and A7 object/policy inventory, plus O4/O5 configuration review. Fix reproduced defects and push in batches. Existing passing cases remain regression anchors. New findings will be added under their ID rather than silently expanding the backlog.
@@ -78,4 +80,4 @@ No outstanding newly reproduced launch-blocking code defect is recorded in the c
 - Current legacy reward recovery; tier/grace transitions; challenge/milestone recovery; scheduled reminder implementation; multi-gift/reward/refund recorded combinations.
 - Event owner workspace, settlement contracts, registration/payment/check-in recovery, guest QR/account linking and administrator-only wallet refunds for the documented cases. Deferred event additions are listed above.
 
-Evidence index: `ADMIN_AUDIT_COVERAGE_STATUS.md`, `GENERAL_SITE_AUDIT_PROGRESS_2026_11_04.md`, `ADMIN_CONTINUATION_CHECKPOINT_2026_11_14.md`, `CURRENT_AUDIT_STATUS_2026_11_13.md`. The latest combined backend checkpoint is 1,941 passing tests (16 November merged catering/spin-editor integration), with a later passing public-controls production build. Neither a passing count nor a working page URL is whole-site sign-off.
+Evidence index: `ADMIN_AUDIT_COVERAGE_STATUS.md`, `GENERAL_SITE_AUDIT_PROGRESS_2026_11_04.md`, `ADMIN_CONTINUATION_CHECKPOINT_2026_11_14.md`, `CURRENT_AUDIT_STATUS_2026_11_13.md`. The latest combined backend checkpoint is 1,949 passing tests (community-manager sharing/upload integration), with a later passing public-controls production build. Neither a passing count nor a working page URL is whole-site sign-off.

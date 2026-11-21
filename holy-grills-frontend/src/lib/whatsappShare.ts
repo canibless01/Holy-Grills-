@@ -1,5 +1,8 @@
-export function openWhatsApp(caption: string) {
-  // Deliberately text-only. WhatsApp links cannot attach an arbitrary URL as
-  // an image file; saving a graphic is a separate explicit user action.
-  window.open(`https://wa.me/?text=${encodeURIComponent(caption)}`, '_blank', 'noopener,noreferrer');
+import { normalizeWhatsAppNumber } from './valueText';
+
+/** Normal links preserve a user's tap and work without popup-script permission. */
+export function buildWhatsAppShareUrl(caption: string, rawPhone?: unknown): string {
+  const phone = normalizeWhatsAppNumber(rawPhone);
+  const recipient = /^[1-9]\d{7,14}$/.test(phone) ? phone : '';
+  return `https://wa.me/${recipient}?text=${encodeURIComponent(caption)}`;
 }

@@ -33,7 +33,7 @@ Shared shell: [navigation evidence](ADMIN_NAVIGATION_EVIDENCE_2026_11_14.md) cov
 | notifications | Composer, segmentation, preview/test/sync, queue/history/cancel/retry and scoped access | [Campaigns](ADMIN_CAMPAIGNS_PAGE_2026_11_13.md) |
 | leaderboard | Pending/history/Hall-of-Fame read failures, handover notes, successful write followed by failed refresh/recovery | [Prize recovery](ADMIN_PRIZE_READ_RECOVERY_2026_11_14.md), [Hall-of-Fame transitions](ADMIN_CAMPUS_PRIZE_CONTROLS_2026_11_15.md) |
 | ambassadors | Roster/search/tag, milestone fields/activation/edit/atomic replay and hierarchy | [Ambassador actions](ADMIN_AMBASSADOR_PAGES_2026_11_14.md) |
-| ambassadorpromo | Recipient scope, share/status recovery and distribution controls | [Ambassador actions](ADMIN_AMBASSADOR_PAGES_2026_11_14.md) |
+| ambassadorpromo | Recipient scope, share/status recovery and distribution controls | [Ambassador actions](ADMIN_AMBASSADOR_PAGES_2026_11_14.md), [manager sharing](COMMUNITY_MANAGER_SHARING_2026_11_21.md) |
 | ambassadorreviews | Monthly review recipients/recommendations and replay-safe grants | [Ambassador actions](ADMIN_AMBASSADOR_PAGES_2026_11_14.md) |
 | campuses | Strict fields/create replay/version/default-campus safeguards; native create/edit/active/read-only/denial/recovery | [Campus native controls](ADMIN_CAMPUS_PRIZE_CONTROLS_2026_11_15.md) |
 | departments | Department/level fields, search, create/edit/hide/restore, faculty propagation, scope and duplicate handling | [Academic actions](ADMIN_ACADEMIC_PAGE_EVIDENCE_2026_10_29.md) |

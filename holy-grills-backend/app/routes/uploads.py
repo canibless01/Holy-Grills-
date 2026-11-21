@@ -83,6 +83,8 @@ def upload_signature():
         folder = folder.strip()
         if len(folder) > 255 or not re.fullmatch(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*", folder):
             return jsonify({"error": MSG.UPLOAD_FOLDER_INVALID}), 400
+    elif caller_role == 'community_manager' and data.get('folder') == 'ambassador-promo':
+        folder = f"ambassador_promos/{g.user_id}"
     elif caller_role == 'event_organizer' and data.get('folder') == 'events':
         folder = f"event_organizers/{g.user_id}"
     else:

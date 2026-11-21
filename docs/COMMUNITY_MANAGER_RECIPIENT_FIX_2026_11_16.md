@@ -13,3 +13,5 @@ Verification:
 - **89 ambassador backend tests pass**. Corrected the prior scope test, which had incorrectly invented a `campus_id` field on assignment fixtures and therefore missed the schema defect; it now asserts the existing FK join and embedded filter.
 
 This closes the reproduced recipient-read blocker. Browser/WhatsApp/device sharing and narrow manager upload-folder controls are separate follow-up checks in the same request. No real message or assignment status was sent/changed during verification.
+
+Sharing, scoped upload and workspace control follow-up is completed for the documented cases in [community manager sharing](COMMUNITY_MANAGER_SHARING_2026_11_21.md). Actual device sending remains acceptance; no real messages were sent.

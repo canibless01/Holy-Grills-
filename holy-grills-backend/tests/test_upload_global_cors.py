@@ -36,3 +36,20 @@ def test_real_authenticated_super_admin_can_sign_event_upload_without_campus(app
  assert response.status_code==200
  assert response.json['folder']=='events' and response.json['signature']
  assert 'secret' not in response.json
+
+@pytest.mark.parametrize('role,requested,expected',[
+ ('community_manager','ambassador-promo','ambassador_promos/controlled'),
+ ('community_manager','events','profile_photos/controlled'),
+ ('community_manager','../../events','profile_photos/controlled'),
+ ('student','ambassador-promo','profile_photos/controlled'),
+ ('rider','ambassador-promo','profile_photos/controlled'),
+ ('kitchen','ambassador-promo','profile_photos/controlled'),
+ ('admin','ambassador-promo','ambassador-promo'),
+ ('super_admin','ambassador-promo','ambassador-promo'),
+])
+def test_manager_promo_upload_is_scoped_without_other_admin_folders(app,role,requested,expected):
+ db=MagicMock();db.auth_get_user.return_value={'id':'controlled'}
+ db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value={'id':'controlled','role':role,'is_active':True,'campus_id':'11111111-1111-4111-8111-111111111111'}
+ with patch.object(auth,'get_db',return_value=db):
+  response=app.test_client().post('/api/upload/signature',json={'folder':requested},headers={'Authorization':'Bearer controlled'})
+ assert response.status_code==200 and response.json['folder']==expected

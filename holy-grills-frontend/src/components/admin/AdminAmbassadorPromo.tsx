@@ -6,20 +6,12 @@ import ImageUploader from './ImageUploader';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
-import { openWhatsApp } from '@/lib/whatsappShare';
+import { buildWhatsAppShareUrl } from '@/lib/whatsappShare';
 
 const LINK_TOKENS = [/{{link}}/g, /{link}/g, /{{LINK}}/g];
 const personalize = (caption: string, link: string) =>
   LINK_TOKENS.reduce((out, token) => out.replace(token, link), caption || '');
 const trackingLink = (code?: string | null) => (code ? `${window.location.origin}/?ref=${code}` : '');
-
-/** WhatsApp deep links carry text; graphic saving is a separate action. */
-function shareToWhatsApp(_imageUrl: string | null, caption: string, _downloadName: string) {
-  // Open synchronously in the tap, before clipboard/network awaits, so mobile
-  // browsers preserve user activation and do not turn this into an image tab.
-  openWhatsApp(caption);
-  return Promise.resolve({ opened: true });
-}
 
 export default function AdminAmbassadorPromo() {
   const [messages, setMessages] = useState<any[]>([]);
@@ -72,7 +64,6 @@ export default function AdminAmbassadorPromo() {
 function PromoMessageRow({ message, open, onToggle }: { message: any; open: boolean; onToggle: () => void }) {
   const [assignments, setAssignments] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
-  const [sharingId, setSharingId] = useState<string | null>(null);
   const loaded = useRef(false);
   const statusLock=useRef(false);
   const [assignmentError, setAssignmentError] = useState(false);
@@ -99,15 +90,6 @@ function PromoMessageRow({ message, open, onToggle }: { message: any; open: bool
     } catch (e) {
       toast({ title: e.message, variant: 'destructive' });
     } finally { statusLock.current=false;setBusy(false); }
-  };
-
-  const share = async (a: any) => {
-    const link = trackingLink(a.profile?.referral_code);
-    const caption = personalize(message.caption, link);
-    setSharingId(a.id);
-    try {
-      await shareToWhatsApp(message.image_url, caption, `hg-promo-${message.id.slice(0, 8)}.jpg`);
-    } finally { setSharingId(null); }
   };
 
   const statusPill = (s: string) => {
@@ -142,11 +124,11 @@ function PromoMessageRow({ message, open, onToggle }: { message: any; open: bool
                 {personalize(message.caption, trackingLink(a.profile?.referral_code))}
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                <button onClick={() => share(a)} disabled={sharingId === a.id}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-success text-white text-[11px] font-bold disabled:opacity-50">
-                  {sharingId === a.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />}
+                <a href={buildWhatsAppShareUrl(personalize(message.caption, trackingLink(a.profile?.referral_code)), a.profile?.phone)} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-success text-white text-[11px] font-bold">
+                  <Share2 className="w-3.5 h-3.5" />
                   {msg('FE_ADMIN_AMBASSADOR_PROMO_SHARE', 'Share on WhatsApp')}
-                </button>
+                </a>
                 {message.image_url && (
                   <a href={message.image_url} download={`hg-promo-${message.id.slice(0, 8)}.jpg`} target="_blank" rel="noopener noreferrer"
                     className="flex items-center gap-1 px-3 py-1.5 rounded-full border border-border text-[11px] font-bold">
@@ -166,6 +148,8 @@ function PromoMessageRow({ message, open, onToggle }: { message: any; open: bool
               {a.evidence_note && <div className="text-[10px] italic text-muted-foreground">“{a.evidence_note}”</div>}
             </div>
           ))}
+          {!assignmentLoading && !assignmentError && !assignments.length && <p role="status" className="text-sm text-muted-foreground">{msg('FE_AMBASSADOR_NO_ASSIGNMENTS','No ambassadors are assigned to this message in your campus.')}</p>}
+          <p className="text-[11px] text-muted-foreground">{msg('FE_AMBASSADOR_DIRECT_SHARE_HELP','Open the ambassador’s WhatsApp chat with their personalized caption. Save the graphic and attach it before sending. If no phone is available, WhatsApp asks you to choose a contact.')}</p>
           <p className="text-[10px] text-muted-foreground flex items-center gap-1">
             <Send className="w-3 h-3" /> Statuses are recorded manually from the ambassador's response — the site cannot read WhatsApp activity.
           </p>
