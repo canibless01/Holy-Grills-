@@ -553,7 +553,7 @@ def _transfer_order_eligibility(db, user_id):
     # §Rule: sender must have completed at least hp_transfer_min_orders delivered orders.
     # min_orders is read from system_settings first (admin-editable), falling back to
     # the HP_TRANSFER_MIN_ORDERS config value (env-configurable), then hard default 3.
-    min_orders = _transfer_setting(db, 'hp_transfer_min_orders', 'HP_TRANSFER_MIN_ORDERS', 3)
+    min_orders = _transfer_setting(get_db(), 'hp_transfer_min_orders', 'HP_TRANSFER_MIN_ORDERS', 3)
     completed_orders = (
         db.table("orders")
         .select("id")
@@ -578,7 +578,7 @@ def transfer_order_eligibility():
     try:
         db = get_user_client()
         minimum, delivered = _transfer_order_eligibility(db, g.user_id)
-        amount = _transfer_setting(db, 'hp_transfer_min_amount', 'HP_TRANSFER_MIN_AMOUNT', 10)
+        amount = _transfer_setting(get_db(), 'hp_transfer_min_amount', 'HP_TRANSFER_MIN_AMOUNT', 10)
     except SettingError:
         return jsonify({'error': MSG.SERVICE_UNAVAILABLE}), 503
     return jsonify({"minimum_amount": amount, "minimum_orders": minimum, "delivered_orders": delivered, "eligible": delivered >= minimum, "gift_options_supported": True}), 200
@@ -657,7 +657,7 @@ def transfer_hp():
 
     from app.utils.settings import SettingError
     try:
-        min_transfer = _transfer_setting(get_user_client(), 'hp_transfer_min_amount', 'HP_TRANSFER_MIN_AMOUNT', 10)
+        min_transfer = _transfer_setting(get_db(), 'hp_transfer_min_amount', 'HP_TRANSFER_MIN_AMOUNT', 10)
     except SettingError:
         return jsonify({'error': MSG.SERVICE_UNAVAILABLE}), 503
     if amount < min_transfer:

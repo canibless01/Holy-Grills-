@@ -10,6 +10,7 @@ import SocialLinksSettings from './SocialLinksSettings';
 import { useCampus } from '@/lib/campusContext';
 import { useIsSuperAdmin, SuperAdminBadge } from './SuperAdminGate';
 import { msg } from '@/lib/messages';
+import { isLegacyStoredSetting } from '@/lib/legacySettings';
 import { parseSettingValue, displaySettingValue } from '@/lib/settingEditor';
 import { loadSystemSettings } from '@/lib/featureConfig';
 import { useAdminWriteScope } from './AdminScopeBadge';
@@ -47,7 +48,7 @@ const KNOWN_SETTINGS = {
   daily_checkin_hp: { default: 0, purpose: 'Daily check-in attendance — no HP is paid per day; the weekly completion reward is what pays HP', hint: 'Daily check-in itself awards 0 HP' },
   free_side_options: { default: 'Coleslaw, Extra Sauce, Soft Drink', purpose: 'Side credit choices', hint: 'Comma-separated list' },
   first_order_gift_enabled: { default: false, purpose: 'Legacy physical first-order gift; signup_free_side_config controls new welcome credits' },
-  monthly_pending_cap: { default: 1000, purpose: 'Monthly cap on pending HP unlock' },
+  monthly_pending_cap: { default: 1000, purpose: 'Monthly pending HP allowance' },
   graduation_min_level: { default: 400, purpose: 'Minimum academic level for graduation eligibility' },
   whatsapp_support_number: { default: '', purpose: 'WhatsApp number on the campus contact page' },
   support_email: { default: '', purpose: 'Campus contact email' },
@@ -313,6 +314,7 @@ export default function AdminSystemSettings() {
                       </button>
                     )}
                   </div>
+                  {isLegacyStoredSetting(s.key) && <p className="mb-2 rounded-lg bg-secondary p-2 text-xs text-muted-foreground"><strong>{msg('FE_SETTINGS_LEGACY_LABEL', 'Legacy stored value.')}</strong> {msg('FE_SETTINGS_LEGACY_DETAIL', 'This key has no current flow consumer. Editing it does not change live behavior; the active rule or configuration is separate.')}</p>}
                   {desc && <div className="text-[11px] text-muted-foreground mb-2 break-words">{desc}{known && s.value !== known.default && ` · documented default: ${displaySettingValue(known.default)}`}</div>}
                   {s.key === 'campus_operations_email' ? <OperationsEmailControls value={s.value} campusId={s.campus_id} editable={editable} busy={busy === id} onSave={(value) => save(s, value)} /> : isBool ? (
                     <div className="font-bold text-sm text-foreground">{s.value ? 'Enabled' : 'Disabled'}</div>

@@ -1520,6 +1520,8 @@ class MSG:
     SETTING_NOT_FOUND            = "Setting not found"
     SETTING_EDIT_CONFLICT = "This setting changed while you were editing. Reload the latest settings, review your draft and save again."
     FE_SYSTEM_NOT_REPORTED = "Not reported"
+    FE_SETTINGS_LEGACY_LABEL = "Legacy stored value."
+    FE_SETTINGS_LEGACY_DETAIL = "This key has no current flow consumer. Editing it does not change live behavior; the active rule or configuration is separate."
     FE_SETTINGS_REFRESH_FAILED = "Settings could not be refreshed. Reload before making another change; your draft is kept."
     FE_SETTINGS_RELOAD = "Reload latest settings"
     SETTING_VALUE_REQUIRED       = "'value' is required"

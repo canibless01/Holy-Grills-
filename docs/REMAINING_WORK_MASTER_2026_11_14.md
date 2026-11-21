@@ -6,7 +6,7 @@ Checked against GitHub main `8f47c0a`, the actual admin section registry, both c
 
 ## Active audit work — shared ownership
 
-Existing chat: **A1, A2, A3, A5, A6**. Other chat: **A4, A7, O4, O5**. Coordinate O1–O3. Full scope and copyable prompt: `REMAINING_AUDIT_CHAT_HANDOFF_2026_11_14.md`.
+Existing admin chat retains **A1, A2, A3, A5, A6** and their explicit residual cases. This chat completed its recorded **A4/A7** reviews and **O4/O5** assessments on 21 November; see the evidence below. Coordinate remaining O1–O3 observations. Full scope and copyable prompt: `REMAINING_AUDIT_CHAT_HANDOFF_2026_11_14.md`.
 
 | ID | Area | Concrete remaining work | Existing work to retain |
 |---|---|---|---|
@@ -30,7 +30,7 @@ Existing chat: **A1, A2, A3, A5, A6**. Other chat: **A4, A7, O4, O5**. Coordinat
 - **A3 staff controls:** current role/access expected-state, lookup→write race, no-op replay, manager hierarchy and pending native controls are verified in `ADMIN_IDENTITY_CONCURRENCY_2026_11_15.md`. No new role authority or database policy was introduced.
 
 - **A6:** shared campus contact failure/Retry, all six notification preferences, independent push-update rollback, and five popup account/viewport/page-target cases now pass in `PUBLIC_CONTACT_PREFERENCES_POPUPS_2026_11_15.md`. Remaining unmatched action reconciliation stays explicit.
-- **A4:** generic settings JSON/type/draft/version recovery and System cron/audit/health failure, retry and pagination cases now pass in `SETTINGS_SYSTEM_RECOVERY_2026_11_15.md`. Scoped HP transfer minimum consumers and the birthday dispatch default now also pass; catering email capture uses the durable existing outbox (`SETTINGS_CONSUMERS_CATERING_RECOVERY_2026_11_15.md`). Full configuration/inventory reconciliation continues.
+- **A4:** generic settings JSON/type/draft/version recovery and System cron/audit/health failure, retry and pagination cases now pass in `SETTINGS_SYSTEM_RECOVERY_2026_11_15.md`. Scoped HP transfer minimum consumers and the birthday dispatch default now also pass; catering email capture uses the durable existing outbox (`SETTINGS_CONSUMERS_CATERING_RECOVERY_2026_11_15.md`). Final 101-key/18-flag consumer reconciliation is recorded in `SETTINGS_FEATURE_CONSUMER_MAP_2026_11_16.md`; legacy stored keys are labelled in the editor and private transfer settings are evaluated server-side. A4 recorded scope is complete.
 
 - **A2 dashboard:** nested delivery pipeline counts, common Lagos date range, HP tier fallback, missing-versus-zero feeds, Retry and delayed campus/role cases now pass in `ADMIN_DASHBOARD_CONTRACT_2026_11_15.md`. Independent report endpoints are not represented as a transactionally synchronized snapshot.
 
@@ -42,10 +42,11 @@ Existing chat: **A1, A2, A3, A5, A6**. Other chat: **A4, A7, O4, O5**. Coordinat
 - **A5 spin editor:** create replay/duplicate prevention, immutable scope, versioned edits, failed draft/Reload and pending controls pass in `ADMIN_SPIN_POOL_RECOVERY_2026_11_16.md`, including independent PostgreSQL sessions.
 
 - **Community manager report:** the actual recipient-schema mismatch is fixed; direct WhatsApp links, scoped promo uploads and roster/promo/recommendation controls pass in `COMMUNITY_MANAGER_SHARING_2026_11_21.md`. No schema/grant expansion or real message.
+- **A7/O4/O5:** the metadata/policy/grant/dependency inventory and configuration assessment are recorded in `DATABASE_INVENTORY_CONFIG_REVIEW_2026_11_21.md`. The inactive-super-admin global-policy defect is fixed and role-tested. Free-plan password protection and non-relocatable pg_net are documented external/managed exceptions, with no upgrade or unsafe rebuild. This pass is complete; optional deletion remains deferred.
 
 ### Next execution order
 
-Existing chat: A1 navigation/action coverage → A2 reporting/leaderboard gaps → A3 identity/configuration exceptions → uncovered A5/A6 actions. Other chat proceeds independently with A4 settings/system consumers and A7 object/policy inventory, plus O4/O5 configuration review. Fix reproduced defects and push in batches. Existing passing cases remain regression anchors. New findings will be added under their ID rather than silently expanding the backlog.
+Existing chat: A1 navigation/action coverage → A2 reporting/leaderboard gaps → A3 identity/configuration exceptions → uncovered A5/A6 actions. A4 and A7 recorded reviews and O4/O5 assessments are complete in the linked 21 November evidence; do not restart them from the original inventory. Remaining broader A2/A5 reconciliation and O1–O3 observations retain their explicit limits. Fix reproduced defects and push in batches. Existing passing cases remain regression anchors. New findings will be added under their ID rather than silently expanding the backlog.
 
 ## Configuration decisions / operational acceptance
 
@@ -80,4 +81,4 @@ No outstanding newly reproduced launch-blocking code defect is recorded in the c
 - Current legacy reward recovery; tier/grace transitions; challenge/milestone recovery; scheduled reminder implementation; multi-gift/reward/refund recorded combinations.
 - Event owner workspace, settlement contracts, registration/payment/check-in recovery, guest QR/account linking and administrator-only wallet refunds for the documented cases. Deferred event additions are listed above.
 
-Evidence index: `ADMIN_AUDIT_COVERAGE_STATUS.md`, `GENERAL_SITE_AUDIT_PROGRESS_2026_11_04.md`, `ADMIN_CONTINUATION_CHECKPOINT_2026_11_14.md`, `CURRENT_AUDIT_STATUS_2026_11_13.md`. The latest combined backend checkpoint is 1,949 passing tests (community-manager sharing/upload integration), with a later passing public-controls production build. Neither a passing count nor a working page URL is whole-site sign-off.
+Evidence index: `ADMIN_AUDIT_COVERAGE_STATUS.md`, `GENERAL_SITE_AUDIT_PROGRESS_2026_11_04.md`, `ADMIN_CONTINUATION_CHECKPOINT_2026_11_14.md`, `CURRENT_AUDIT_STATUS_2026_11_13.md`. The latest combined backend checkpoint is 1,950 passing tests (21 November settings/security plus community-manager sharing/upload integration), with passing frontend lint/typecheck and full production build. Neither a passing count nor a working page URL is whole-site sign-off.

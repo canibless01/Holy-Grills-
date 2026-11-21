@@ -1,0 +1,647 @@
+key,name,table,valid,unique,primary,predicate,definition
+1,abandoned_carts_pkey,abandoned_carts,True,True,True,,CREATE UNIQUE INDEX abandoned_carts_pkey ON public.abandoned_carts USING btree (id)
+14 13,guest_cart_recovery_scan,abandoned_carts,True,False,False,((user_id IS NULL) AND (NOT is_recovered)),"CREATE INDEX guest_cart_recovery_scan ON public.abandoned_carts USING btree (campus_id, last_active_at) WHERE ((user_id IS NULL) AND (NOT is_recovered))"
+14,idx_abandoned_carts_campus_id,abandoned_carts,True,False,False,,CREATE INDEX idx_abandoned_carts_campus_id ON public.abandoned_carts USING btree (campus_id)
+7,idx_abandoned_carts_next_recovery_at,abandoned_carts,True,False,False,,CREATE INDEX idx_abandoned_carts_next_recovery_at ON public.abandoned_carts USING btree (next_recovery_at)
+10,idx_abandoned_carts_recovered_order_id,abandoned_carts,True,False,False,,CREATE INDEX idx_abandoned_carts_recovered_order_id ON public.abandoned_carts USING btree (recovered_order_id)
+9 7 13,idx_abandoned_carts_recovery_full,abandoned_carts,True,False,False,,"CREATE INDEX idx_abandoned_carts_recovery_full ON public.abandoned_carts USING btree (is_recovered, next_recovery_at, last_active_at)"
+2,idx_abandoned_carts_user,abandoned_carts,True,False,False,(is_recovered = false),CREATE INDEX idx_abandoned_carts_user ON public.abandoned_carts USING btree (user_id) WHERE (is_recovered = false)
+2 3 0 7,academic_calendar_entry_key,academic_calendar,True,True,False,,"CREATE UNIQUE INDEX academic_calendar_entry_key ON public.academic_calendar USING btree (campus_id, period_type, lower(name), academic_year) NULLS NOT DISTINCT"
+1,academic_calendar_pkey,academic_calendar,True,True,True,,CREATE UNIQUE INDEX academic_calendar_pkey ON public.academic_calendar USING btree (id)
+5 6,idx_academic_calendar_dates,academic_calendar,True,False,False,,"CREATE INDEX idx_academic_calendar_dates ON public.academic_calendar USING btree (start_date, end_date)"
+8 3,academic_levels_campus_value_key,academic_levels,True,True,False,,"CREATE UNIQUE INDEX academic_levels_campus_value_key ON public.academic_levels USING btree (campus_id, value) NULLS NOT DISTINCT"
+1,academic_levels_pkey,academic_levels,True,True,True,,CREATE UNIQUE INDEX academic_levels_pkey ON public.academic_levels USING btree (id)
+8,idx_academic_levels_campus_id,academic_levels,True,False,False,,CREATE INDEX idx_academic_levels_campus_id ON public.academic_levels USING btree (campus_id)
+4 12 1,admin_audit_logs_cron_job_recent_idx,admin_audit_logs,True,False,False,(entity_type = 'cron_jobs'::text),"CREATE INDEX admin_audit_logs_cron_job_recent_idx ON public.admin_audit_logs USING btree (entity_id, created_at DESC, id DESC) WHERE (entity_type = 'cron_jobs'::text)"
+1,admin_audit_logs_pkey,admin_audit_logs,True,True,True,,CREATE UNIQUE INDEX admin_audit_logs_pkey ON public.admin_audit_logs USING btree (id)
+5,idx_admin_audit_logs_actor_id,admin_audit_logs,True,False,False,,CREATE INDEX idx_admin_audit_logs_actor_id ON public.admin_audit_logs USING btree (actor_id)
+14,idx_admin_audit_logs_campus_id,admin_audit_logs,True,False,False,,CREATE INDEX idx_admin_audit_logs_campus_id ON public.admin_audit_logs USING btree (campus_id)
+1,ambassador_attributions_pkey,ambassador_attributions,True,True,True,,CREATE UNIQUE INDEX ambassador_attributions_pkey ON public.ambassador_attributions USING btree (customer_user_id)
+2,idx_amb_attributions_ambassador,ambassador_attributions,True,False,False,,CREATE INDEX idx_amb_attributions_ambassador ON public.ambassador_attributions USING btree (ambassador_id)
+5,idx_amb_attributions_live,ambassador_attributions,True,False,False,,CREATE INDEX idx_amb_attributions_live ON public.ambassador_attributions USING btree (expires_at)
+14,ambassador_grants_idempotency_key_key,ambassador_grants,True,True,False,,CREATE UNIQUE INDEX ambassador_grants_idempotency_key_key ON public.ambassador_grants USING btree (idempotency_key)
+1,ambassador_grants_pkey,ambassador_grants,True,True,True,,CREATE UNIQUE INDEX ambassador_grants_pkey ON public.ambassador_grants USING btree (id)
+2 19,idx_amb_grants_ambassador,ambassador_grants,True,False,False,,"CREATE INDEX idx_amb_grants_ambassador ON public.ambassador_grants USING btree (ambassador_id, issued_at DESC)"
+2 3 4,uq_amb_grant_month_category,ambassador_grants,True,True,False,(duplicate_override = false),"CREATE UNIQUE INDEX uq_amb_grant_month_category ON public.ambassador_grants USING btree (ambassador_id, month, reward_category) WHERE (duplicate_override = false)"
+1,ambassador_link_clicks_pkey,ambassador_link_clicks,True,True,True,,CREATE UNIQUE INDEX ambassador_link_clicks_pkey ON public.ambassador_link_clicks USING btree (id)
+3 7,idx_amb_clicks_ambassador_time,ambassador_link_clicks,True,False,False,,"CREATE INDEX idx_amb_clicks_ambassador_time ON public.ambassador_link_clicks USING btree (ambassador_id, created_at DESC)"
+5 7,idx_amb_clicks_anon,ambassador_link_clicks,True,False,False,,"CREATE INDEX idx_amb_clicks_anon ON public.ambassador_link_clicks USING btree (anonymous_id, created_at DESC)"
+4 7,idx_amb_clicks_visitor,ambassador_link_clicks,True,False,False,,"CREATE INDEX idx_amb_clicks_visitor ON public.ambassador_link_clicks USING btree (visitor_user_id, created_at DESC)"
+3,ambassador_meal_discount_redemptions_order_id_key,ambassador_meal_discount_redemptions,True,True,False,,CREATE UNIQUE INDEX ambassador_meal_discount_redemptions_order_id_key ON public.ambassador_meal_discount_redemptions USING btree (order_id)
+1,ambassador_meal_discount_redemptions_pkey,ambassador_meal_discount_redemptions,True,True,True,,CREATE UNIQUE INDEX ambassador_meal_discount_redemptions_pkey ON public.ambassador_meal_discount_redemptions USING btree (id)
+4,idx_amb_meal_redemptions_owner,ambassador_meal_discount_redemptions,True,False,False,,CREATE INDEX idx_amb_meal_redemptions_owner ON public.ambassador_meal_discount_redemptions USING btree (ambassador_id)
+4,ambassador_meal_discounts_code_key,ambassador_meal_discounts,True,True,False,,CREATE UNIQUE INDEX ambassador_meal_discounts_code_key ON public.ambassador_meal_discounts USING btree (code)
+1,ambassador_meal_discounts_pkey,ambassador_meal_discounts,True,True,True,,CREATE UNIQUE INDEX ambassador_meal_discounts_pkey ON public.ambassador_meal_discounts USING btree (id)
+2 8 10,idx_amb_meal_discount_owner,ambassador_meal_discounts,True,False,False,,"CREATE INDEX idx_amb_meal_discount_owner ON public.ambassador_meal_discounts USING btree (ambassador_id, status, expires_at)"
+2 3 4,ambassador_milestone_claims_milestone_id_ambassador_id_peri_key,ambassador_milestone_claims,True,True,False,,"CREATE UNIQUE INDEX ambassador_milestone_claims_milestone_id_ambassador_id_peri_key ON public.ambassador_milestone_claims USING btree (milestone_id, ambassador_id, period_month)"
+1,ambassador_milestone_claims_pkey,ambassador_milestone_claims,True,True,True,,CREATE UNIQUE INDEX ambassador_milestone_claims_pkey ON public.ambassador_milestone_claims USING btree (id)
+1,ambassador_milestones_pkey,ambassador_milestones,True,True,True,,CREATE UNIQUE INDEX ambassador_milestones_pkey ON public.ambassador_milestones USING btree (id)
+10 3,idx_amb_milestones_active,ambassador_milestones,True,False,False,,"CREATE INDEX idx_amb_milestones_active ON public.ambassador_milestones USING btree (is_active, metric)"
+2 3,ambassador_monthly_reviews_ambassador_id_month_key,ambassador_monthly_reviews,True,True,False,,"CREATE UNIQUE INDEX ambassador_monthly_reviews_ambassador_id_month_key ON public.ambassador_monthly_reviews USING btree (ambassador_id, month)"
+1,ambassador_monthly_reviews_pkey,ambassador_monthly_reviews,True,True,True,,CREATE UNIQUE INDEX ambassador_monthly_reviews_pkey ON public.ambassador_monthly_reviews USING btree (id)
+1,ambassador_order_attributions_pkey,ambassador_order_attributions,True,True,True,,CREATE UNIQUE INDEX ambassador_order_attributions_pkey ON public.ambassador_order_attributions USING btree (order_id)
+3 8,idx_amb_order_attr_amb_time,ambassador_order_attributions,True,False,False,,"CREATE INDEX idx_amb_order_attr_amb_time ON public.ambassador_order_attributions USING btree (ambassador_id, attributed_at DESC)"
+2,idx_amb_order_attr_customer,ambassador_order_attributions,True,False,False,,CREATE INDEX idx_amb_order_attr_customer ON public.ambassador_order_attributions USING btree (customer_user_id)
+2 3,ambassador_promo_assignments_message_id_ambassador_id_key,ambassador_promo_assignments,True,True,False,,"CREATE UNIQUE INDEX ambassador_promo_assignments_message_id_ambassador_id_key ON public.ambassador_promo_assignments USING btree (message_id, ambassador_id)"
+1,ambassador_promo_assignments_pkey,ambassador_promo_assignments,True,True,True,,CREATE UNIQUE INDEX ambassador_promo_assignments_pkey ON public.ambassador_promo_assignments USING btree (id)
+3 4,idx_amb_promo_assign_month,ambassador_promo_assignments,True,False,False,,"CREATE INDEX idx_amb_promo_assign_month ON public.ambassador_promo_assignments USING btree (ambassador_id, month)"
+1,ambassador_promo_messages_pkey,ambassador_promo_messages,True,True,True,,CREATE UNIQUE INDEX ambassador_promo_messages_pkey ON public.ambassador_promo_messages USING btree (id)
+1,ambassadors_pkey,ambassadors,True,True,True,,CREATE UNIQUE INDEX ambassadors_pkey ON public.ambassadors USING btree (profile_id)
+1,banners_pkey,banners,True,True,True,,CREATE UNIQUE INDEX banners_pkey ON public.banners USING btree (id)
+8 9,idx_banners_active_placement,banners,True,False,False,(is_active = true),"CREATE INDEX idx_banners_active_placement ON public.banners USING btree (placement, sort_order) WHERE (is_active = true)"
+18,idx_banners_campus_id,banners,True,False,False,,CREATE INDEX idx_banners_campus_id ON public.banners USING btree (campus_id)
+15,idx_banners_created_by,banners,True,False,False,,CREATE INDEX idx_banners_created_by ON public.banners USING btree (created_by)
+2 3,batch_orders_batch_id_order_id_key,batch_orders,True,True,False,,"CREATE UNIQUE INDEX batch_orders_batch_id_order_id_key ON public.batch_orders USING btree (batch_id, order_id)"
+3,batch_orders_order_id_key,batch_orders,True,True,False,,CREATE UNIQUE INDEX batch_orders_order_id_key ON public.batch_orders USING btree (order_id)
+1,batch_orders_pkey,batch_orders,True,True,True,,CREATE UNIQUE INDEX batch_orders_pkey ON public.batch_orders USING btree (id)
+5,idx_batch_orders_added_by,batch_orders,True,False,False,,CREATE INDEX idx_batch_orders_added_by ON public.batch_orders USING btree (added_by)
+2,idx_batch_orders_batch,batch_orders,True,False,False,,CREATE INDEX idx_batch_orders_batch ON public.batch_orders USING btree (batch_id)
+7,idx_batch_orders_campus_id,batch_orders,True,False,False,,CREATE INDEX idx_batch_orders_campus_id ON public.batch_orders USING btree (campus_id)
+1,birthday_celebrations_pkey,birthday_celebrations,True,True,True,,CREATE UNIQUE INDEX birthday_celebrations_pkey ON hg_internal.birthday_celebrations USING btree (id)
+2 4,birthday_celebrations_user_id_year_key,birthday_celebrations,True,True,False,,"CREATE UNIQUE INDEX birthday_celebrations_user_id_year_key ON hg_internal.birthday_celebrations USING btree (user_id, year)"
+1,brand_partnership_requests_pkey,brand_partnership_requests,True,True,True,,CREATE UNIQUE INDEX brand_partnership_requests_pkey ON public.brand_partnership_requests USING btree (id)
+2,campuses_name_key,campuses,True,True,False,,CREATE UNIQUE INDEX campuses_name_key ON public.campuses USING btree (name)
+1,campuses_pkey,campuses,True,True,True,,CREATE UNIQUE INDEX campuses_pkey ON public.campuses USING btree (id)
+7,campuses_single_default_idx,campuses,True,True,False,(is_default = true),CREATE UNIQUE INDEX campuses_single_default_idx ON public.campuses USING btree (is_default) WHERE (is_default = true)
+3,campuses_slug_key,campuses,True,True,False,,CREATE UNIQUE INDEX campuses_slug_key ON public.campuses USING btree (slug)
+1,cart_free_side_selections_pkey,cart_free_side_selections,True,True,True,,CREATE UNIQUE INDEX cart_free_side_selections_pkey ON public.cart_free_side_selections USING btree (id)
+1,cart_items_pkey,cart_items,True,True,True,,CREATE UNIQUE INDEX cart_items_pkey ON public.cart_items USING btree (id)
+9,idx_cart_items_campus_id,cart_items,True,False,False,,CREATE INDEX idx_cart_items_campus_id ON public.cart_items USING btree (campus_id)
+3,idx_cart_items_menu_item_id,cart_items,True,False,False,,CREATE INDEX idx_cart_items_menu_item_id ON public.cart_items USING btree (menu_item_id)
+9 2 7,operations_cart_scan,cart_items,True,False,False,,"CREATE INDEX operations_cart_scan ON public.cart_items USING btree (campus_id, user_id, updated_at)"
+2 3 12,uq_cart_items_user_menu_item_options,cart_items,True,True,False,,"CREATE UNIQUE INDEX uq_cart_items_user_menu_item_options ON public.cart_items USING btree (user_id, menu_item_id, options_hash)"
+1 2,cart_recovery_steps_pkey,cart_recovery_steps,True,True,True,,"CREATE UNIQUE INDEX cart_recovery_steps_pkey ON hg_internal.cart_recovery_steps USING btree (cart_id, step)"
+1,catering_requests_pkey,catering_requests,True,True,True,,CREATE UNIQUE INDEX catering_requests_pkey ON public.catering_requests USING btree (id)
+12,idx_catering_requests_assigned_to,catering_requests,True,False,False,,CREATE INDEX idx_catering_requests_assigned_to ON public.catering_requests USING btree (assigned_to)
+17,idx_catering_requests_campus_id,catering_requests,True,False,False,,CREATE INDEX idx_catering_requests_campus_id ON public.catering_requests USING btree (campus_id)
+1,challenge_completions_pkey,challenge_completions,True,True,True,,CREATE UNIQUE INDEX challenge_completions_pkey ON public.challenge_completions USING btree (id)
+7,idx_challenge_completions_campus_id,challenge_completions,True,False,False,,CREATE INDEX idx_challenge_completions_campus_id ON public.challenge_completions USING btree (campus_id)
+2,idx_challenge_completions_challenge,challenge_completions,True,False,False,,CREATE INDEX idx_challenge_completions_challenge ON public.challenge_completions USING btree (challenge_id)
+4,idx_challenge_completions_hp_tx_id,challenge_completions,True,False,False,,CREATE INDEX idx_challenge_completions_hp_tx_id ON public.challenge_completions USING btree (hp_transaction_id)
+3,idx_challenge_completions_user,challenge_completions,True,False,False,,CREATE INDEX idx_challenge_completions_user ON public.challenge_completions USING btree (user_id)
+3 2,uq_challenge_completions_user_challenge,challenge_completions,True,True,False,,"CREATE UNIQUE INDEX uq_challenge_completions_user_challenge ON public.challenge_completions USING btree (user_id, challenge_id)"
+1,challenges_pkey,challenges,True,True,True,,CREATE UNIQUE INDEX challenges_pkey ON public.challenges USING btree (id)
+6 7,idx_challenges_active,challenges,True,False,False,(is_active = true),"CREATE INDEX idx_challenges_active ON public.challenges USING btree (starts_at, ends_at) WHERE (is_active = true)"
+16,idx_challenges_campus_id,challenges,True,False,False,,CREATE INDEX idx_challenges_campus_id ON public.challenges USING btree (campus_id)
+13,idx_challenges_created_by,challenges,True,False,False,,CREATE INDEX idx_challenges_created_by ON public.challenges USING btree (created_by)
+1,checkout_intent_closures_pkey,checkout_intent_closures,True,True,True,,CREATE UNIQUE INDEX checkout_intent_closures_pkey ON hg_internal.checkout_intent_closures USING btree (intent_key)
+1,cron_locks_pkey,cron_locks,True,True,True,,CREATE UNIQUE INDEX cron_locks_pkey ON public.cron_locks USING btree (job_name)
+1,daily_checkins_pkey,daily_checkins,True,True,True,,CREATE UNIQUE INDEX daily_checkins_pkey ON public.daily_checkins USING btree (id)
+6,idx_daily_checkins_campus_id,daily_checkins,True,False,False,,CREATE INDEX idx_daily_checkins_campus_id ON public.daily_checkins USING btree (campus_id)
+3,idx_daily_checkins_date,daily_checkins,True,False,False,,CREATE INDEX idx_daily_checkins_date ON public.daily_checkins USING btree (checkin_date)
+2,idx_daily_checkins_user_id,daily_checkins,True,False,False,,CREATE INDEX idx_daily_checkins_user_id ON public.daily_checkins USING btree (user_id)
+2 3,unique_user_daily_checkin,daily_checkins,True,True,False,,"CREATE UNIQUE INDEX unique_user_daily_checkin ON public.daily_checkins USING btree (user_id, checkin_date)"
+2,delivery_assignments_order_id_key,delivery_assignments,True,True,False,,CREATE UNIQUE INDEX delivery_assignments_order_id_key ON public.delivery_assignments USING btree (order_id)
+1,delivery_assignments_pkey,delivery_assignments,True,True,True,,CREATE UNIQUE INDEX delivery_assignments_pkey ON public.delivery_assignments USING btree (id)
+4,idx_delivery_assignments_batch_id,delivery_assignments,True,False,False,,CREATE INDEX idx_delivery_assignments_batch_id ON public.delivery_assignments USING btree (batch_id)
+9,idx_delivery_assignments_campus_id,delivery_assignments,True,False,False,,CREATE INDEX idx_delivery_assignments_campus_id ON public.delivery_assignments USING btree (campus_id)
+3,idx_delivery_assignments_rider,delivery_assignments,True,False,False,,CREATE INDEX idx_delivery_assignments_rider ON public.delivery_assignments USING btree (rider_id)
+11 9 12 16,delivery_batches_open_window_gate_uidx,delivery_batches,True,True,False,(status = 'open'::text),"CREATE UNIQUE INDEX delivery_batches_open_window_gate_uidx ON public.delivery_batches USING btree (campus_id, delivery_window_id, gate_id, delivery_date) WHERE (status = 'open'::text)"
+1,delivery_batches_pkey,delivery_batches,True,True,True,,CREATE UNIQUE INDEX delivery_batches_pkey ON public.delivery_batches USING btree (id)
+11,idx_delivery_batches_campus_id,delivery_batches,True,False,False,,CREATE INDEX idx_delivery_batches_campus_id ON public.delivery_batches USING btree (campus_id)
+9,idx_delivery_batches_delivery_window,delivery_batches,True,False,False,,CREATE INDEX idx_delivery_batches_delivery_window ON public.delivery_batches USING btree (delivery_window_id)
+2,idx_delivery_batches_rider,delivery_batches,True,False,False,,CREATE INDEX idx_delivery_batches_rider ON public.delivery_batches USING btree (rider_id)
+2 3,idx_delivery_batches_rider_status,delivery_batches,True,False,False,,"CREATE INDEX idx_delivery_batches_rider_status ON public.delivery_batches USING btree (rider_id, status)"
+3,idx_delivery_batches_status,delivery_batches,True,False,False,,CREATE INDEX idx_delivery_batches_status ON public.delivery_batches USING btree (status)
+10,idx_delivery_batches_window_id,delivery_batches,True,False,False,,CREATE INDEX idx_delivery_batches_window_id ON public.delivery_batches USING btree (window_id)
+9 8,idx_delivery_batches_window_zone,delivery_batches,True,False,False,,"CREATE INDEX idx_delivery_batches_window_zone ON public.delivery_batches USING btree (delivery_window_id, zone)"
+2,delivery_cost_allocation_entry,delivery_cost_allocations,True,False,False,,CREATE INDEX delivery_cost_allocation_entry ON hg_internal.delivery_cost_allocations USING btree (entry_id)
+1,delivery_cost_allocations_pkey,delivery_cost_allocations,True,True,True,,CREATE UNIQUE INDEX delivery_cost_allocations_pkey ON hg_internal.delivery_cost_allocations USING btree (order_id)
+3,delivery_cost_audit_actor,delivery_cost_audit,True,False,False,,CREATE INDEX delivery_cost_audit_actor ON hg_internal.delivery_cost_audit USING btree (actor_id)
+2 1,delivery_cost_audit_entry,delivery_cost_audit,True,False,False,,"CREATE INDEX delivery_cost_audit_entry ON hg_internal.delivery_cost_audit USING btree (entry_id, id)"
+1,delivery_cost_audit_pkey,delivery_cost_audit,True,True,True,,CREATE UNIQUE INDEX delivery_cost_audit_pkey ON hg_internal.delivery_cost_audit USING btree (id)
+1,delivery_cost_entries_pkey,delivery_cost_entries,True,True,True,,CREATE UNIQUE INDEX delivery_cost_entries_pkey ON hg_internal.delivery_cost_entries USING btree (id)
+9,delivery_cost_entry_actor,delivery_cost_entries,True,False,False,,CREATE INDEX delivery_cost_entry_actor ON hg_internal.delivery_cost_entries USING btree (entered_by)
+2 4,delivery_cost_entry_campus,delivery_cost_entries,True,False,False,,"CREATE INDEX delivery_cost_entry_campus ON hg_internal.delivery_cost_entries USING btree (campus_id, cost_date)"
+3,delivery_cost_entry_gate,delivery_cost_entries,True,False,False,,CREATE INDEX delivery_cost_entry_gate ON hg_internal.delivery_cost_entries USING btree (gate_id)
+2,delivery_cost_receipt_actor,delivery_cost_receipts,True,False,False,,CREATE INDEX delivery_cost_receipt_actor ON hg_internal.delivery_cost_receipts USING btree (actor_id)
+3,delivery_cost_receipt_campus,delivery_cost_receipts,True,False,False,,CREATE INDEX delivery_cost_receipt_campus ON hg_internal.delivery_cost_receipts USING btree (campus_id)
+1,delivery_cost_receipts_pkey,delivery_cost_receipts,True,True,True,,CREATE UNIQUE INDEX delivery_cost_receipts_pkey ON hg_internal.delivery_cost_receipts USING btree (request_id)
+4,delivery_pool_budget_actor,delivery_pool_budgets,True,False,False,,CREATE INDEX delivery_pool_budget_actor ON hg_internal.delivery_pool_budgets USING btree (updated_by)
+1,delivery_pool_budgets_pkey,delivery_pool_budgets,True,True,True,,CREATE UNIQUE INDEX delivery_pool_budgets_pkey ON hg_internal.delivery_pool_budgets USING btree (campus_id)
+15,delivery_subsidy_actor,delivery_subsidy_ledger,True,False,False,,CREATE INDEX delivery_subsidy_actor ON hg_internal.delivery_subsidy_ledger USING btree (entered_by)
+2 4 1,delivery_subsidy_campus_date,delivery_subsidy_ledger,True,False,False,,"CREATE INDEX delivery_subsidy_campus_date ON hg_internal.delivery_subsidy_ledger USING btree (campus_id, delivery_date, order_id)"
+3,delivery_subsidy_gate,delivery_subsidy_ledger,True,False,False,,CREATE INDEX delivery_subsidy_gate ON hg_internal.delivery_subsidy_ledger USING btree (gate_id)
+1,delivery_subsidy_ledger_pkey,delivery_subsidy_ledger,True,True,True,,CREATE UNIQUE INDEX delivery_subsidy_ledger_pkey ON hg_internal.delivery_subsidy_ledger USING btree (order_id)
+8,delivery_subsidy_movement_actor,delivery_subsidy_movements,True,False,False,,CREATE INDEX delivery_subsidy_movement_actor ON hg_internal.delivery_subsidy_movements USING btree (actor_id)
+3 9 1,delivery_subsidy_movement_campus,delivery_subsidy_movements,True,False,False,,"CREATE INDEX delivery_subsidy_movement_campus ON hg_internal.delivery_subsidy_movements USING btree (campus_id, occurred_at, id)"
+4,delivery_subsidy_movement_gate,delivery_subsidy_movements,True,False,False,,CREATE INDEX delivery_subsidy_movement_gate ON hg_internal.delivery_subsidy_movements USING btree (gate_id)
+2 1,delivery_subsidy_movement_order,delivery_subsidy_movements,True,False,False,,"CREATE INDEX delivery_subsidy_movement_order ON hg_internal.delivery_subsidy_movements USING btree (order_id, id)"
+1,delivery_subsidy_movements_pkey,delivery_subsidy_movements,True,True,True,,CREATE UNIQUE INDEX delivery_subsidy_movements_pkey ON hg_internal.delivery_subsidy_movements USING btree (id)
+11 13 14 15,delivery_windows_dated_key,delivery_windows,True,True,False,(date IS NOT NULL),"CREATE UNIQUE INDEX delivery_windows_dated_key ON public.delivery_windows USING btree (campus_id, date, opens_at, closes_at) WHERE (date IS NOT NULL)"
+11 3 4,delivery_windows_oneoff_key,delivery_windows,True,True,False,(starts_at IS NOT NULL),"CREATE UNIQUE INDEX delivery_windows_oneoff_key ON public.delivery_windows USING btree (campus_id, starts_at, ends_at) WHERE (starts_at IS NOT NULL)"
+1,delivery_windows_pkey,delivery_windows,True,True,True,,CREATE UNIQUE INDEX delivery_windows_pkey ON public.delivery_windows USING btree (id)
+11 12 14 15,delivery_windows_weekly_key,delivery_windows,True,True,False,(weekday IS NOT NULL),"CREATE UNIQUE INDEX delivery_windows_weekly_key ON public.delivery_windows USING btree (campus_id, weekday, opens_at, closes_at) WHERE (weekday IS NOT NULL)"
+3 4,idx_delivery_windows_active,delivery_windows,True,False,False,(is_active = true),"CREATE INDEX idx_delivery_windows_active ON public.delivery_windows USING btree (starts_at, ends_at) WHERE (is_active = true)"
+11,idx_delivery_windows_campus_id,delivery_windows,True,False,False,,CREATE INDEX idx_delivery_windows_campus_id ON public.delivery_windows USING btree (campus_id)
+10,idx_delivery_windows_created_by,delivery_windows,True,False,False,,CREATE INDEX idx_delivery_windows_created_by ON public.delivery_windows USING btree (created_by)
+8,idx_delivery_windows_zone_id,delivery_windows,True,False,False,,CREATE INDEX idx_delivery_windows_zone_id ON public.delivery_windows USING btree (zone_id)
+1,delivery_zones_pkey,delivery_zones,True,True,True,,CREATE UNIQUE INDEX delivery_zones_pkey ON public.delivery_zones USING btree (id)
+10,idx_delivery_zones_campus_id,delivery_zones,True,False,False,,CREATE INDEX idx_delivery_zones_campus_id ON public.delivery_zones USING btree (campus_id)
+9 0,departments_campus_name_key,departments,True,True,False,,"CREATE UNIQUE INDEX departments_campus_name_key ON public.departments USING btree (campus_id, lower(name)) NULLS NOT DISTINCT"
+0 0,departments_campus_name_uniq,departments,True,True,False,,"CREATE UNIQUE INDEX departments_campus_name_uniq ON public.departments USING btree (COALESCE(campus_id, '00000000-0000-0000-0000-000000000000'::uuid), lower(name))"
+9 3,departments_campus_slug_key,departments,True,True,False,,"CREATE UNIQUE INDEX departments_campus_slug_key ON public.departments USING btree (campus_id, slug) NULLS NOT DISTINCT"
+0 3,departments_campus_slug_uniq,departments,True,True,False,,"CREATE UNIQUE INDEX departments_campus_slug_uniq ON public.departments USING btree (COALESCE(campus_id, '00000000-0000-0000-0000-000000000000'::uuid), slug)"
+1,departments_pkey,departments,True,True,True,,CREATE UNIQUE INDEX departments_pkey ON public.departments USING btree (id)
+9,idx_departments_campus_id,departments,True,False,False,,CREATE INDEX idx_departments_campus_id ON public.departments USING btree (campus_id)
+4,idx_departments_faculty,departments,True,False,False,,CREATE INDEX idx_departments_faculty ON public.departments USING btree (faculty)
+5,idx_departments_is_active,departments,True,False,False,,CREATE INDEX idx_departments_is_active ON public.departments USING btree (is_active)
+3,idx_departments_slug,departments,True,False,False,,CREATE INDEX idx_departments_slug ON public.departments USING btree (slug)
+6,idx_departments_sort_order,departments,True,False,False,,CREATE INDEX idx_departments_sort_order ON public.departments USING btree (sort_order)
+3,device_fingerprints_fingerprint_key,device_fingerprints,True,True,False,,CREATE UNIQUE INDEX device_fingerprints_fingerprint_key ON public.device_fingerprints USING btree (fingerprint)
+1,device_fingerprints_pkey,device_fingerprints,True,True,True,,CREATE UNIQUE INDEX device_fingerprints_pkey ON public.device_fingerprints USING btree (id)
+6,idx_device_fingerprints_campus_id,device_fingerprints,True,False,False,,CREATE INDEX idx_device_fingerprints_campus_id ON public.device_fingerprints USING btree (campus_id)
+3,idx_device_fingerprints_fingerprint,device_fingerprints,True,False,False,,CREATE INDEX idx_device_fingerprints_fingerprint ON public.device_fingerprints USING btree (fingerprint)
+2,idx_device_fingerprints_user,device_fingerprints,True,False,False,,CREATE INDEX idx_device_fingerprints_user ON public.device_fingerprints USING btree (user_id)
+1,device_tokens_pkey,device_tokens,True,True,True,,CREATE UNIQUE INDEX device_tokens_pkey ON public.device_tokens USING btree (id)
+2 3,device_tokens_user_id_token_key,device_tokens,True,True,False,,"CREATE UNIQUE INDEX device_tokens_user_id_token_key ON public.device_tokens USING btree (user_id, token)"
+8,idx_device_tokens_campus_id,device_tokens,True,False,False,,CREATE INDEX idx_device_tokens_campus_id ON public.device_tokens USING btree (campus_id)
+1 2,email_send_counters_pkey,email_send_counters,True,True,True,,"CREATE UNIQUE INDEX email_send_counters_pkey ON public.email_send_counters USING btree (provider, usage_date)"
+1,email_templates_pkey,email_templates,True,True,True,,CREATE UNIQUE INDEX email_templates_pkey ON public.email_templates USING btree (template_key)
+1,event_checkins_pkey,event_checkins,True,True,True,,CREATE UNIQUE INDEX event_checkins_pkey ON public.event_checkins USING btree (id)
+2,event_checkins_ticket_id_key,event_checkins,True,True,False,,CREATE UNIQUE INDEX event_checkins_ticket_id_key ON public.event_checkins USING btree (ticket_id)
+7,idx_event_checkins_campus_id,event_checkins,True,False,False,,CREATE INDEX idx_event_checkins_campus_id ON public.event_checkins USING btree (campus_id)
+4,idx_event_checkins_checked_in_by,event_checkins,True,False,False,,CREATE INDEX idx_event_checkins_checked_in_by ON public.event_checkins USING btree (checked_in_by)
+5,idx_event_checkins_hp_tx_id,event_checkins,True,False,False,,CREATE INDEX idx_event_checkins_hp_tx_id ON public.event_checkins USING btree (hp_transaction_id)
+2 6,idx_event_checkins_ticket_created,event_checkins,True,False,False,,"CREATE INDEX idx_event_checkins_ticket_created ON public.event_checkins USING btree (ticket_id, created_at)"
+1,event_door_tokens_pkey,event_door_tokens,True,True,True,,CREATE UNIQUE INDEX event_door_tokens_pkey ON public.event_door_tokens USING btree (event_id)
+1,event_organizer_reviews_pkey,event_organizer_reviews,True,True,True,,CREATE UNIQUE INDEX event_organizer_reviews_pkey ON hg_internal.event_organizer_reviews USING btree (event_id)
+1,event_organizer_terms_pkey,event_organizer_terms,True,True,True,,CREATE UNIQUE INDEX event_organizer_terms_pkey ON hg_internal.event_organizer_terms USING btree (tier_id)
+7,event_payout_requests_bank_transfer_reference_key,event_payout_requests,True,True,False,,CREATE UNIQUE INDEX event_payout_requests_bank_transfer_reference_key ON hg_internal.event_payout_requests USING btree (bank_transfer_reference)
+1,event_payout_requests_pkey,event_payout_requests,True,True,True,,CREATE UNIQUE INDEX event_payout_requests_pkey ON hg_internal.event_payout_requests USING btree (id)
+2 5,event_payouts_event_state_idx,event_payout_requests,True,False,False,,"CREATE INDEX event_payouts_event_state_idx ON hg_internal.event_payout_requests USING btree (event_id, state)"
+2 3,event_ticket_earnings_owner_event_idx,event_ticket_earnings,True,False,False,,"CREATE INDEX event_ticket_earnings_owner_event_idx ON hg_internal.event_ticket_earnings USING btree (event_id, organizer_id)"
+1,event_ticket_earnings_pkey,event_ticket_earnings,True,True,True,,CREATE UNIQUE INDEX event_ticket_earnings_pkey ON hg_internal.event_ticket_earnings USING btree (ticket_id)
+11 20,event_ticket_refunds_due,event_ticket_refunds,True,False,False,,"CREATE INDEX event_ticket_refunds_due ON hg_internal.event_ticket_refunds USING btree (state, next_at)"
+1,event_ticket_refunds_pkey,event_ticket_refunds,True,True,True,,CREATE UNIQUE INDEX event_ticket_refunds_pkey ON hg_internal.event_ticket_refunds USING btree (id)
+13,event_ticket_refunds_provider_refund_id_key,event_ticket_refunds,True,True,False,,CREATE UNIQUE INDEX event_ticket_refunds_provider_refund_id_key ON hg_internal.event_ticket_refunds USING btree (provider_refund_id)
+2,event_ticket_refunds_ticket_id_key,event_ticket_refunds,True,True,False,,CREATE UNIQUE INDEX event_ticket_refunds_ticket_id_key ON hg_internal.event_ticket_refunds USING btree (ticket_id)
+1,event_ticket_tiers_pkey,event_ticket_tiers,True,True,True,,CREATE UNIQUE INDEX event_ticket_tiers_pkey ON public.event_ticket_tiers USING btree (id)
+13,idx_event_ticket_tiers_campus_id,event_ticket_tiers,True,False,False,,CREATE INDEX idx_event_ticket_tiers_campus_id ON public.event_ticket_tiers USING btree (campus_id)
+2,idx_event_ticket_tiers_event_id,event_ticket_tiers,True,False,False,,CREATE INDEX idx_event_ticket_tiers_event_id ON public.event_ticket_tiers USING btree (event_id)
+1,event_tickets_pkey,event_tickets,True,True,True,,CREATE UNIQUE INDEX event_tickets_pkey ON public.event_tickets USING btree (id)
+6,event_tickets_qr_code_key,event_tickets,True,True,False,,CREATE UNIQUE INDEX event_tickets_qr_code_key ON public.event_tickets USING btree (qr_code)
+10,idx_event_tickets_campus_id,event_tickets,True,False,False,,CREATE INDEX idx_event_tickets_campus_id ON public.event_tickets USING btree (campus_id)
+2,idx_event_tickets_event,event_tickets,True,False,False,,CREATE INDEX idx_event_tickets_event ON public.event_tickets USING btree (event_id)
+9,idx_event_tickets_tier_id,event_tickets,True,False,False,,CREATE INDEX idx_event_tickets_tier_id ON public.event_tickets USING btree (tier_id)
+3,idx_event_tickets_user,event_tickets,True,False,False,,CREATE INDEX idx_event_tickets_user ON public.event_tickets USING btree (user_id)
+2 3,uq_event_tickets_active_user_event,event_tickets,True,True,False,(status <> 'cancelled'::text),"CREATE UNIQUE INDEX uq_event_tickets_active_user_event ON public.event_tickets USING btree (event_id, user_id) WHERE (status <> 'cancelled'::text)"
+17 14,events_organizer_idx,events,True,False,False,,"CREATE INDEX events_organizer_idx ON public.events USING btree (organizer_id, created_at DESC)"
+1,events_pkey,events,True,True,True,,CREATE UNIQUE INDEX events_pkey ON public.events USING btree (id)
+3,events_slug_key,events,True,True,False,,CREATE UNIQUE INDEX events_slug_key ON public.events USING btree (slug)
+25,idx_events_campus_id,events,True,False,False,,CREATE INDEX idx_events_campus_id ON public.events USING btree (campus_id)
+16,idx_events_featured,events,True,False,False,(is_featured = true),CREATE INDEX idx_events_featured ON public.events USING btree (is_featured) WHERE (is_featured = true)
+17,idx_events_organizer_id,events,True,False,False,,CREATE INDEX idx_events_organizer_id ON public.events USING btree (organizer_id)
+5,idx_events_published,events,True,False,False,(is_published = true),CREATE INDEX idx_events_published ON public.events USING btree (starts_at) WHERE (is_published = true)
+2 9,exclusive_spin_fulfillments_intent_key_idx,exclusive_spin_fulfillments,True,True,False,(intent_key IS NOT NULL),"CREATE UNIQUE INDEX exclusive_spin_fulfillments_intent_key_idx ON public.exclusive_spin_fulfillments USING btree (user_id, intent_key) WHERE (intent_key IS NOT NULL)"
+1,exclusive_spin_fulfillments_pkey,exclusive_spin_fulfillments,True,True,True,,CREATE UNIQUE INDEX exclusive_spin_fulfillments_pkey ON public.exclusive_spin_fulfillments USING btree (id)
+2 8 7 1,exclusive_spin_pending_delivery_idx,exclusive_spin_fulfillments,True,False,False,((status = 'pending'::text) AND (applied_order_id IS NULL) AND ((result_snapshot ->> 'prize_type'::text) = 'free_delivery'::text)),"CREATE INDEX exclusive_spin_pending_delivery_idx ON public.exclusive_spin_fulfillments USING btree (user_id, campus_id, created_at, id) WHERE ((status = 'pending'::text) AND (applied_order_id IS NULL) AND ((result_snapshot ->> 'prize_type'::text) = 'free_delivery'::text))"
+1,exclusive_spin_prizes_pkey,exclusive_spin_prizes,True,True,True,,CREATE UNIQUE INDEX exclusive_spin_prizes_pkey ON public.exclusive_spin_prizes USING btree (id)
+2 5,exclusive_spins_one_leaderboard_prize_per_month,exclusive_spins,True,True,False,(source = 'leaderboard_prize'::text),"CREATE UNIQUE INDEX exclusive_spins_one_leaderboard_prize_per_month ON public.exclusive_spins USING btree (user_id, month) WHERE (source = 'leaderboard_prize'::text)"
+1,exclusive_spins_pkey,exclusive_spins,True,True,True,,CREATE UNIQUE INDEX exclusive_spins_pkey ON public.exclusive_spins USING btree (id)
+2 7,idx_exclusive_spins_active,exclusive_spins,True,False,False,(spin_count > 0),"CREATE INDEX idx_exclusive_spins_active ON public.exclusive_spins USING btree (user_id, expires_at) WHERE (spin_count > 0)"
+8,idx_exclusive_spins_campus_id,exclusive_spins,True,False,False,,CREATE INDEX idx_exclusive_spins_campus_id ON public.exclusive_spins USING btree (campus_id)
+7,idx_exclusive_spins_expires_at,exclusive_spins,True,False,False,,CREATE INDEX idx_exclusive_spins_expires_at ON public.exclusive_spins USING btree (expires_at)
+2,idx_exclusive_spins_user_id,exclusive_spins,True,False,False,,CREATE INDEX idx_exclusive_spins_user_id ON public.exclusive_spins USING btree (user_id)
+6,idx_feature_flags_campus_id,feature_flags,True,False,False,,CREATE INDEX idx_feature_flags_campus_id ON public.feature_flags USING btree (campus_id)
+5,idx_feature_flags_updated_by,feature_flags,True,False,False,,CREATE INDEX idx_feature_flags_updated_by ON public.feature_flags USING btree (updated_by)
+1 0,uq_feature_flags_name_campus,feature_flags,True,True,False,,"CREATE UNIQUE INDEX uq_feature_flags_name_campus ON public.feature_flags USING btree (feature_name, COALESCE(campus_id, '00000000-0000-0000-0000-000000000000'::uuid))"
+1,first_order_gifts_pkey,first_order_gifts,True,True,True,,CREATE UNIQUE INDEX first_order_gifts_pkey ON public.first_order_gifts USING btree (id)
+2,first_order_gifts_user_id_key,first_order_gifts,True,True,False,,CREATE UNIQUE INDEX first_order_gifts_user_id_key ON public.first_order_gifts USING btree (user_id)
+7,idx_first_order_gifts_campus_id,first_order_gifts,True,False,False,,CREATE INDEX idx_first_order_gifts_campus_id ON public.first_order_gifts USING btree (campus_id)
+3,idx_first_order_gifts_order_id,first_order_gifts,True,False,False,,CREATE INDEX idx_first_order_gifts_order_id ON public.first_order_gifts USING btree (order_id)
+4,idx_first_order_gifts_status,first_order_gifts,True,False,False,(status = 'pending'::text),CREATE INDEX idx_first_order_gifts_status ON public.first_order_gifts USING btree (status) WHERE (status = 'pending'::text)
+7,flash_redemptions_is_active_idx,flash_redemptions,True,False,False,(is_active = true),CREATE INDEX flash_redemptions_is_active_idx ON public.flash_redemptions USING btree (is_active) WHERE (is_active = true)
+1,flash_redemptions_pkey,flash_redemptions,True,True,True,,CREATE UNIQUE INDEX flash_redemptions_pkey ON public.flash_redemptions USING btree (id)
+2,flash_redemptions_reward_id_idx,flash_redemptions,True,False,False,,CREATE INDEX flash_redemptions_reward_id_idx ON public.flash_redemptions USING btree (reward_id)
+10,idx_flash_redemptions_campus_id,flash_redemptions,True,False,False,,CREATE INDEX idx_flash_redemptions_campus_id ON public.flash_redemptions USING btree (campus_id)
+1,free_side_credits_pkey,free_side_credits,True,True,True,,CREATE UNIQUE INDEX free_side_credits_pkey ON public.free_side_credits USING btree (id)
+2 7,idx_free_side_credits_active,free_side_credits,True,False,False,(credits_remaining > 0),"CREATE INDEX idx_free_side_credits_active ON public.free_side_credits USING btree (user_id, expires_at) WHERE (credits_remaining > 0)"
+9,idx_free_side_credits_campus_id,free_side_credits,True,False,False,,CREATE INDEX idx_free_side_credits_campus_id ON public.free_side_credits USING btree (campus_id)
+7,idx_free_side_credits_expires_at,free_side_credits,True,False,False,,CREATE INDEX idx_free_side_credits_expires_at ON public.free_side_credits USING btree (expires_at)
+2,idx_free_side_credits_user_id,free_side_credits,True,False,False,,CREATE INDEX idx_free_side_credits_user_id ON public.free_side_credits USING btree (user_id)
+1,free_side_items_pkey,free_side_items,True,True,True,,CREATE UNIQUE INDEX free_side_items_pkey ON public.free_side_items USING btree (id)
+11 0,gates_campus_normalized_name_key,gates,True,True,False,,"CREATE UNIQUE INDEX gates_campus_normalized_name_key ON public.gates USING btree (campus_id, lower(btrim(name))) NULLS NOT DISTINCT"
+1,gates_pkey,gates,True,True,True,,CREATE UNIQUE INDEX gates_pkey ON public.gates USING btree (id)
+11,idx_gates_campus_id,gates,True,False,False,,CREATE INDEX idx_gates_campus_id ON public.gates USING btree (campus_id)
+1 2,guest_cart_email_optouts_pkey,guest_cart_email_optouts,True,True,True,,"CREATE UNIQUE INDEX guest_cart_email_optouts_pkey ON hg_internal.guest_cart_email_optouts USING btree (campus_id, email)"
+1,hall_of_fame_inductees_pkey,hall_of_fame_inductees,True,True,True,,CREATE UNIQUE INDEX hall_of_fame_inductees_pkey ON public.hall_of_fame_inductees USING btree (id)
+2,hall_of_fame_inductees_user_id_key,hall_of_fame_inductees,True,True,False,,CREATE UNIQUE INDEX hall_of_fame_inductees_user_id_key ON public.hall_of_fame_inductees USING btree (user_id)
+9,idx_hall_of_fame_inductees_campus_id,hall_of_fame_inductees,True,False,False,,CREATE INDEX idx_hall_of_fame_inductees_campus_id ON public.hall_of_fame_inductees USING btree (campus_id)
+1,hall_of_fame_rewards_pkey,hall_of_fame_rewards,True,True,True,,CREATE UNIQUE INDEX hall_of_fame_rewards_pkey ON public.hall_of_fame_rewards USING btree (id)
+2,hall_of_fame_rewards_user_id_key,hall_of_fame_rewards,True,True,False,,CREATE UNIQUE INDEX hall_of_fame_rewards_user_id_key ON public.hall_of_fame_rewards USING btree (user_id)
+9,idx_hall_of_fame_rewards_campus_id,hall_of_fame_rewards,True,False,False,,CREATE INDEX idx_hall_of_fame_rewards_campus_id ON public.hall_of_fame_rewards USING btree (campus_id)
+6,idx_hall_of_fame_rewards_fulfilled_by,hall_of_fame_rewards,True,False,False,,CREATE INDEX idx_hall_of_fame_rewards_fulfilled_by ON public.hall_of_fame_rewards USING btree (fulfilled_by)
+4,idx_hof_rewards_status,hall_of_fame_rewards,True,False,False,,CREATE INDEX idx_hof_rewards_status ON public.hall_of_fame_rewards USING btree (status)
+8 0,hostels_campus_normalized_name_key,hostels,True,True,False,,"CREATE UNIQUE INDEX hostels_campus_normalized_name_key ON public.hostels USING btree (campus_id, lower(btrim(name))) NULLS NOT DISTINCT"
+1,hostels_pkey,hostels,True,True,True,,CREATE UNIQUE INDEX hostels_pkey ON public.hostels USING btree (id)
+8,idx_hostels_campus_id,hostels,True,False,False,,CREATE INDEX idx_hostels_campus_id ON public.hostels USING btree (campus_id)
+3,idx_hostels_gate_id,hostels,True,False,False,,CREATE INDEX idx_hostels_gate_id ON public.hostels USING btree (gate_id)
+2,hp_bundle_purchases_event_host_id_idx,hp_bundle_purchases,True,False,False,,CREATE INDEX hp_bundle_purchases_event_host_id_idx ON public.hp_bundle_purchases USING btree (event_host_id)
+1,hp_bundle_purchases_pkey,hp_bundle_purchases,True,True,True,,CREATE UNIQUE INDEX hp_bundle_purchases_pkey ON public.hp_bundle_purchases USING btree (id)
+8,idx_hp_bundle_purchases_campus_id,hp_bundle_purchases,True,False,False,,CREATE INDEX idx_hp_bundle_purchases_campus_id ON public.hp_bundle_purchases USING btree (campus_id)
+1,hp_bundles_pkey,hp_bundles,True,True,True,,CREATE UNIQUE INDEX hp_bundles_pkey ON public.hp_bundles USING btree (id)
+7,idx_hp_bundles_active,hp_bundles,True,False,False,(is_active = true),CREATE INDEX idx_hp_bundles_active ON public.hp_bundles USING btree (is_active) WHERE (is_active = true)
+10,idx_hp_bundles_campus_id,hp_bundles,True,False,False,,CREATE INDEX idx_hp_bundles_campus_id ON public.hp_bundles USING btree (campus_id)
+1,hp_expiry_log_pkey,hp_expiry_log,True,True,True,,CREATE UNIQUE INDEX hp_expiry_log_pkey ON public.hp_expiry_log USING btree (id)
+9,idx_hp_expiry_log_campus_id,hp_expiry_log,True,False,False,,CREATE INDEX idx_hp_expiry_log_campus_id ON public.hp_expiry_log USING btree (campus_id)
+3,idx_hp_expiry_log_hp_tx_id,hp_expiry_log,True,False,False,,CREATE INDEX idx_hp_expiry_log_hp_tx_id ON public.hp_expiry_log USING btree (hp_transaction_id)
+7,idx_hp_expiry_log_notification_id,hp_expiry_log,True,False,False,,CREATE INDEX idx_hp_expiry_log_notification_id ON public.hp_expiry_log USING btree (notification_id)
+2 8,idx_hp_expiry_log_user_created,hp_expiry_log,True,False,False,,"CREATE INDEX idx_hp_expiry_log_user_created ON public.hp_expiry_log USING btree (user_id, created_at DESC)"
+2,hp_tiers_name_key,hp_tiers,True,True,False,,CREATE UNIQUE INDEX hp_tiers_name_key ON public.hp_tiers USING btree (name)
+1,hp_tiers_pkey,hp_tiers,True,True,True,,CREATE UNIQUE INDEX hp_tiers_pkey ON public.hp_tiers USING btree (id)
+12,idx_hp_tiers_campus_id,hp_tiers,True,False,False,,CREATE INDEX idx_hp_tiers_campus_id ON public.hp_tiers USING btree (campus_id)
+7,idx_hp_tiers_sort,hp_tiers,True,False,False,,CREATE INDEX idx_hp_tiers_sort ON public.hp_tiers USING btree (sort_order)
+9,uq_hp_tiers_slug,hp_tiers,True,True,False,,CREATE UNIQUE INDEX uq_hp_tiers_slug ON public.hp_tiers USING btree (slug)
+1,hp_transactions_pkey,hp_transactions,True,True,True,,CREATE UNIQUE INDEX hp_transactions_pkey ON public.hp_transactions USING btree (id)
+2 7 8,hp_transactions_unique_business_key_idx,hp_transactions,True,True,False,((reference_type IS NOT NULL) AND (reference_type <> ''::text) AND (reference_id IS NOT NULL)),"CREATE UNIQUE INDEX hp_transactions_unique_business_key_idx ON public.hp_transactions USING btree (user_id, reference_type, reference_id) WHERE ((reference_type IS NOT NULL) AND (reference_type <> ''::text) AND (reference_id IS NOT NULL))"
+15,idx_hp_transactions_campus_id,hp_transactions,True,False,False,,CREATE INDEX idx_hp_transactions_campus_id ON public.hp_transactions USING btree (campus_id)
+2 11,idx_hp_transactions_user_created,hp_transactions,True,False,False,,"CREATE INDEX idx_hp_transactions_user_created ON public.hp_transactions USING btree (user_id, created_at DESC)"
+2 14,idx_hp_transactions_user_status,hp_transactions,True,False,False,,"CREATE INDEX idx_hp_transactions_user_status ON public.hp_transactions USING btree (user_id, status)"
+2 12,idx_hp_tx_expiring,hp_transactions,True,False,False,((expires_at IS NOT NULL) AND (remaining_amount > 0)),"CREATE INDEX idx_hp_tx_expiring ON public.hp_transactions USING btree (user_id, expires_at) WHERE ((expires_at IS NOT NULL) AND (remaining_amount > 0))"
+9,idx_hp_tx_issued_by_admin_id,hp_transactions,True,False,False,,CREATE INDEX idx_hp_tx_issued_by_admin_id ON public.hp_transactions USING btree (issued_by_admin_id)
+7 8,idx_hp_tx_reference,hp_transactions,True,False,False,,"CREATE INDEX idx_hp_tx_reference ON public.hp_transactions USING btree (reference_type, reference_id)"
+2 3,idx_hp_tx_type,hp_transactions,True,False,False,,"CREATE INDEX idx_hp_tx_type ON public.hp_transactions USING btree (user_id, type)"
+2 7 8,uq_hp_transactions_reward_unique,hp_transactions,True,True,False,"((reference_type = ANY (ARRAY['order_review'::text, 'referral'::text, 'challenge'::text, 'daily_checkins'::text, 'daily_checkin'::text, 'event_checkin'::text, 'birthday'::text, 'signup_bonus'::text, 'welcome_bonus'::text])) AND (reference_type IS NOT NULL) AND (reference_id IS NOT NULL) AND (type = 'earn'::text))","CREATE UNIQUE INDEX uq_hp_transactions_reward_unique ON public.hp_transactions USING btree (user_id, reference_type, reference_id) WHERE ((reference_type = ANY (ARRAY['order_review'::text, 'referral'::text, 'challenge'::text, 'daily_checkins'::text, 'daily_checkin'::text, 'event_checkin'::text, 'birthday'::text, 'signup_bonus'::text, 'welcome_bonus'::text])) AND (reference_type IS NOT NULL) AND (reference_id IS NOT NULL) AND (type = 'earn'::text))"
+5,idx_kitchen_settings_campus_id,kitchen_settings,True,False,False,,CREATE INDEX idx_kitchen_settings_campus_id ON public.kitchen_settings USING btree (campus_id)
+4,idx_kitchen_settings_updated_by,kitchen_settings,True,False,False,,CREATE INDEX idx_kitchen_settings_updated_by ON public.kitchen_settings USING btree (updated_by)
+1 5,kitchen_settings_pkey,kitchen_settings,True,True,True,,"CREATE UNIQUE INDEX kitchen_settings_pkey ON public.kitchen_settings USING btree (key, campus_id)"
+10,idx_leaderboard_entries_campus_id,leaderboard_entries,True,False,False,,CREATE INDEX idx_leaderboard_entries_campus_id ON public.leaderboard_entries USING btree (campus_id)
+3,idx_leaderboard_entries_user_id,leaderboard_entries,True,False,False,,CREATE INDEX idx_leaderboard_entries_user_id ON public.leaderboard_entries USING btree (user_id)
+2 4,idx_leaderboard_period_rank,leaderboard_entries,True,False,False,,"CREATE INDEX idx_leaderboard_period_rank ON public.leaderboard_entries USING btree (period, rank)"
+2 3,leaderboard_entries_period_user_id_key,leaderboard_entries,True,True,False,,"CREATE UNIQUE INDEX leaderboard_entries_period_user_id_key ON public.leaderboard_entries USING btree (period, user_id)"
+1,leaderboard_entries_pkey,leaderboard_entries,True,True,True,,CREATE UNIQUE INDEX leaderboard_entries_pkey ON public.leaderboard_entries USING btree (id)
+4,idx_lb_fulfillments_month,leaderboard_reward_fulfillments,True,False,False,,CREATE INDEX idx_lb_fulfillments_month ON public.leaderboard_reward_fulfillments USING btree (month)
+8,idx_lb_fulfillments_status,leaderboard_reward_fulfillments,True,False,False,,CREATE INDEX idx_lb_fulfillments_status ON public.leaderboard_reward_fulfillments USING btree (status)
+13,idx_leaderboard_reward_fulfillments_campus_id,leaderboard_reward_fulfillments,True,False,False,,CREATE INDEX idx_leaderboard_reward_fulfillments_campus_id ON public.leaderboard_reward_fulfillments USING btree (campus_id)
+10,idx_leaderboard_reward_fulfillments_fulfilled_by,leaderboard_reward_fulfillments,True,False,False,,CREATE INDEX idx_leaderboard_reward_fulfillments_fulfilled_by ON public.leaderboard_reward_fulfillments USING btree (fulfilled_by)
+1,leaderboard_reward_fulfillments_pkey,leaderboard_reward_fulfillments,True,True,True,,CREATE UNIQUE INDEX leaderboard_reward_fulfillments_pkey ON public.leaderboard_reward_fulfillments USING btree (id)
+2 4,uq_lb_fulfillment_user_month,leaderboard_reward_fulfillments,True,True,False,,"CREATE UNIQUE INDEX uq_lb_fulfillment_user_month ON public.leaderboard_reward_fulfillments USING btree (user_id, month)"
+7,idx_leaderboard_snapshots_campus_id,leaderboard_snapshots,True,False,False,,CREATE INDEX idx_leaderboard_snapshots_campus_id ON public.leaderboard_snapshots USING btree (campus_id)
+7 2 3,leaderboard_snapshots_campus_period_type_uidx,leaderboard_snapshots,True,True,False,,"CREATE UNIQUE INDEX leaderboard_snapshots_campus_period_type_uidx ON public.leaderboard_snapshots USING btree (campus_id, period_key, ranking_type) NULLS NOT DISTINCT"
+1,leaderboard_snapshots_pkey,leaderboard_snapshots,True,True,True,,CREATE UNIQUE INDEX leaderboard_snapshots_pkey ON public.leaderboard_snapshots USING btree (id)
+6,idx_login_streak_rewards_campus_id,login_streak_rewards,True,False,False,,CREATE INDEX idx_login_streak_rewards_campus_id ON public.login_streak_rewards USING btree (campus_id)
+1,login_streak_rewards_pkey,login_streak_rewards,True,True,True,,CREATE UNIQUE INDEX login_streak_rewards_pkey ON public.login_streak_rewards USING btree (id)
+2,uq_login_streak_rewards_week,login_streak_rewards,True,True,False,,CREATE UNIQUE INDEX uq_login_streak_rewards_week ON public.login_streak_rewards USING btree (week_number)
+10,idx_login_streaks_campus_id,login_streaks,True,False,False,,CREATE INDEX idx_login_streaks_campus_id ON public.login_streaks USING btree (campus_id)
+2,idx_login_streaks_user,login_streaks,True,False,False,,CREATE INDEX idx_login_streaks_user ON public.login_streaks USING btree (user_id)
+1,login_streaks_pkey,login_streaks,True,True,True,,CREATE UNIQUE INDEX login_streaks_pkey ON public.login_streaks USING btree (id)
+2,login_streaks_user_id_key,login_streaks,True,True,False,,CREATE UNIQUE INDEX login_streaks_user_id_key ON public.login_streaks USING btree (user_id)
+9,idx_marketplace_access_codes_campus_id,marketplace_access_codes,True,False,False,,CREATE INDEX idx_marketplace_access_codes_campus_id ON public.marketplace_access_codes USING btree (campus_id)
+5 2,idx_marketplace_access_codes_status_listing,marketplace_access_codes,True,False,False,,"CREATE INDEX idx_marketplace_access_codes_status_listing ON public.marketplace_access_codes USING btree (status, listing_id)"
+2,idx_marketplace_codes_available,marketplace_access_codes,True,False,False,(status = 'available'::text),CREATE INDEX idx_marketplace_codes_available ON public.marketplace_access_codes USING btree (listing_id) WHERE (status = 'available'::text)
+2 5,idx_marketplace_codes_listing,marketplace_access_codes,True,False,False,,"CREATE INDEX idx_marketplace_codes_listing ON public.marketplace_access_codes USING btree (listing_id, status)"
+3,idx_mkt_access_codes_batch_id,marketplace_access_codes,True,False,False,,CREATE INDEX idx_mkt_access_codes_batch_id ON public.marketplace_access_codes USING btree (batch_id)
+2 4,marketplace_access_codes_listing_id_code_key,marketplace_access_codes,True,True,False,,"CREATE UNIQUE INDEX marketplace_access_codes_listing_id_code_key ON public.marketplace_access_codes USING btree (listing_id, code)"
+1,marketplace_access_codes_pkey,marketplace_access_codes,True,True,True,,CREATE UNIQUE INDEX marketplace_access_codes_pkey ON public.marketplace_access_codes USING btree (id)
+7,idx_marketplace_code_batches_campus_id,marketplace_code_batches,True,False,False,,CREATE INDEX idx_marketplace_code_batches_campus_id ON public.marketplace_code_batches USING btree (campus_id)
+2,idx_mkt_code_batches_listing_id,marketplace_code_batches,True,False,False,,CREATE INDEX idx_mkt_code_batches_listing_id ON public.marketplace_code_batches USING btree (listing_id)
+3,idx_mkt_code_batches_uploaded_by,marketplace_code_batches,True,False,False,,CREATE INDEX idx_mkt_code_batches_uploaded_by ON public.marketplace_code_batches USING btree (uploaded_by)
+1,marketplace_code_batches_pkey,marketplace_code_batches,True,True,True,,CREATE UNIQUE INDEX marketplace_code_batches_pkey ON public.marketplace_code_batches USING btree (id)
+2 3,marketplace_listing_availability_listing_id_campus_id_key,marketplace_listing_availability,True,True,False,,"CREATE UNIQUE INDEX marketplace_listing_availability_listing_id_campus_id_key ON public.marketplace_listing_availability USING btree (listing_id, campus_id)"
+1,marketplace_listing_availability_pkey,marketplace_listing_availability,True,True,True,,CREATE UNIQUE INDEX marketplace_listing_availability_pkey ON public.marketplace_listing_availability USING btree (id)
+22 19,idx_marketplace_active,marketplace_listings,True,False,False,((status = 'active'::text) AND (is_out_of_stock = false)),"CREATE INDEX idx_marketplace_active ON public.marketplace_listings USING btree (sort_order, created_at) WHERE ((status = 'active'::text) AND (is_out_of_stock = false))"
+22,idx_marketplace_featured,marketplace_listings,True,False,False,((is_featured = true) AND (status = 'active'::text)),CREATE INDEX idx_marketplace_featured ON public.marketplace_listings USING btree (sort_order) WHERE ((is_featured = true) AND (status = 'active'::text))
+11,idx_marketplace_listings_approved_by,marketplace_listings,True,False,False,,CREATE INDEX idx_marketplace_listings_approved_by ON public.marketplace_listings USING btree (approved_by)
+28,idx_marketplace_listings_campus_id,marketplace_listings,True,False,False,,CREATE INDEX idx_marketplace_listings_campus_id ON public.marketplace_listings USING btree (campus_id)
+17,idx_marketplace_listings_min_tier_id,marketplace_listings,True,False,False,,CREATE INDEX idx_marketplace_listings_min_tier_id ON public.marketplace_listings USING btree (min_tier_id)
+2,idx_marketplace_title_trgm,marketplace_listings,True,False,False,,CREATE INDEX idx_marketplace_title_trgm ON public.marketplace_listings USING gin (title gin_trgm_ops)
+1,marketplace_listings_pkey,marketplace_listings,True,True,True,,CREATE UNIQUE INDEX marketplace_listings_pkey ON public.marketplace_listings USING btree (id)
+3,marketplace_listings_slug_key,marketplace_listings,True,True,False,,CREATE UNIQUE INDEX marketplace_listings_slug_key ON public.marketplace_listings USING btree (slug)
+4 6 10,idx_marketplace_reports_campus_status,marketplace_purchase_reports,True,False,False,,"CREATE INDEX idx_marketplace_reports_campus_status ON public.marketplace_purchase_reports USING btree (campus_id, status, created_at DESC)"
+1,marketplace_purchase_reports_pkey,marketplace_purchase_reports,True,True,True,,CREATE UNIQUE INDEX marketplace_purchase_reports_pkey ON public.marketplace_purchase_reports USING btree (id)
+2,uq_marketplace_reports_one_open,marketplace_purchase_reports,True,True,False,(status = 'open'::text),CREATE UNIQUE INDEX uq_marketplace_reports_one_open ON public.marketplace_purchase_reports USING btree (purchase_id) WHERE (status = 'open'::text)
+17,idx_marketplace_purchases_campus_id,marketplace_purchases,True,False,False,,CREATE INDEX idx_marketplace_purchases_campus_id ON public.marketplace_purchases USING btree (campus_id)
+3,idx_marketplace_purchases_listing,marketplace_purchases,True,False,False,,CREATE INDEX idx_marketplace_purchases_listing ON public.marketplace_purchases USING btree (listing_id)
+2 10,idx_marketplace_purchases_user,marketplace_purchases,True,False,False,,"CREATE INDEX idx_marketplace_purchases_user ON public.marketplace_purchases USING btree (user_id, created_at DESC)"
+16,idx_mkt_purchases_hp_tx_id,marketplace_purchases,True,False,False,,CREATE INDEX idx_mkt_purchases_hp_tx_id ON public.marketplace_purchases USING btree (hp_tx_id)
+15,idx_mkt_purchases_wallet_tx_id,marketplace_purchases,True,False,False,,CREATE INDEX idx_mkt_purchases_wallet_tx_id ON public.marketplace_purchases USING btree (wallet_tx_id)
+1,marketplace_purchases_pkey,marketplace_purchases,True,True,True,,CREATE UNIQUE INDEX marketplace_purchases_pkey ON public.marketplace_purchases USING btree (id)
+2 14,uq_marketplace_purchases_user_reference,marketplace_purchases,True,True,False,(payment_reference IS NOT NULL),"CREATE UNIQUE INDEX uq_marketplace_purchases_user_reference ON public.marketplace_purchases USING btree (user_id, payment_reference) WHERE (payment_reference IS NOT NULL)"
+15,idx_marketplace_requests_campus_id,marketplace_requests,True,False,False,,CREATE INDEX idx_marketplace_requests_campus_id ON public.marketplace_requests USING btree (campus_id)
+11,idx_marketplace_requests_reviewed_by,marketplace_requests,True,False,False,,CREATE INDEX idx_marketplace_requests_reviewed_by ON public.marketplace_requests USING btree (reviewed_by)
+9 13,idx_marketplace_requests_status,marketplace_requests,True,False,False,,"CREATE INDEX idx_marketplace_requests_status ON public.marketplace_requests USING btree (status, created_at DESC)"
+1,marketplace_requests_pkey,marketplace_requests,True,True,True,,CREATE UNIQUE INDEX marketplace_requests_pkey ON public.marketplace_requests USING btree (id)
+2,measurement_units_name_key,measurement_units,True,True,False,,CREATE UNIQUE INDEX measurement_units_name_key ON public.measurement_units USING btree (name)
+1,measurement_units_pkey,measurement_units,True,True,True,,CREATE UNIQUE INDEX measurement_units_pkey ON public.measurement_units USING btree (id)
+6,idx_membership_rewards_campus_id,membership_rewards,True,False,False,,CREATE INDEX idx_membership_rewards_campus_id ON public.membership_rewards USING btree (campus_id)
+1,membership_rewards_pkey,membership_rewards,True,True,True,,CREATE UNIQUE INDEX membership_rewards_pkey ON public.membership_rewards USING btree (id)
+2,uq_membership_rewards_months,membership_rewards,True,True,False,,CREATE UNIQUE INDEX uq_membership_rewards_months ON public.membership_rewards USING btree (months)
+10,idx_menu_addon_groups_campus_id,menu_addon_groups,True,False,False,,CREATE INDEX idx_menu_addon_groups_campus_id ON public.menu_addon_groups USING btree (campus_id)
+2,idx_menu_addon_groups_item,menu_addon_groups,True,False,False,,CREATE INDEX idx_menu_addon_groups_item ON public.menu_addon_groups USING btree (menu_item_id)
+1,menu_addon_groups_pkey,menu_addon_groups,True,True,True,,CREATE UNIQUE INDEX menu_addon_groups_pkey ON public.menu_addon_groups USING btree (id)
+5 6,idx_menu_addons_available,menu_addons,True,False,False,,"CREATE INDEX idx_menu_addons_available ON public.menu_addons USING btree (is_available, is_archived)"
+11,idx_menu_addons_campus_id,menu_addons,True,False,False,,CREATE INDEX idx_menu_addons_campus_id ON public.menu_addons USING btree (campus_id)
+10,idx_menu_addons_group_id,menu_addons,True,False,False,,CREATE INDEX idx_menu_addons_group_id ON public.menu_addons USING btree (group_id)
+1,menu_addons_pkey,menu_addons,True,True,True,,CREATE UNIQUE INDEX menu_addons_pkey ON public.menu_addons USING btree (id)
+5,idx_menu_categories_active,menu_categories,True,False,False,(is_active = true),CREATE INDEX idx_menu_categories_active ON public.menu_categories USING btree (sort_order) WHERE (is_active = true)
+8,idx_menu_categories_campus_id,menu_categories,True,False,False,,CREATE INDEX idx_menu_categories_campus_id ON public.menu_categories USING btree (campus_id)
+1,menu_categories_pkey,menu_categories,True,True,True,,CREATE UNIQUE INDEX menu_categories_pkey ON public.menu_categories USING btree (id)
+3,menu_categories_slug_key,menu_categories,True,True,False,,CREATE UNIQUE INDEX menu_categories_slug_key ON public.menu_categories USING btree (slug)
+2 3,menu_item_availability_menu_item_id_campus_id_key,menu_item_availability,True,True,False,,"CREATE UNIQUE INDEX menu_item_availability_menu_item_id_campus_id_key ON public.menu_item_availability USING btree (menu_item_id, campus_id)"
+1,menu_item_availability_pkey,menu_item_availability,True,True,True,,CREATE UNIQUE INDEX menu_item_availability_pkey ON public.menu_item_availability USING btree (id)
+9,idx_menu_item_variation_groups_campus_id,menu_item_variation_groups,True,False,False,,CREATE INDEX idx_menu_item_variation_groups_campus_id ON public.menu_item_variation_groups USING btree (campus_id)
+2,idx_menu_item_variation_groups_item,menu_item_variation_groups,True,False,False,,CREATE INDEX idx_menu_item_variation_groups_item ON public.menu_item_variation_groups USING btree (menu_item_id)
+1,menu_item_variation_groups_pkey,menu_item_variation_groups,True,True,True,,CREATE UNIQUE INDEX menu_item_variation_groups_pkey ON public.menu_item_variation_groups USING btree (id)
+8,idx_menu_item_variation_options_campus_id,menu_item_variation_options,True,False,False,,CREATE INDEX idx_menu_item_variation_options_campus_id ON public.menu_item_variation_options USING btree (campus_id)
+2,idx_menu_item_variation_options_group,menu_item_variation_options,True,False,False,,CREATE INDEX idx_menu_item_variation_options_group ON public.menu_item_variation_options USING btree (variation_group_id)
+1,menu_item_variation_options_pkey,menu_item_variation_options,True,True,True,,CREATE UNIQUE INDEX menu_item_variation_options_pkey ON public.menu_item_variation_options USING btree (id)
+2,idx_menu_items_available,menu_items,True,False,False,(is_available = true),CREATE INDEX idx_menu_items_available ON public.menu_items USING btree (category_id) WHERE (is_available = true)
+19,idx_menu_items_campus_id,menu_items,True,False,False,,CREATE INDEX idx_menu_items_campus_id ON public.menu_items USING btree (campus_id)
+2,idx_menu_items_category,menu_items,True,False,False,,CREATE INDEX idx_menu_items_category ON public.menu_items USING btree (category_id)
+10,idx_menu_items_featured,menu_items,True,False,False,(is_featured = true),CREATE INDEX idx_menu_items_featured ON public.menu_items USING btree (is_featured) WHERE (is_featured = true)
+3,idx_menu_items_name_trgm,menu_items,True,False,False,,CREATE INDEX idx_menu_items_name_trgm ON public.menu_items USING gin (name gin_trgm_ops)
+1,idx_menu_items_not_deleted,menu_items,True,False,False,(deleted_at IS NULL),CREATE INDEX idx_menu_items_not_deleted ON public.menu_items USING btree (id) WHERE (deleted_at IS NULL)
+1,menu_items_pkey,menu_items,True,True,True,,CREATE UNIQUE INDEX menu_items_pkey ON public.menu_items USING btree (id)
+4,menu_items_slug_key,menu_items,True,True,False,,CREATE UNIQUE INDEX menu_items_slug_key ON public.menu_items USING btree (slug)
+16,idx_milestones_campus_id,milestones,True,False,False,,CREATE INDEX idx_milestones_campus_id ON public.milestones USING btree (campus_id)
+11,idx_milestones_created_by,milestones,True,False,False,,CREATE INDEX idx_milestones_created_by ON public.milestones USING btree (created_by)
+4 10,idx_milestones_trigger_type,milestones,True,False,False,,"CREATE INDEX idx_milestones_trigger_type ON public.milestones USING btree (trigger_type, is_active)"
+1,milestones_pkey,milestones,True,True,True,,CREATE UNIQUE INDEX milestones_pkey ON public.milestones USING btree (id)
+4,uq_milestones_system_trigger_type,milestones,True,True,False,(is_system = true),CREATE UNIQUE INDEX uq_milestones_system_trigger_type ON public.milestones USING btree (trigger_type) WHERE (is_system = true)
+6,idx_monthly_hp_tracker_campus_id,monthly_hp_tracker,True,False,False,,CREATE INDEX idx_monthly_hp_tracker_campus_id ON public.monthly_hp_tracker USING btree (campus_id)
+2 3,idx_monthly_hp_tracker_user_month,monthly_hp_tracker,True,False,False,,"CREATE INDEX idx_monthly_hp_tracker_user_month ON public.monthly_hp_tracker USING btree (user_id, month)"
+1,monthly_hp_tracker_pkey,monthly_hp_tracker,True,True,True,,CREATE UNIQUE INDEX monthly_hp_tracker_pkey ON public.monthly_hp_tracker USING btree (id)
+2 3,monthly_hp_tracker_user_id_month_key,monthly_hp_tracker,True,True,False,,"CREATE UNIQUE INDEX monthly_hp_tracker_user_id_month_key ON public.monthly_hp_tracker USING btree (user_id, month)"
+2 10,newsletter_campaigns_campus_idx,newsletter_campaigns,True,False,False,,"CREATE INDEX newsletter_campaigns_campus_idx ON public.newsletter_campaigns USING btree (campus_id, created_at DESC)"
+9,newsletter_campaigns_creator_idx,newsletter_campaigns,True,False,False,,CREATE INDEX newsletter_campaigns_creator_idx ON public.newsletter_campaigns USING btree (created_by)
+10,newsletter_campaigns_open_idx,newsletter_campaigns,True,False,False,"(status = ANY (ARRAY['queued'::text, 'sending'::text]))","CREATE INDEX newsletter_campaigns_open_idx ON public.newsletter_campaigns USING btree (created_at) WHERE (status = ANY (ARRAY['queued'::text, 'sending'::text]))"
+1,newsletter_campaigns_pkey,newsletter_campaigns,True,True,True,,CREATE UNIQUE INDEX newsletter_campaigns_pkey ON public.newsletter_campaigns USING btree (id)
+2 3,newsletter_deliveries_campaign_id_subscription_id_key,newsletter_deliveries,True,True,False,,"CREATE UNIQUE INDEX newsletter_deliveries_campaign_id_subscription_id_key ON public.newsletter_deliveries USING btree (campaign_id, subscription_id)"
+1,newsletter_deliveries_pkey,newsletter_deliveries,True,True,True,,CREATE UNIQUE INDEX newsletter_deliveries_pkey ON public.newsletter_deliveries USING btree (id)
+3,newsletter_deliveries_subscription_idx,newsletter_deliveries,True,False,False,,CREATE INDEX newsletter_deliveries_subscription_idx ON public.newsletter_deliveries USING btree (subscription_id)
+11,idx_newsletter_subscriptions_campus_id,newsletter_subscriptions,True,False,False,,CREATE INDEX idx_newsletter_subscriptions_campus_id ON public.newsletter_subscriptions USING btree (campus_id)
+4,idx_newsletter_user_id,newsletter_subscriptions,True,False,False,,CREATE INDEX idx_newsletter_user_id ON public.newsletter_subscriptions USING btree (user_id)
+1,newsletter_subscriptions_pkey,newsletter_subscriptions,True,True,True,,CREATE UNIQUE INDEX newsletter_subscriptions_pkey ON public.newsletter_subscriptions USING btree (id)
+2,uq_newsletter_subscriptions_email,newsletter_subscriptions,True,True,False,,CREATE UNIQUE INDEX uq_newsletter_subscriptions_email ON public.newsletter_subscriptions USING btree (email)
+12,idx_notification_blasts_campus_id,notification_blasts,True,False,False,,CREATE INDEX idx_notification_blasts_campus_id ON public.notification_blasts USING btree (campus_id)
+10,idx_notification_blasts_created_by,notification_blasts,True,False,False,,CREATE INDEX idx_notification_blasts_created_by ON public.notification_blasts USING btree (created_by)
+7,idx_notification_blasts_scheduled,notification_blasts,True,False,False,(status = 'pending'::text),CREATE INDEX idx_notification_blasts_scheduled ON public.notification_blasts USING btree (scheduled_at) WHERE (status = 'pending'::text)
+18,idx_notification_blasts_tracking_enabled,notification_blasts,True,False,False,(tracking_enabled = true),CREATE INDEX idx_notification_blasts_tracking_enabled ON public.notification_blasts USING btree (tracking_enabled) WHERE (tracking_enabled = true)
+1,notification_blasts_pkey,notification_blasts,True,True,True,,CREATE UNIQUE INDEX notification_blasts_pkey ON public.notification_blasts USING btree (id)
+11 0 10,guest_cart_dispatch_recipient,notification_deliveries,True,False,False,((dispatch_payload ->> 'kind'::text) = 'guest_cart_recovery_email'::text),"CREATE INDEX guest_cart_dispatch_recipient ON public.notification_deliveries USING btree (campus_id, (((dispatch_payload -> 'notification'::text) ->> 'email'::text)), created_at) WHERE ((dispatch_payload ->> 'kind'::text) = 'guest_cart_recovery_email'::text)"
+3,idx_notification_deliveries_blast_id,notification_deliveries,True,False,False,,CREATE INDEX idx_notification_deliveries_blast_id ON public.notification_deliveries USING btree (blast_id)
+11,idx_notification_deliveries_campus_id,notification_deliveries,True,False,False,,CREATE INDEX idx_notification_deliveries_campus_id ON public.notification_deliveries USING btree (campus_id)
+2,idx_notification_deliveries_notif_id,notification_deliveries,True,False,False,,CREATE INDEX idx_notification_deliveries_notif_id ON public.notification_deliveries USING btree (notification_id)
+4 10,idx_notification_deliveries_user,notification_deliveries,True,False,False,,"CREATE INDEX idx_notification_deliveries_user ON public.notification_deliveries USING btree (user_id, created_at DESC)"
+1,notification_deliveries_pkey,notification_deliveries,True,True,True,,CREATE UNIQUE INDEX notification_deliveries_pkey ON public.notification_deliveries USING btree (id)
+6 10,notification_dispatch_pending_idx,notification_deliveries,True,False,False,((dispatch ->> 'version'::text) = '1'::text),"CREATE INDEX notification_dispatch_pending_idx ON public.notification_deliveries USING btree (status, created_at) WHERE ((dispatch ->> 'version'::text) = '1'::text)"
+0 10,notification_event_ticket_email_ticket_idx,notification_deliveries,True,False,False,((dispatch_payload ->> 'kind'::text) = 'event_ticket_email'::text),"CREATE INDEX notification_event_ticket_email_ticket_idx ON public.notification_deliveries USING btree (((dispatch_payload ->> 'ticket_id'::text)), created_at DESC) WHERE ((dispatch_payload ->> 'kind'::text) = 'event_ticket_email'::text)"
+5,idx_notification_log_campus_id,notification_log,True,False,False,,CREATE INDEX idx_notification_log_campus_id ON public.notification_log USING btree (campus_id)
+2 4,idx_notification_log_user_sent,notification_log,True,False,False,,"CREATE INDEX idx_notification_log_user_sent ON public.notification_log USING btree (user_id, sent_at DESC)"
+2 3 4,idx_notification_log_user_type,notification_log,True,False,False,,"CREATE INDEX idx_notification_log_user_type ON public.notification_log USING btree (user_id, type, sent_at DESC)"
+1,notification_log_pkey,notification_log,True,True,True,,CREATE UNIQUE INDEX notification_log_pkey ON public.notification_log USING btree (id)
+11,idx_notification_preferences_campus_id,notification_preferences,True,False,False,,CREATE INDEX idx_notification_preferences_campus_id ON public.notification_preferences USING btree (campus_id)
+1,notification_preferences_pkey,notification_preferences,True,True,True,,CREATE UNIQUE INDEX notification_preferences_pkey ON public.notification_preferences USING btree (id)
+2,notification_preferences_user_id_key,notification_preferences,True,True,False,,CREATE UNIQUE INDEX notification_preferences_user_id_key ON public.notification_preferences USING btree (user_id)
+11,idx_notifications_campus_id,notifications,True,False,False,,CREATE INDEX idx_notifications_campus_id ON public.notifications USING btree (campus_id)
+2 9,idx_notifications_unread,notifications,True,False,False,(read_at IS NULL),"CREATE INDEX idx_notifications_unread ON public.notifications USING btree (user_id, created_at DESC) WHERE (read_at IS NULL)"
+2 9,idx_notifications_user,notifications,True,False,False,,"CREATE INDEX idx_notifications_user ON public.notifications USING btree (user_id, created_at DESC)"
+1,notifications_pkey,notifications,True,True,True,,CREATE UNIQUE INDEX notifications_pkey ON public.notifications USING btree (id)
+8,idx_operating_hour_overrides_campus_id,operating_hour_overrides,True,False,False,,CREATE INDEX idx_operating_hour_overrides_campus_id ON public.operating_hour_overrides USING btree (campus_id)
+2 8,operating_hour_overrides_date_campus_key,operating_hour_overrides,True,True,False,,"CREATE UNIQUE INDEX operating_hour_overrides_date_campus_key ON public.operating_hour_overrides USING btree (date, campus_id) NULLS NOT DISTINCT"
+1,operating_hour_overrides_pkey,operating_hour_overrides,True,True,True,,CREATE UNIQUE INDEX operating_hour_overrides_pkey ON public.operating_hour_overrides USING btree (id)
+6,idx_operating_hours_campus_id,operating_hours,True,False,False,,CREATE INDEX idx_operating_hours_campus_id ON public.operating_hours USING btree (campus_id)
+1,operating_hours_pkey,operating_hours,True,True,True,,CREATE UNIQUE INDEX operating_hours_pkey ON public.operating_hours USING btree (id)
+2 6,operating_hours_weekday_campus_key,operating_hours,True,True,False,,"CREATE UNIQUE INDEX operating_hours_weekday_campus_key ON public.operating_hours USING btree (weekday, campus_id) NULLS NOT DISTINCT"
+13 11,operations_emails_available,operations_emails,True,False,False,(state = 'pending'::text),"CREATE INDEX operations_emails_available ON hg_internal.operations_emails USING btree (available_at, created_at) WHERE (state = 'pending'::text)"
+2 3 4 5,operations_emails_campus_id_kind_reference_recipient_key,operations_emails,True,True,False,,"CREATE UNIQUE INDEX operations_emails_campus_id_kind_reference_recipient_key ON hg_internal.operations_emails USING btree (campus_id, kind, reference, recipient)"
+11,operations_emails_pending,operations_emails,True,False,False,"(state = ANY (ARRAY['pending'::text, 'claimed'::text, 'sending'::text]))","CREATE INDEX operations_emails_pending ON hg_internal.operations_emails USING btree (created_at) WHERE (state = ANY (ARRAY['pending'::text, 'claimed'::text, 'sending'::text]))"
+1,operations_emails_pkey,operations_emails,True,True,True,,CREATE UNIQUE INDEX operations_emails_pkey ON hg_internal.operations_emails USING btree (id)
+3,idx_order_addon_selections_addon_id,order_addon_selections,True,False,False,,CREATE INDEX idx_order_addon_selections_addon_id ON public.order_addon_selections USING btree (addon_id)
+9,idx_order_addon_selections_campus_id,order_addon_selections,True,False,False,,CREATE INDEX idx_order_addon_selections_campus_id ON public.order_addon_selections USING btree (campus_id)
+4,idx_order_addon_selections_group_id,order_addon_selections,True,False,False,,CREATE INDEX idx_order_addon_selections_group_id ON public.order_addon_selections USING btree (group_id)
+2,idx_order_addon_selections_order_item,order_addon_selections,True,False,False,,CREATE INDEX idx_order_addon_selections_order_item ON public.order_addon_selections USING btree (order_item_id)
+1,order_addon_selections_pkey,order_addon_selections,True,True,True,,CREATE UNIQUE INDEX order_addon_selections_pkey ON public.order_addon_selections USING btree (id)
+13,idx_order_items_addon_id,order_items,True,False,False,,CREATE INDEX idx_order_items_addon_id ON public.order_items USING btree (addon_id)
+15,idx_order_items_campus_id,order_items,True,False,False,,CREATE INDEX idx_order_items_campus_id ON public.order_items USING btree (campus_id)
+3,idx_order_items_menu_item_id,order_items,True,False,False,,CREATE INDEX idx_order_items_menu_item_id ON public.order_items USING btree (menu_item_id)
+2,idx_order_items_order_id,order_items,True,False,False,,CREATE INDEX idx_order_items_order_id ON public.order_items USING btree (order_id)
+1,order_items_pkey,order_items,True,True,True,,CREATE UNIQUE INDEX order_items_pkey ON public.order_items USING btree (id)
+13,idx_order_locks_campus_id,order_locks,True,False,False,,CREATE INDEX idx_order_locks_campus_id ON public.order_locks USING btree (campus_id)
+3,idx_order_locks_locked_date,order_locks,True,False,False,(status = 'active'::text),CREATE INDEX idx_order_locks_locked_date ON public.order_locks USING btree (locked_date) WHERE (status = 'active'::text)
+8,idx_order_locks_order_id,order_locks,True,False,False,,CREATE INDEX idx_order_locks_order_id ON public.order_locks USING btree (order_id)
+2 5,idx_order_locks_user_status,order_locks,True,False,False,,"CREATE INDEX idx_order_locks_user_status ON public.order_locks USING btree (user_id, status)"
+1,order_locks_pkey,order_locks,True,True,True,,CREATE UNIQUE INDEX order_locks_pkey ON public.order_locks USING btree (id)
+2,uq_order_locks_one_active_per_user,order_locks,True,True,False,(status = 'active'::text),CREATE UNIQUE INDEX uq_order_locks_one_active_per_user ON public.order_locks USING btree (user_id) WHERE (status = 'active'::text)
+1,order_motivations_pkey,order_motivations,True,True,True,,CREATE UNIQUE INDEX order_motivations_pkey ON public.order_motivations USING btree (id)
+14,idx_order_reviews_campus_id,order_reviews,True,False,False,,CREATE INDEX idx_order_reviews_campus_id ON public.order_reviews USING btree (campus_id)
+12,idx_order_reviews_kitchen_rating,order_reviews,True,False,False,(kitchen_rating IS NOT NULL),CREATE INDEX idx_order_reviews_kitchen_rating ON public.order_reviews USING btree (kitchen_rating) WHERE (kitchen_rating IS NOT NULL)
+2,idx_order_reviews_order_id,order_reviews,True,False,False,,CREATE INDEX idx_order_reviews_order_id ON public.order_reviews USING btree (order_id)
+13,idx_order_reviews_rider_rating,order_reviews,True,False,False,(rider_rating IS NOT NULL),CREATE INDEX idx_order_reviews_rider_rating ON public.order_reviews USING btree (rider_rating) WHERE (rider_rating IS NOT NULL)
+3,idx_order_reviews_user_id,order_reviews,True,False,False,,CREATE INDEX idx_order_reviews_user_id ON public.order_reviews USING btree (user_id)
+2,order_reviews_order_id_key,order_reviews,True,True,False,,CREATE UNIQUE INDEX order_reviews_order_id_key ON public.order_reviews USING btree (order_id)
+1,order_reviews_pkey,order_reviews,True,True,True,,CREATE UNIQUE INDEX order_reviews_pkey ON public.order_reviews USING btree (id)
+7,idx_order_share_events_campus_id,order_share_events,True,False,False,,CREATE INDEX idx_order_share_events_campus_id ON public.order_share_events USING btree (campus_id)
+3,idx_order_share_events_order_id,order_share_events,True,False,False,,CREATE INDEX idx_order_share_events_order_id ON public.order_share_events USING btree (order_id)
+2 6,idx_order_share_events_user,order_share_events,True,False,False,,"CREATE INDEX idx_order_share_events_user ON public.order_share_events USING btree (user_id, created_at DESC)"
+1,order_share_events_pkey,order_share_events,True,True,True,,CREATE UNIQUE INDEX order_share_events_pkey ON public.order_share_events USING btree (id)
+2 8,order_share_events_user_date_key,order_share_events,True,True,False,,"CREATE UNIQUE INDEX order_share_events_user_date_key ON public.order_share_events USING btree (user_id, share_date)"
+2 8,order_share_events_user_day_uniq,order_share_events,True,True,False,,"CREATE UNIQUE INDEX order_share_events_user_day_uniq ON public.order_share_events USING btree (user_id, share_date)"
+8,idx_order_status_logs_campus_id,order_status_logs,True,False,False,,CREATE INDEX idx_order_status_logs_campus_id ON public.order_status_logs USING btree (campus_id)
+4,idx_order_status_logs_changed_by,order_status_logs,True,False,False,,CREATE INDEX idx_order_status_logs_changed_by ON public.order_status_logs USING btree (changed_by)
+2 7,idx_order_status_logs_order,order_status_logs,True,False,False,,"CREATE INDEX idx_order_status_logs_order ON public.order_status_logs USING btree (order_id, created_at DESC)"
+1,order_status_logs_pkey,order_status_logs,True,True,True,,CREATE UNIQUE INDEX order_status_logs_pkey ON public.order_status_logs USING btree (id)
+6,idx_order_streak_rewards_campus_id,order_streak_rewards,True,False,False,,CREATE INDEX idx_order_streak_rewards_campus_id ON public.order_streak_rewards USING btree (campus_id)
+1,order_streak_rewards_pkey,order_streak_rewards,True,True,True,,CREATE UNIQUE INDEX order_streak_rewards_pkey ON public.order_streak_rewards USING btree (id)
+2,uq_order_streak_rewards_weeks,order_streak_rewards,True,True,False,,CREATE UNIQUE INDEX uq_order_streak_rewards_weeks ON public.order_streak_rewards USING btree (weeks)
+7,idx_order_streaks_campus_id,order_streaks,True,False,False,,CREATE INDEX idx_order_streaks_campus_id ON public.order_streaks USING btree (campus_id)
+2,idx_order_streaks_user,order_streaks,True,False,False,,CREATE INDEX idx_order_streaks_user ON public.order_streaks USING btree (user_id)
+1,order_streaks_pkey,order_streaks,True,True,True,,CREATE UNIQUE INDEX order_streaks_pkey ON public.order_streaks USING btree (id)
+2,order_streaks_user_id_key,order_streaks,True,True,False,,CREATE UNIQUE INDEX order_streaks_user_id_key ON public.order_streaks USING btree (user_id)
+2 4 6 7,ordering_windows_dated_key,ordering_windows,True,True,False,(date IS NOT NULL),"CREATE UNIQUE INDEX ordering_windows_dated_key ON public.ordering_windows USING btree (campus_id, date, opens_at, closes_at) WHERE (date IS NOT NULL)"
+1,ordering_windows_pkey,ordering_windows,True,True,True,,CREATE UNIQUE INDEX ordering_windows_pkey ON public.ordering_windows USING btree (id)
+2 3 6 7,ordering_windows_weekly_key,ordering_windows,True,True,False,(weekday IS NOT NULL),"CREATE UNIQUE INDEX ordering_windows_weekly_key ON public.ordering_windows USING btree (campus_id, weekday, opens_at, closes_at) WHERE (weekday IS NOT NULL)"
+51 5 32,guest_order_recovery_lookup,orders,True,False,False,((user_id IS NULL) AND (NOT is_test)),"CREATE INDEX guest_order_recovery_lookup ON public.orders USING btree (campus_id, guest_email, created_at DESC) WHERE ((user_id IS NULL) AND (NOT is_test))"
+3 7 32,idx_orders_active,orders,True,False,False,"(status <> ALL (ARRAY['delivered'::order_status, 'cancelled'::order_status, 'refunded'::order_status]))","CREATE INDEX idx_orders_active ON public.orders USING btree (user_id, status, created_at DESC) WHERE (status <> ALL (ARRAY['delivered'::order_status, 'cancelled'::order_status, 'refunded'::order_status]))"
+35,idx_orders_batch_id,orders,True,False,False,(batch_id IS NOT NULL),CREATE INDEX idx_orders_batch_id ON public.orders USING btree (batch_id) WHERE (batch_id IS NOT NULL)
+51,idx_orders_campus_id,orders,True,False,False,,CREATE INDEX idx_orders_campus_id ON public.orders USING btree (campus_id)
+42,idx_orders_claim_token,orders,True,False,False,(claim_token IS NOT NULL),CREATE INDEX idx_orders_claim_token ON public.orders USING btree (claim_token) WHERE (claim_token IS NOT NULL)
+32,idx_orders_created_at,orders,True,False,False,,CREATE INDEX idx_orders_created_at ON public.orders USING btree (created_at DESC)
+5 3 15,idx_orders_guest_claim,orders,True,False,False,,"CREATE INDEX idx_orders_guest_claim ON public.orders USING btree (guest_email, user_id, hp_credited_at)"
+43,idx_orders_is_scheduled,orders,True,False,False,(is_scheduled = true),CREATE INDEX idx_orders_is_scheduled ON public.orders USING btree (is_scheduled) WHERE (is_scheduled = true)
+39,idx_orders_is_squad_order,orders,True,False,False,(is_squad_order = true),CREATE INDEX idx_orders_is_squad_order ON public.orders USING btree (is_squad_order) WHERE (is_squad_order = true)
+8,idx_orders_payment_status,orders,True,False,False,,CREATE INDEX idx_orders_payment_status ON public.orders USING btree (payment_status)
+34,idx_orders_promo_code_id,orders,True,False,False,(promo_code_id IS NOT NULL),CREATE INDEX idx_orders_promo_code_id ON public.orders USING btree (promo_code_id) WHERE (promo_code_id IS NOT NULL)
+7 32,idx_orders_status,orders,True,False,False,,"CREATE INDEX idx_orders_status ON public.orders USING btree (status, created_at)"
+3 32,idx_orders_user_created,orders,True,False,False,,"CREATE INDEX idx_orders_user_created ON public.orders USING btree (user_id, created_at DESC)"
+3,idx_orders_user_id,orders,True,False,False,,CREATE INDEX idx_orders_user_id ON public.orders USING btree (user_id)
+19,idx_orders_window_id,orders,True,False,False,,CREATE INDEX idx_orders_window_id ON public.orders USING btree (delivery_window_id)
+50,orders_idempotency_key_key,orders,True,True,False,,CREATE UNIQUE INDEX orders_idempotency_key_key ON public.orders USING btree (idempotency_key)
+2,orders_order_number_key,orders,True,True,False,,CREATE UNIQUE INDEX orders_order_number_key ON public.orders USING btree (order_number)
+1,orders_pkey,orders,True,True,True,,CREATE UNIQUE INDEX orders_pkey ON public.orders USING btree (id)
+51 32,orders_real_campus_date,orders,True,False,False,(NOT is_test),"CREATE INDEX orders_real_campus_date ON public.orders USING btree (campus_id, created_at) WHERE (NOT is_test)"
+21 1,orders_scheduled_reminder_due,orders,True,False,False,"(is_scheduled AND (NOT COALESCE(is_test, false)))","CREATE INDEX orders_scheduled_reminder_due ON public.orders USING btree (scheduled_for, id) WHERE (is_scheduled AND (NOT COALESCE(is_test, false)))"
+13,idx_payments_campus_id,payments,True,False,False,,CREATE INDEX idx_payments_campus_id ON public.payments USING btree (campus_id)
+2,idx_payments_order_id,payments,True,False,False,,CREATE INDEX idx_payments_order_id ON public.payments USING btree (order_id)
+7,idx_payments_status,payments,True,False,False,,CREATE INDEX idx_payments_status ON public.payments USING btree (status)
+3,idx_payments_user_id,payments,True,False,False,,CREATE INDEX idx_payments_user_id ON public.payments USING btree (user_id)
+1,payments_pkey,payments,True,True,True,,CREATE UNIQUE INDEX payments_pkey ON public.payments USING btree (id)
+5,payments_reference_key,payments,True,True,False,,CREATE UNIQUE INDEX payments_reference_key ON public.payments USING btree (reference)
+1,pending_squad_hp_pkey,pending_squad_hp,True,True,True,,CREATE UNIQUE INDEX pending_squad_hp_pkey ON public.pending_squad_hp USING btree (id)
+38,idx_profiles_campus_id,profiles,True,False,False,,CREATE INDEX idx_profiles_campus_id ON public.profiles USING btree (campus_id)
+13,idx_profiles_current_tier_id,profiles,True,False,False,,CREATE INDEX idx_profiles_current_tier_id ON public.profiles USING btree (current_tier_id)
+26,idx_profiles_deactivated_by,profiles,True,False,False,,CREATE INDEX idx_profiles_deactivated_by ON public.profiles USING btree (deactivated_by)
+37,idx_profiles_department_id,profiles,True,False,False,,CREATE INDEX idx_profiles_department_id ON public.profiles USING btree (department_id)
+19,idx_profiles_is_active,profiles,True,False,False,(is_active = true),CREATE INDEX idx_profiles_is_active ON public.profiles USING btree (is_active) WHERE (is_active = true)
+1 31,idx_profiles_jwt_version,profiles,True,False,False,,"CREATE INDEX idx_profiles_jwt_version ON public.profiles USING btree (id, jwt_version)"
+29,idx_profiles_last_hp_activity,profiles,True,False,False,,CREATE INDEX idx_profiles_last_hp_activity ON public.profiles USING btree (last_hp_activity_at)
+27,idx_profiles_referred_by,profiles,True,False,False,,CREATE INDEX idx_profiles_referred_by ON public.profiles USING btree (referred_by)
+9,idx_profiles_role,profiles,True,False,False,,CREATE INDEX idx_profiles_role ON public.profiles USING btree (role)
+0 0 38 1,profiles_active_student_birthday,profiles,True,False,False,(is_active AND (role = 'student'::user_role)),"CREATE INDEX profiles_active_student_birthday ON public.profiles USING btree (EXTRACT(month FROM date_of_birth), EXTRACT(day FROM date_of_birth), campus_id, id) WHERE (is_active AND (role = 'student'::user_role))"
+2,profiles_email_key,profiles,True,True,False,,CREATE UNIQUE INDEX profiles_email_key ON public.profiles USING btree (email)
+1,profiles_pkey,profiles,True,True,True,,CREATE UNIQUE INDEX profiles_pkey ON public.profiles USING btree (id)
+16,profiles_referral_code_key,profiles,True,True,False,,CREATE UNIQUE INDEX profiles_referral_code_key ON public.profiles USING btree (referral_code)
+38 0,wallet_transfer_email_lookup,profiles,True,False,False,is_active,"CREATE INDEX wallet_transfer_email_lookup ON public.profiles USING btree (campus_id, lower(btrim((email)::text))) WHERE is_active"
+38 0,wallet_transfer_phone_lookup,profiles,True,False,False,is_active,"CREATE INDEX wallet_transfer_phone_lookup ON public.profiles USING btree (campus_id, (
+CASE
+    WHEN (regexp_replace(phone, '[+() .-]'::text, ''::text, 'g'::text) ~ '^2340[0-9]{10}$'::text) THEN ('234'::text || ""right""(regexp_replace(phone, '[+() .-]'::text, ''::text, 'g'::text), 10))
+    WHEN (regexp_replace(phone, '[+() .-]'::text, ''::text, 'g'::text) ~ '^0[0-9]{10}$'::text) THEN ('234'::text || ""right""(regexp_replace(phone, '[+() .-]'::text, ''::text, 'g'::text), 10))
+    WHEN (regexp_replace(phone, '[+() .-]'::text, ''::text, 'g'::text) ~ '^[0-9]{10}$'::text) THEN ('234'::text || regexp_replace(phone, '[+() .-]'::text, ''::text, 'g'::text))
+    ELSE regexp_replace(phone, '[+() .-]'::text, ''::text, 'g'::text)
+END)) WHERE is_active"
+38 0,wallet_transfer_recipient_lookup,profiles,True,False,False,is_active,"CREATE INDEX wallet_transfer_recipient_lookup ON public.profiles USING btree (campus_id, upper(referral_code)) WHERE is_active"
+7,idx_promo_code_uses_campus_id,promo_code_uses,True,False,False,,CREATE INDEX idx_promo_code_uses_campus_id ON public.promo_code_uses USING btree (campus_id)
+4,idx_promo_code_uses_order,promo_code_uses,True,False,False,,CREATE INDEX idx_promo_code_uses_order ON public.promo_code_uses USING btree (order_id)
+2,idx_promo_code_uses_promo,promo_code_uses,True,False,False,,CREATE INDEX idx_promo_code_uses_promo ON public.promo_code_uses USING btree (promo_code_id)
+3,idx_promo_code_uses_user,promo_code_uses,True,False,False,,CREATE INDEX idx_promo_code_uses_user ON public.promo_code_uses USING btree (user_id)
+1,promo_code_uses_pkey,promo_code_uses,True,True,True,,CREATE UNIQUE INDEX promo_code_uses_pkey ON public.promo_code_uses USING btree (id)
+2 4,promo_code_uses_promo_code_id_order_id_key,promo_code_uses,True,True,False,,"CREATE UNIQUE INDEX promo_code_uses_promo_code_id_order_id_key ON public.promo_code_uses USING btree (promo_code_id, order_id)"
+3 4,uq_promo_code_uses_user_order,promo_code_uses,True,True,False,,"CREATE UNIQUE INDEX uq_promo_code_uses_user_order ON public.promo_code_uses USING btree (user_id, order_id)"
+2 12,idx_promo_codes_active,promo_codes,True,False,False,(is_active = true),"CREATE INDEX idx_promo_codes_active ON public.promo_codes USING btree (code, ends_at) WHERE (is_active = true)"
+18,idx_promo_codes_campus_id,promo_codes,True,False,False,,CREATE INDEX idx_promo_codes_campus_id ON public.promo_codes USING btree (campus_id)
+17,idx_promo_codes_created_by,promo_codes,True,False,False,,CREATE INDEX idx_promo_codes_created_by ON public.promo_codes USING btree (created_by)
+2,promo_codes_code_key,promo_codes,True,True,False,,CREATE UNIQUE INDEX promo_codes_code_key ON public.promo_codes USING btree (code)
+1,promo_codes_pkey,promo_codes,True,True,True,,CREATE UNIQUE INDEX promo_codes_pkey ON public.promo_codes USING btree (id)
+2,idx_push_subscriptions_active,push_subscriptions,True,False,False,(is_active = true),CREATE INDEX idx_push_subscriptions_active ON public.push_subscriptions USING btree (user_id) WHERE (is_active = true)
+8,idx_push_subscriptions_campus_id,push_subscriptions,True,False,False,,CREATE INDEX idx_push_subscriptions_campus_id ON public.push_subscriptions USING btree (campus_id)
+1,push_subscriptions_pkey,push_subscriptions,True,True,True,,CREATE UNIQUE INDEX push_subscriptions_pkey ON public.push_subscriptions USING btree (id)
+2 0,uq_push_subscriptions_user_endpoint,push_subscriptions,True,True,False,,"CREATE UNIQUE INDEX uq_push_subscriptions_user_endpoint ON public.push_subscriptions USING btree (user_id, ((subscription ->> 'endpoint'::text)))"
+9,redemption_cost_log_event_ticket_id_key,redemption_cost_log,True,True,False,(event_ticket_id IS NOT NULL),CREATE UNIQUE INDEX redemption_cost_log_event_ticket_id_key ON public.redemption_cost_log USING btree (event_ticket_id) WHERE (event_ticket_id IS NOT NULL)
+1,redemption_cost_log_pkey,redemption_cost_log,True,True,True,,CREATE UNIQUE INDEX redemption_cost_log_pkey ON public.redemption_cost_log USING btree (id)
+2,redemption_cost_log_redemption_id_key,redemption_cost_log,True,True,False,,CREATE UNIQUE INDEX redemption_cost_log_redemption_id_key ON public.redemption_cost_log USING btree (redemption_id)
+10,redemption_cost_log_user_id_idx,redemption_cost_log,True,False,False,,CREATE INDEX redemption_cost_log_user_id_idx ON public.redemption_cost_log USING btree (user_id)
+5,idx_referral_codes_campus_id,referral_codes,True,False,False,,CREATE INDEX idx_referral_codes_campus_id ON public.referral_codes USING btree (campus_id)
+3,referral_codes_code_key,referral_codes,True,True,False,,CREATE UNIQUE INDEX referral_codes_code_key ON public.referral_codes USING btree (code)
+1,referral_codes_pkey,referral_codes,True,True,True,,CREATE UNIQUE INDEX referral_codes_pkey ON public.referral_codes USING btree (id)
+2,referral_codes_user_id_key,referral_codes,True,True,False,,CREATE UNIQUE INDEX referral_codes_user_id_key ON public.referral_codes USING btree (user_id)
+8,idx_referral_milestones_campus_id,referral_milestones,True,False,False,,CREATE INDEX idx_referral_milestones_campus_id ON public.referral_milestones USING btree (campus_id)
+1,referral_milestones_pkey,referral_milestones,True,True,True,,CREATE UNIQUE INDEX referral_milestones_pkey ON public.referral_milestones USING btree (id)
+2,uq_referral_milestones_count,referral_milestones,True,True,False,(NOT is_repeating),CREATE UNIQUE INDEX uq_referral_milestones_count ON public.referral_milestones USING btree (referral_count) WHERE (NOT is_repeating)
+8,idx_referrals_campus_id,referrals,True,False,False,,CREATE INDEX idx_referrals_campus_id ON public.referrals USING btree (campus_id)
+3,idx_referrals_referred,referrals,True,False,False,,CREATE INDEX idx_referrals_referred ON public.referrals USING btree (referred_user_id)
+2,idx_referrals_referrer,referrals,True,False,False,,CREATE INDEX idx_referrals_referrer ON public.referrals USING btree (referrer_id)
+2 7,idx_referrals_referrer_created,referrals,True,False,False,,"CREATE INDEX idx_referrals_referrer_created ON public.referrals USING btree (referrer_id, created_at DESC)"
+4,idx_referrals_trigger_order_id,referrals,True,False,False,,CREATE INDEX idx_referrals_trigger_order_id ON public.referrals USING btree (trigger_order_id)
+1,referrals_pkey,referrals,True,True,True,,CREATE UNIQUE INDEX referrals_pkey ON public.referrals USING btree (id)
+3 4,referrals_referred_user_id_trigger_order_id_key,referrals,True,True,False,,"CREATE UNIQUE INDEX referrals_referred_user_id_trigger_order_id_key ON public.referrals USING btree (referred_user_id, trigger_order_id)"
+3,uq_referrals_referred_user,referrals,True,True,False,,CREATE UNIQUE INDEX uq_referrals_referred_user ON public.referrals USING btree (referred_user_id)
+11,idx_reward_redemptions_campus_id,reward_redemptions,True,False,False,,CREATE INDEX idx_reward_redemptions_campus_id ON public.reward_redemptions USING btree (campus_id)
+10,idx_reward_redemptions_fulfilled_by,reward_redemptions,True,False,False,,CREATE INDEX idx_reward_redemptions_fulfilled_by ON public.reward_redemptions USING btree (fulfilled_by)
+3,idx_reward_redemptions_reward_id,reward_redemptions,True,False,False,,CREATE INDEX idx_reward_redemptions_reward_id ON public.reward_redemptions USING btree (reward_id)
+2 7,idx_reward_redemptions_user,reward_redemptions,True,False,False,,"CREATE INDEX idx_reward_redemptions_user ON public.reward_redemptions USING btree (user_id, created_at DESC)"
+13,ix_reward_redemptions_attached_order,reward_redemptions,True,False,False,(attached_order_id IS NOT NULL),CREATE INDEX ix_reward_redemptions_attached_order ON public.reward_redemptions USING btree (attached_order_id) WHERE (attached_order_id IS NOT NULL)
+1,reward_redemptions_pkey,reward_redemptions,True,True,True,,CREATE UNIQUE INDEX reward_redemptions_pkey ON public.reward_redemptions USING btree (id)
+4,idx_rewards_active,rewards,True,False,False,(is_active = true),CREATE INDEX idx_rewards_active ON public.rewards USING btree (hp_cost) WHERE (is_active = true)
+21,idx_rewards_campus_id,rewards,True,False,False,,CREATE INDEX idx_rewards_campus_id ON public.rewards USING btree (campus_id)
+7,idx_rewards_min_tier_id,rewards,True,False,False,,CREATE INDEX idx_rewards_min_tier_id ON public.rewards USING btree (min_tier_id)
+1,rewards_pkey,rewards,True,True,True,,CREATE UNIQUE INDEX rewards_pkey ON public.rewards USING btree (id)
+9,idx_rider_profiles_campus_id,rider_profiles,True,False,False,,CREATE INDEX idx_rider_profiles_campus_id ON public.rider_profiles USING btree (campus_id)
+1,rider_profiles_pkey,rider_profiles,True,True,True,,CREATE UNIQUE INDEX rider_profiles_pkey ON public.rider_profiles USING btree (id)
+2,rider_profiles_user_id_key,rider_profiles,True,True,False,,CREATE UNIQUE INDEX rider_profiles_user_id_key ON public.rider_profiles USING btree (user_id)
+8,idx_saved_for_later_campus_id,saved_for_later,True,False,False,,CREATE INDEX idx_saved_for_later_campus_id ON public.saved_for_later USING btree (campus_id)
+3,idx_saved_for_later_menu_item_id,saved_for_later,True,False,False,,CREATE INDEX idx_saved_for_later_menu_item_id ON public.saved_for_later USING btree (menu_item_id)
+2,idx_saved_for_later_user,saved_for_later,True,False,False,,CREATE INDEX idx_saved_for_later_user ON public.saved_for_later USING btree (user_id)
+1,saved_for_later_pkey,saved_for_later,True,True,True,,CREATE UNIQUE INDEX saved_for_later_pkey ON public.saved_for_later USING btree (id)
+2 3,saved_for_later_user_id_menu_item_id_key,saved_for_later,True,True,False,,"CREATE UNIQUE INDEX saved_for_later_user_id_menu_item_id_key ON public.saved_for_later USING btree (user_id, menu_item_id)"
+2 3,scheduled_notification_sends_campaign_id_user_id_key,scheduled_notification_sends,True,True,False,,"CREATE UNIQUE INDEX scheduled_notification_sends_campaign_id_user_id_key ON public.scheduled_notification_sends USING btree (campaign_id, user_id)"
+1,scheduled_notification_sends_pkey,scheduled_notification_sends,True,True,True,,CREATE UNIQUE INDEX scheduled_notification_sends_pkey ON public.scheduled_notification_sends USING btree (id)
+13,idx_scheduled_notifications_campus_id,scheduled_notifications,True,False,False,,CREATE INDEX idx_scheduled_notifications_campus_id ON public.scheduled_notifications USING btree (campus_id)
+10,idx_scheduled_notifications_created_by,scheduled_notifications,True,False,False,,CREATE INDEX idx_scheduled_notifications_created_by ON public.scheduled_notifications USING btree (created_by)
+1,scheduled_notifications_pkey,scheduled_notifications,True,True,True,,CREATE UNIQUE INDEX scheduled_notifications_pkey ON public.scheduled_notifications USING btree (id)
+10,idx_squad_members_campus_id,squad_members,True,False,False,,CREATE INDEX idx_squad_members_campus_id ON public.squad_members USING btree (campus_id)
+4,idx_squad_members_email,squad_members,True,False,False,,CREATE INDEX idx_squad_members_email ON public.squad_members USING btree (email)
+2,idx_squad_members_order,squad_members,True,False,False,,CREATE INDEX idx_squad_members_order ON public.squad_members USING btree (order_id)
+3,idx_squad_members_user_id,squad_members,True,False,False,,CREATE INDEX idx_squad_members_user_id ON public.squad_members USING btree (user_id)
+2 4,squad_members_order_email_unique,squad_members,True,True,False,,"CREATE UNIQUE INDEX squad_members_order_email_unique ON public.squad_members USING btree (order_id, email)"
+1,squad_members_pkey,squad_members,True,True,True,,CREATE UNIQUE INDEX squad_members_pkey ON public.squad_members USING btree (id)
+1,squad_roster_pkey,squad_roster,True,True,True,,CREATE UNIQUE INDEX squad_roster_pkey ON public.squad_roster USING btree (id)
+2 4,squad_roster_squad_id_email_key,squad_roster,True,True,False,,"CREATE UNIQUE INDEX squad_roster_squad_id_email_key ON public.squad_roster USING btree (squad_id, email)"
+3 2,squads_creator_id_name_key,squads,True,True,False,,"CREATE UNIQUE INDEX squads_creator_id_name_key ON public.squads USING btree (creator_id, name)"
+1,squads_pkey,squads,True,True,True,,CREATE UNIQUE INDEX squads_pkey ON public.squads USING btree (id)
+2,idx_stock_items_campus,stock_items,True,False,False,,CREATE INDEX idx_stock_items_campus ON public.stock_items USING btree (campus_id)
+1,stock_items_pkey,stock_items,True,True,True,,CREATE UNIQUE INDEX stock_items_pkey ON public.stock_items USING btree (id)
+2 0,uq_stock_items_campus_normalized_name,stock_items,True,True,False,,"CREATE UNIQUE INDEX uq_stock_items_campus_normalized_name ON public.stock_items USING btree (campus_id, lower(btrim(name)))"
+2,idx_stock_ledger_item,stock_ledger,True,False,False,,CREATE INDEX idx_stock_ledger_item ON public.stock_ledger USING btree (stock_item_id)
+1,stock_ledger_pkey,stock_ledger,True,True,True,,CREATE UNIQUE INDEX stock_ledger_pkey ON public.stock_ledger USING btree (id)
+1,stock_low_episodes_pkey,stock_low_episodes,True,True,True,,CREATE UNIQUE INDEX stock_low_episodes_pkey ON hg_internal.stock_low_episodes USING btree (stock_item_id)
+12,idx_storefront_sections_campus_id,storefront_sections,True,False,False,,CREATE INDEX idx_storefront_sections_campus_id ON public.storefront_sections USING btree (campus_id)
+11,idx_storefront_sections_created_by,storefront_sections,True,False,False,,CREATE INDEX idx_storefront_sections_created_by ON public.storefront_sections USING btree (created_by)
+2 12,storefront_sections_key_campus_key,storefront_sections,True,True,False,,"CREATE UNIQUE INDEX storefront_sections_key_campus_key ON public.storefront_sections USING btree (key, campus_id) NULLS NOT DISTINCT"
+1,storefront_sections_pkey,storefront_sections,True,True,True,,CREATE UNIQUE INDEX storefront_sections_pkey ON public.storefront_sections USING btree (id)
+7,idx_system_settings_campus_id,system_settings,True,False,False,,CREATE INDEX idx_system_settings_campus_id ON public.system_settings USING btree (campus_id)
+6,idx_system_settings_public,system_settings,True,False,False,(is_public = true),CREATE INDEX idx_system_settings_public ON public.system_settings USING btree (is_public) WHERE (is_public = true)
+4,idx_system_settings_updated_by,system_settings,True,False,False,,CREATE INDEX idx_system_settings_updated_by ON public.system_settings USING btree (updated_by)
+1 7,system_settings_campus_uniq,system_settings,True,True,False,(campus_id IS NOT NULL),"CREATE UNIQUE INDEX system_settings_campus_uniq ON public.system_settings USING btree (key, campus_id) WHERE (campus_id IS NOT NULL)"
+1,system_settings_global_key_uidx,system_settings,True,True,False,(campus_id IS NULL),CREATE UNIQUE INDEX system_settings_global_key_uidx ON public.system_settings USING btree (key) WHERE (campus_id IS NULL)
+1,tier_monthly_perk_usage_pkey,tier_monthly_perk_usage,True,True,True,,CREATE UNIQUE INDEX tier_monthly_perk_usage_pkey ON public.tier_monthly_perk_usage USING btree (id)
+2 3 4,tier_monthly_perk_usage_user_id_month_perk_key_key,tier_monthly_perk_usage,True,True,False,,"CREATE UNIQUE INDEX tier_monthly_perk_usage_user_id_month_perk_key_key ON public.tier_monthly_perk_usage USING btree (user_id, month, perk_key)"
+15,idx_user_addresses_campus_id,user_addresses,True,False,False,,CREATE INDEX idx_user_addresses_campus_id ON public.user_addresses USING btree (campus_id)
+2,idx_user_addresses_default,user_addresses,True,False,False,(is_default = true),CREATE INDEX idx_user_addresses_default ON public.user_addresses USING btree (user_id) WHERE (is_default = true)
+2,idx_user_addresses_user,user_addresses,True,False,False,,CREATE INDEX idx_user_addresses_user ON public.user_addresses USING btree (user_id)
+2,uq_user_addresses_default,user_addresses,True,True,False,(is_default = true),CREATE UNIQUE INDEX uq_user_addresses_default ON public.user_addresses USING btree (user_id) WHERE (is_default = true)
+1,user_addresses_pkey,user_addresses,True,True,True,,CREATE UNIQUE INDEX user_addresses_pkey ON public.user_addresses USING btree (id)
+7,idx_user_milestones_campus_id,user_milestones,True,False,False,,CREATE INDEX idx_user_milestones_campus_id ON public.user_milestones USING btree (campus_id)
+3,idx_user_milestones_milestone_id,user_milestones,True,False,False,,CREATE INDEX idx_user_milestones_milestone_id ON public.user_milestones USING btree (milestone_id)
+2 4,idx_user_milestones_user,user_milestones,True,False,False,,"CREATE INDEX idx_user_milestones_user ON public.user_milestones USING btree (user_id, completed_at DESC)"
+1,user_milestones_pkey,user_milestones,True,True,True,,CREATE UNIQUE INDEX user_milestones_pkey ON public.user_milestones USING btree (id)
+2 3,user_milestones_unique_lifetime,user_milestones,True,True,False,(period_key IS NULL),"CREATE UNIQUE INDEX user_milestones_unique_lifetime ON public.user_milestones USING btree (user_id, milestone_id) WHERE (period_key IS NULL)"
+2 3 6,user_milestones_unique_periodic,user_milestones,True,True,False,(period_key IS NOT NULL),"CREATE UNIQUE INDEX user_milestones_unique_periodic ON public.user_milestones USING btree (user_id, milestone_id, period_key) WHERE (period_key IS NOT NULL)"
+8,idx_user_tiers_campus_id,user_tiers,True,False,False,,CREATE INDEX idx_user_tiers_campus_id ON public.user_tiers USING btree (campus_id)
+6,idx_user_tiers_previous_tier_id,user_tiers,True,False,False,,CREATE INDEX idx_user_tiers_previous_tier_id ON public.user_tiers USING btree (previous_tier_id)
+3,idx_user_tiers_tier_id,user_tiers,True,False,False,,CREATE INDEX idx_user_tiers_tier_id ON public.user_tiers USING btree (tier_id)
+2 7,idx_user_tiers_user,user_tiers,True,False,False,,"CREATE INDEX idx_user_tiers_user ON public.user_tiers USING btree (user_id, created_at DESC)"
+1,user_tiers_pkey,user_tiers,True,True,True,,CREATE UNIQUE INDEX user_tiers_pkey ON public.user_tiers USING btree (id)
+12,idx_virtual_accounts_campus_id,virtual_accounts,True,False,False,,CREATE INDEX idx_virtual_accounts_campus_id ON public.virtual_accounts USING btree (campus_id)
+2 3,uq_virtual_accounts_active_user_provider,virtual_accounts,True,True,False,(is_active = true),"CREATE UNIQUE INDEX uq_virtual_accounts_active_user_provider ON public.virtual_accounts USING btree (user_id, provider) WHERE (is_active = true)"
+1,virtual_accounts_pkey,virtual_accounts,True,True,True,,CREATE UNIQUE INDEX virtual_accounts_pkey ON public.virtual_accounts USING btree (id)
+3 4,virtual_accounts_provider_account_number_key,virtual_accounts,True,True,False,,"CREATE UNIQUE INDEX virtual_accounts_provider_account_number_key ON public.virtual_accounts USING btree (provider, account_number)"
+2,virtual_accounts_user_id_key,virtual_accounts,True,True,False,,CREATE UNIQUE INDEX virtual_accounts_user_id_key ON public.virtual_accounts USING btree (user_id)
+1,wallet_funding_attempts_pkey,wallet_funding_attempts,True,True,True,,CREATE UNIQUE INDEX wallet_funding_attempts_pkey ON hg_internal.wallet_funding_attempts USING btree (id)
+2 3,wallet_funding_attempts_plan_id_cycle_key,wallet_funding_attempts,True,True,False,,"CREATE UNIQUE INDEX wallet_funding_attempts_plan_id_cycle_key ON hg_internal.wallet_funding_attempts USING btree (plan_id, cycle)"
+4,wallet_funding_attempts_reference_key,wallet_funding_attempts,True,True,False,,CREATE UNIQUE INDEX wallet_funding_attempts_reference_key ON hg_internal.wallet_funding_attempts USING btree (reference)
+7,wallet_funding_pending,wallet_funding_attempts,True,False,False,"((state = ANY (ARRAY['setup'::text, 'handed_off'::text])) OR ((state = 'succeeded'::text) AND (NOT effects_done)))","CREATE INDEX wallet_funding_pending ON hg_internal.wallet_funding_attempts USING btree (next_check_at) WHERE ((state = ANY (ARRAY['setup'::text, 'handed_off'::text])) OR ((state = 'succeeded'::text) AND (NOT effects_done)))"
+8,wallet_funding_succeeded_transaction,wallet_funding_attempts,True,False,False,((state = 'succeeded'::text) AND (transaction_id IS NOT NULL)),CREATE INDEX wallet_funding_succeeded_transaction ON hg_internal.wallet_funding_attempts USING btree (transaction_id) WHERE ((state = 'succeeded'::text) AND (transaction_id IS NOT NULL))
+24,wallet_funding_attention_due,wallet_funding_plans,True,False,False,((state = 'attention'::text) AND (NOT attention_notified)),CREATE INDEX wallet_funding_attention_due ON hg_internal.wallet_funding_plans USING btree (attention_next_at) WHERE ((state = 'attention'::text) AND (NOT attention_notified))
+18,wallet_funding_due,wallet_funding_plans,True,False,False,(state = 'active'::text),CREATE INDEX wallet_funding_due ON hg_internal.wallet_funding_plans USING btree (next_due_at) WHERE (state = 'active'::text)
+2,wallet_funding_one_open_plan,wallet_funding_plans,True,True,False,"(state = ANY (ARRAY['draft'::text, 'active'::text, 'attention'::text]))","CREATE UNIQUE INDEX wallet_funding_one_open_plan ON hg_internal.wallet_funding_plans USING btree (user_id) WHERE (state = ANY (ARRAY['draft'::text, 'active'::text, 'attention'::text]))"
+2 21,wallet_funding_owner,wallet_funding_plans,True,False,False,,"CREATE INDEX wallet_funding_owner ON hg_internal.wallet_funding_plans USING btree (user_id, created_at DESC)"
+1,wallet_funding_plans_pkey,wallet_funding_plans,True,True,True,,CREATE UNIQUE INDEX wallet_funding_plans_pkey ON hg_internal.wallet_funding_plans USING btree (id)
+14,wallet_funding_plans_setup_reference_key,wallet_funding_plans,True,True,False,,CREATE UNIQUE INDEX wallet_funding_plans_setup_reference_key ON hg_internal.wallet_funding_plans USING btree (setup_reference)
+12,idx_wallet_topups_campus_id,wallet_topups,True,False,False,,CREATE INDEX idx_wallet_topups_campus_id ON public.wallet_topups USING btree (campus_id)
+2 5,idx_wallet_topups_status,wallet_topups,True,False,False,,"CREATE INDEX idx_wallet_topups_status ON public.wallet_topups USING btree (user_id, status)"
+2 8,idx_wallet_topups_user,wallet_topups,True,False,False,,"CREATE INDEX idx_wallet_topups_user ON public.wallet_topups USING btree (user_id, created_at DESC)"
+1,wallet_topups_pkey,wallet_topups,True,True,True,,CREATE UNIQUE INDEX wallet_topups_pkey ON public.wallet_topups USING btree (id)
+14,idx_wallet_transactions_campus_id,wallet_transactions,True,False,False,,CREATE INDEX idx_wallet_transactions_campus_id ON public.wallet_transactions USING btree (campus_id)
+11,idx_wallet_tx_issued_by_admin_id,wallet_transactions,True,False,False,,CREATE INDEX idx_wallet_tx_issued_by_admin_id ON public.wallet_transactions USING btree (issued_by_admin_id)
+7 8,idx_wallet_tx_reference,wallet_transactions,True,False,False,,"CREATE INDEX idx_wallet_tx_reference ON public.wallet_transactions USING btree (reference_type, reference_id)"
+2 3,idx_wallet_tx_type,wallet_transactions,True,False,False,,"CREATE INDEX idx_wallet_tx_type ON public.wallet_transactions USING btree (user_id, type)"
+2 13,idx_wallet_tx_user_created,wallet_transactions,True,False,False,,"CREATE INDEX idx_wallet_tx_user_created ON public.wallet_transactions USING btree (user_id, created_at DESC)"
+13 14,wallet_analytics_history_window,wallet_transactions,True,False,False,,"CREATE INDEX wallet_analytics_history_window ON public.wallet_transactions USING btree (created_at, campus_id)"
+1,wallet_transactions_pkey,wallet_transactions,True,True,True,,CREATE UNIQUE INDEX wallet_transactions_pkey ON public.wallet_transactions USING btree (id)
+16,wallet_transfers_notices,wallet_transfers,True,False,False,(NOT notifications_done),CREATE INDEX wallet_transfers_notices ON hg_internal.wallet_transfers USING btree (next_notice_at) WHERE (NOT notifications_done)
+1,wallet_transfers_pkey,wallet_transfers,True,True,True,,CREATE UNIQUE INDEX wallet_transfers_pkey ON hg_internal.wallet_transfers USING btree (id)
+2 17,wallet_transfers_sender_day,wallet_transfers,True,False,False,,"CREATE INDEX wallet_transfers_sender_day ON hg_internal.wallet_transfers USING btree (sender_id, created_at)"
+15,idx_wallet_withdrawals_campus_id,wallet_withdrawals,True,False,False,,CREATE INDEX idx_wallet_withdrawals_campus_id ON public.wallet_withdrawals USING btree (campus_id)
+2,idx_wallet_withdrawals_user_id,wallet_withdrawals,True,False,False,,CREATE INDEX idx_wallet_withdrawals_user_id ON public.wallet_withdrawals USING btree (user_id)
+1,wallet_withdrawals_pkey,wallet_withdrawals,True,True,True,,CREATE UNIQUE INDEX wallet_withdrawals_pkey ON public.wallet_withdrawals USING btree (id)
+8,wallet_withdrawals_reference_key,wallet_withdrawals,True,True,False,,CREATE UNIQUE INDEX wallet_withdrawals_reference_key ON public.wallet_withdrawals USING btree (reference)
+6,idx_wallets_campus_id,wallets,True,False,False,,CREATE INDEX idx_wallets_campus_id ON public.wallets USING btree (campus_id)
+1,wallets_pkey,wallets,True,True,True,,CREATE UNIQUE INDEX wallets_pkey ON public.wallets USING btree (user_id)
+10,idx_webhook_events_campus_id,webhook_events,True,False,False,,CREATE INDEX idx_webhook_events_campus_id ON public.webhook_events USING btree (campus_id)
+3 4,idx_webhook_events_provider_ref,webhook_events,True,False,False,,"CREATE INDEX idx_webhook_events_provider_ref ON public.webhook_events USING btree (provider, reference)"
+8,webhook_events_created_at_idx,webhook_events,True,False,False,,CREATE INDEX webhook_events_created_at_idx ON public.webhook_events USING btree (created_at DESC)
+2,webhook_events_event_type_idx,webhook_events,True,False,False,,CREATE INDEX webhook_events_event_type_idx ON public.webhook_events USING btree (event_type)
+1,webhook_events_pkey,webhook_events,True,True,True,,CREATE UNIQUE INDEX webhook_events_pkey ON public.webhook_events USING btree (id)
+3 2 4,webhook_events_provider_event_type_reference_key,webhook_events,True,True,False,,"CREATE UNIQUE INDEX webhook_events_provider_event_type_reference_key ON public.webhook_events USING btree (provider, event_type, reference)"
+4,webhook_events_reference_idx,webhook_events,True,False,False,,CREATE INDEX webhook_events_reference_idx ON public.webhook_events USING btree (reference)

@@ -33,7 +33,7 @@ def test_malformed_transfer_setting_does_not_authorize_a_transfer(value):
 
 def test_configured_minimum_stops_before_balance_or_money_rpc():
  db,_=query_db(50)
- with APP.test_request_context(method='POST',json={'recipient_id':'22222222-2222-4222-8222-222222222222','amount':20}),patch.object(hp,'get_user_client',return_value=db),patch('app.services.feature_flags.is_feature_enabled',return_value=True),patch.object(hp,'get_hp_balance') as balance:
+ with APP.test_request_context(method='POST',json={'recipient_id':'22222222-2222-4222-8222-222222222222','amount':20}),patch.object(hp,'get_user_client',return_value=db),patch.object(hp,'get_db',return_value=db),patch('app.services.feature_flags.is_feature_enabled',return_value=True),patch.object(hp,'get_hp_balance') as balance:
   g.user_id='owner';g.campus_id='campus'
   _,status=hp.transfer_hp.__wrapped__()
  assert status==400;balance.assert_not_called();db.rpc.assert_not_called()
@@ -73,3 +73,13 @@ def test_interrupted_render_does_not_advance_email_to_sending():
  with patch.object(operations_email,'render',side_effect=RuntimeError('worker interrupted')),patch.object(operations_email,'send_email_routed') as transport:
   operations_email.dispatch_pending(db)
  assert db.rpc.call_count==1;transport.assert_not_called()
+
+
+def test_transfer_rules_read_private_settings_server_side_not_through_student_rls():
+    user_db,user_query=query_db(None);user_query.execute.return_value=[]
+    service_db,service_query=query_db(0)
+    with APP.test_request_context(),patch.object(hp,'get_db',return_value=service_db):
+        g.campus_id='campus'
+        assert hp._transfer_order_eligibility(user_db,'student')==(0,0)
+    service_query.eq.assert_any_call('key','hp_transfer_min_orders')
+    user_db.table.assert_called_once_with('orders')

@@ -11,7 +11,7 @@ try:
   browser=p.chromium.launch(executable_path='/usr/bin/chromium',args=['--no-sandbox']);expect.set_options(timeout=12000)
   for width in (393,1280):
    state={'patches':[],'settings_fail':False,'conflict':False,'cron_fail':True,'audit_fail':True,'held':[],'role':'super_admin'};errors=[]
-   rows=[{'key':'campus_cart_recovery','value':{'initial_minutes':30,'repeat_minutes':1440,'max_hours':48},'campus_id':None,'updated_at':OLD,'is_public':False},{'key':'signup_bonus_hp','value':50,'campus_id':C,'updated_at':OLD,'is_public':True},{'key':'support_address','value':'Old hostel','campus_id':None,'updated_at':OLD,'is_public':True}]
+   rows=[{'key':'campus_cart_recovery','value':{'initial_minutes':30,'repeat_minutes':1440,'max_hours':48},'campus_id':None,'updated_at':OLD,'is_public':False},{'key':'signup_bonus_hp','value':50,'campus_id':C,'updated_at':OLD,'is_public':True},{'key':'support_address','value':'Old hostel','campus_id':None,'updated_at':OLD,'is_public':True},{'key':'daily_checkin_hp','value':5,'campus_id':None,'updated_at':OLD,'is_public':True}]
    def api(route):
     r=route.request;u=urlparse(r.url);path=u.path;data={}
     if path.endswith('/auth/me'):data={'id':C,'full_name':'Audit admin','role':state['role'],'campus_id':C,'is_active':True}
@@ -36,6 +36,7 @@ try:
     route.fulfill(json=data)
    ctx=browser.new_context(viewport={'width':width,'height':1000});ctx.route('**/api/**',api);ctx.route('https://*.onesignal.com/**',lambda r:r.abort());ctx.add_init_script(f"sessionStorage.setItem('hg_access_token','controlled');localStorage.setItem('hg_user_role','super_admin');localStorage.setItem('hg_user_campus_id','{C}');localStorage.setItem('hg_admin_scope_all','1');localStorage.setItem('hg_cookie_consent',JSON.stringify({{essential:true,analytics:false,date:new Date().toISOString()}}));")
    page=ctx.new_page();page.on('pageerror',lambda e:errors.append(str(e)));page.goto('http://127.0.0.1:5284/admin?section=settings')
+   expect(page.get_by_role('group',name='daily_checkin_hp global',exact=True).get_by_text('Legacy stored value.',exact=True)).to_be_visible()
    group=page.get_by_role('group',name='campus_cart_recovery global',exact=True);group.get_by_role('button',name='Edit',exact=True).click();field=page.get_by_label('campus_cart_recovery value');field.fill('{');group.get_by_role('button',name='Save',exact=True).click();expect(page.get_by_role('alert').first).to_be_visible();expect(field).to_have_value('{');assert not state['patches']
    field.fill('{"initial_minutes":45,"repeat_minutes":1440,"max_hours":48}');state['conflict']=True;group.get_by_role('button',name='Save',exact=True).click();expect(field).to_have_value('{"initial_minutes":45,"repeat_minutes":1440,"max_hours":48}');expect(page.get_by_role('alert').first).to_contain_text('changed');assert state['patches'][-1]['expected_updated_at']==OLD
    page.get_by_role('button',name='Reload latest settings').click();group.get_by_role('button',name='Save',exact=True).click();expect(group.get_by_role('button',name='Edit',exact=True)).to_be_visible();assert state['patches'][-1]['value']['initial_minutes']==45

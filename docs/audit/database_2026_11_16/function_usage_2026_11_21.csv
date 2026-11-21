@@ -1,0 +1,283 @@
+signature,sql_reference_candidates,trigger_bindings,policy_reference_candidates,catalog_dependents,app_reference_candidates
+"checkin_event_atomic(uuid,text,uuid,uuid)",[],[],[],0,[]
+"checkin_event_guest(uuid,citext,text,uuid,uuid)",[],[],[],0,[]
+"claim_guest_order(uuid,uuid,uuid)",[],[],[],0,"[""holy-grills-backend/app/routes/orders.py""]"
+"credit_wallet_atomic(uuid,numeric,text,text,uuid,text,text,jsonb,uuid)","[""hg_admin_marketplace_resolve(uuid,uuid,text,uuid,text)"", ""hg_reconcile_late_order_payment(uuid,text,text,numeric,jsonb)"", ""hg_refund_order_atomic(uuid,uuid,text,numeric,text,boolean)"", ""hg_wallet_auto_funding(text,uuid,uuid,jsonb)""]",[],[],0,"[""holy-grills-backend/app/routes/webhooks.py"", ""holy-grills-backend/app/services/wallet_service.py""]"
+"debit_wallet_atomic(uuid,numeric,text,text,uuid,jsonb,uuid)","[""hg_create_order_atomic(uuid,text,citext,text,uuid,numeric,numeric,numeric,numeric,text,uuid,double precision,double precision,jsonb,uuid,text,text,text,uuid,jsonb,order_status,payment_status,numeric,numeric,integer,boolean,timestamp with time zone,boolean,numeric,integer,boolean,uuid,uuid,uuid,uuid,boolean,date,uuid)""]",[],[],0,"[""holy-grills-backend/app/services/wallet_service.py""]"
+get_event_tier_comparison(uuid),[],[],[],0,"[""holy-grills-backend/app/routes/events.py""]"
+get_hp_program_report_summary(date),[],[],[],0,"[""holy-grills-backend/app/routes/admin.py""]"
+get_menu_item_review_stats(uuid[]),[],[],[],0,"[""holy-grills-backend/app/routes/menu.py""]"
+get_pending_squad_hp_report(integer),[],[],[],0,"[""holy-grills-backend/app/routes/admin.py"", ""holy-grills-backend/app/services/squad_service.py""]"
+"hg_abandon_checkout(uuid,uuid,text,text,text,text)",[],[],[],0,"[""holy-grills-backend/app/routes/orders.py""]"
+hg_ack_event_refund_notice(uuid),[],[],[],0,"[""holy-grills-backend/app/services/event_refunds.py""]"
+"hg_ack_login_week_notice(uuid,uuid)",[],[],[],0,"[""holy-grills-backend/app/services/streak_service.py""]"
+"hg_add_hp_transaction(uuid,text,integer,text,text,uuid,uuid,jsonb,timestamp with time zone,uuid)","[""hg_complete_referral_atomic(uuid,uuid,uuid)"", ""hg_create_order_atomic(uuid,text,citext,text,uuid,numeric,numeric,numeric,numeric,text,uuid,double precision,double precision,jsonb,uuid,text,text,text,uuid,jsonb,order_status,payment_status,numeric,numeric,integer,boolean,timestamp with time zone,boolean,numeric,integer,boolean,uuid,uuid,uuid,uuid,boolean,date,uuid)"", ""hg_credit_delivery_hp_atomic(uuid,uuid,integer,text,text,numeric,integer)"", ""hg_purchase_marketplace_item(uuid,uuid,integer,boolean,numeric,text,numeric)"", ""hg_release_expired_event_reservation(uuid)"", ""hg_request_event_ticket_refund(uuid,uuid,uuid,uuid,text)"", ""hg_run_hp_expiry_check(integer)"", ""hg_sync_review_hp_columns()"", ""register_for_event_paid(uuid,uuid,uuid,boolean,numeric,uuid,jsonb)""]",[],[],0,[]
+"hg_add_wallet_transaction(uuid,text,numeric,text,text,uuid,text,text,uuid,jsonb,uuid)","[""hg_claim_guest_event_refunds(uuid)"", ""hg_purchase_marketplace_item(uuid,uuid,integer,boolean,numeric,text,numeric)"", ""hg_release_expired_event_reservation(uuid)"", ""hg_request_event_ticket_refund(uuid,uuid,uuid,uuid,text)"", ""register_for_event_paid(uuid,uuid,uuid,boolean,numeric,uuid,jsonb)""]",[],[],0,[]
+"hg_adjust_stock_balance(uuid,text,numeric,numeric,uuid,numeric,text,uuid,uuid)",[],[],[],0,"[""holy-grills-backend/app/routes/kitchen.py""]"
+hg_admin_batch_pay_breakdown(uuid),[],[],[],0,"[""holy-grills-backend/app/routes/riders.py""]"
+"hg_admin_expire_hp(uuid,uuid,integer,integer,text,uuid)",[],[],[],0,"[""holy-grills-backend/app/routes/hp.py""]"
+"hg_admin_marketplace_resolve(uuid,uuid,text,uuid,text)",[],[],[],0,"[""holy-grills-backend/app/routes/marketplace.py""]"
+"hg_admin_rider_batches(uuid,timestamp with time zone,integer,integer)",[],[],[],0,"[""holy-grills-backend/app/routes/riders.py"", ""holy-grills-frontend/src/lib/liveApi.ts""]"
+"hg_admin_rider_payments(uuid,timestamp with time zone)",[],[],[],0,"[""holy-grills-backend/app/routes/riders.py"", ""holy-grills-frontend/src/lib/liveApi.ts""]"
+"hg_admit_event_ticket(uuid,uuid,uuid,text,uuid,integer)",[],[],[],0,"[""holy-grills-backend/app/services/event_admission.py""]"
+hg_ambassador_actor(),"[""hg_is_ambassador_staff(uuid)"", ""hg_is_financial_admin()""]",[],[],0,[]
+hg_ambassador_attribute_order(uuid),[],[],[],0,"[""holy-grills-backend/app/services/ambassador_service.py""]"
+hg_ambassador_for_code(text),"[""hg_ambassador_record_click(text,uuid,text,uuid)""]",[],[],0,[]
+"hg_ambassador_merge_visitor(text,uuid)",[],[],[],0,"[""holy-grills-backend/app/services/ambassador_service.py""]"
+"hg_ambassador_record_click(text,uuid,text,uuid)",[],[],[],0,"[""holy-grills-backend/app/services/ambassador_service.py""]"
+"hg_ambassador_reverse_order(uuid,text)",[],[],[],0,"[""holy-grills-backend/app/services/ambassador_service.py""]"
+hg_ambassador_set_updated_at(),[],"[""public.ambassador_attributions:trg_amb_attributions_updated"", ""public.ambassador_milestone_claims:trg_amb_claims_updated"", ""public.ambassador_grants:trg_amb_grants_updated"", ""public.ambassador_meal_discounts:trg_amb_meal_discount_updated"", ""public.ambassador_milestones:trg_amb_milestones_updated"", ""public.ambassador_order_attributions:trg_amb_order_attr_updated"", ""public.ambassador_promo_assignments:trg_amb_promo_assign_updated"", ""public.ambassador_promo_messages:trg_amb_promo_updated"", ""public.ambassador_monthly_reviews:trg_amb_reviews_updated"", ""public.ambassadors:trg_ambassadors_updated""]",[],10,[]
+hg_ambassador_window_days(),"[""hg_ambassador_attribute_order(uuid)"", ""hg_ambassador_merge_visitor(text,uuid)"", ""hg_ambassador_record_click(text,uuid,text,uuid)""]",[],[],0,[]
+hg_anonymize_user(uuid),[],[],[],0,"[""holy-grills-backend/app/routes/admin.py"", ""holy-grills-backend/app/routes/auth.py""]"
+hg_auto_assign_order_to_batch(uuid),"[""hg_stage_ready_order_groups()""]",[],[],0,[]
+hg_auto_referral_code(),[],"[""public.profiles:trg_profiles_auto_referral_code""]",[],1,[]
+hg_award_membership_anniversary(uuid),[],[],[],0,"[""holy-grills-backend/app/tasks/scheduled.py""]"
+"hg_begin_event_refund(uuid,uuid)",[],[],[],0,"[""holy-grills-backend/app/services/event_refunds.py""]"
+"hg_begin_guest_cart_dispatch(uuid,uuid,jsonb)",[],[],[],0,"[""holy-grills-backend/app/services/notification_outbox.py""]"
+"hg_begin_notification_dispatch(uuid,uuid,jsonb)","[""hg_begin_guest_cart_dispatch(uuid,uuid,jsonb)""]",[],[],0,"[""holy-grills-backend/app/services/notification_outbox.py""]"
+hg_bind_squad_identity(uuid),[],[],[],0,"[""holy-grills-backend/app/services/auth_service.py""]"
+"hg_birthday_recipient(uuid,text)",[],[],[],0,"[""holy-grills-backend/app/routes/hp.py""]"
+hg_campus_visible(uuid),[],[],"[""public.delivery_zones:delivery_zones: public read active"", ""public.events:events: public read published"", ""public.flash_redemptions:Anyone can view flash_redemptions"", ""public.gates:anon_read_gates"", ""public.hostels:anon_read_hostels"", ""public.leaderboard_entries:leaderboard_entries: public read"", ""public.leaderboard_snapshots:leaderboard_snapshots: public read"", ""public.order_reviews:order_reviews: public read"", ""public.rewards:rewards: public read active"", ""public.system_settings:system_settings: public read""]",10,"[""holy-grills-backend/app/messages.py"", ""holy-grills-frontend/src/components/admin/AdminRewards.tsx""]"
+"hg_cancel_newsletter_campaign(uuid,uuid,uuid)",[],[],[],0,"[""holy-grills-backend/app/routes/storefront.py""]"
+"hg_capture_cart_recovery_step(uuid,integer,timestamp with time zone,integer,integer,integer)",[],[],[],0,"[""holy-grills-backend/app/services/cart_recovery.py""]"
+"hg_capture_guest_cart_recovery_step(uuid,integer,timestamp with time zone,integer,integer,integer)",[],[],[],0,"[""holy-grills-backend/app/services/cart_recovery.py""]"
+hg_capture_notification_dispatch(),[],"[""public.notifications:hg_capture_notification_dispatch_trg""]",[],1,[]
+hg_capture_operations_emails(uuid),[],[],[],0,"[""holy-grills-backend/app/services/operations_email.py""]"
+hg_capture_paid_order_alert(),[],"[""public.orders:orders_capture_operations_alert""]",[],1,[]
+hg_cart_recovery_metrics(uuid[]),[],[],[],0,"[""holy-grills-backend/app/routes/admin.py""]"
+hg_cascade_academic_level_value(),[],"[""public.academic_levels:academic_levels_cascade_value""]",[],1,[]
+hg_cascade_department_copy(),[],"[""public.departments:departments_cascade_copy""]",[],1,[]
+"hg_change_event_operation(uuid,uuid,uuid,text,jsonb)",[],[],[],0,"[""holy-grills-backend/app/routes/event_organizers.py""]"
+hg_check_ordering_window_delivery_link(),[],"[""public.ordering_windows:trg_ordering_window_delivery_link_same_campus""]",[],1,[]
+"hg_claim_daily_share_atomic(uuid,uuid,text,integer,uuid)",[],[],[],0,[]
+hg_claim_event_refund(uuid),[],[],[],0,"[""holy-grills-backend/app/services/event_refunds.py""]"
+"hg_claim_gift_campaign_atomic(uuid,uuid)",[],[],[],0,"[""holy-grills-backend/app/services/gift_campaigns.py""]"
+"hg_claim_graduation_atomic(uuid,integer)",[],[],[],0,"[""holy-grills-backend/app/routes/graduation.py""]"
+hg_claim_guest_attendance_hp(uuid),[],[],[],0,"[""holy-grills-backend/app/routes/events.py"", ""holy-grills-backend/app/routes/hp.py""]"
+hg_claim_guest_event_refunds(uuid),[],[],[],0,"[""holy-grills-backend/app/routes/events.py"", ""holy-grills-backend/app/routes/wallet.py""]"
+"hg_claim_newsletter_delivery(uuid,uuid,text)",[],[],[],0,"[""holy-grills-backend/app/services/newsletter_service.py""]"
+hg_claim_notification_dispatch_v2(uuid),[],[],[],0,"[""holy-grills-backend/app/services/notification_outbox.py""]"
+hg_claim_notification_dispatch(uuid),[],[],[],0,"[""holy-grills-backend/app/services/notification_outbox.py""]"
+"hg_claim_pending_squad_hp(uuid,uuid)",[],[],[],0,"[""holy-grills-backend/app/services/squad_service.py""]"
+"hg_claim_reward_redemption_for_order(uuid,uuid,uuid)",[],[],[],0,"[""holy-grills-backend/app/services/order_service.py""]"
+"hg_claim_tier_monthly_perk(uuid,text,text,uuid)","[""hg_create_order_atomic(uuid,text,citext,text,uuid,numeric,numeric,numeric,numeric,text,uuid,double precision,double precision,jsonb,uuid,text,text,text,uuid,jsonb,order_status,payment_status,numeric,numeric,integer,boolean,timestamp with time zone,boolean,numeric,integer,boolean,uuid,uuid,uuid,uuid,boolean,date,uuid)""]",[],[],0,[]
+hg_classify_promoted_test_orders(),[],"[""public.profiles:classify_promoted_test_orders""]",[],1,[]
+hg_classify_test_order(),[],"[""public.orders:aa_classify_test_order""]",[],1,[]
+"hg_complete_active_milestone(uuid,uuid,text,integer,uuid)","[""hg_complete_event_milestones(uuid,numeric)""]",[],[],0,"[""holy-grills-backend/app/services/milestone_service.py""]"
+"hg_complete_delivery_rewards_atomic(uuid,jsonb,jsonb)",[],[],[],0,"[""holy-grills-backend/app/services/delivery_reward_recovery.py""]"
+"hg_complete_event_milestones(uuid,numeric)","[""hg_admit_event_ticket(uuid,uuid,uuid,text,uuid,integer)"", ""hg_internal.finish_guest_event_hp(uuid,uuid,integer,numeric,uuid,text)""]",[],[],0,[]
+"hg_complete_pending_milestone(uuid,uuid,text,integer)",[],[],[],0,"[""holy-grills-backend/app/services/milestone_service.py""]"
+"hg_complete_referral_atomic(uuid,uuid,uuid)",[],[],[],0,"[""holy-grills-backend/app/routes/referrals.py""]"
+"hg_consume_free_sides_atomic(uuid,uuid,uuid)","[""hg_create_order_atomic(uuid,text,citext,text,uuid,numeric,numeric,numeric,numeric,text,uuid,double precision,double precision,jsonb,uuid,text,text,text,uuid,jsonb,order_status,payment_status,numeric,numeric,integer,boolean,timestamp with time zone,boolean,numeric,integer,boolean,uuid,uuid,uuid,uuid,boolean,date,uuid)""]",[],[],0,[]
+hg_consume_hp_buckets(),[],"[""public.hp_transactions:trg_hp_transactions_consume_buckets""]",[],1,[]
+"hg_create_ambassador_promo_atomic(uuid,uuid,uuid,text,text,text,boolean,uuid[])",[],[],[],0,"[""holy-grills-backend/app/services/ambassador_service.py""]"
+"hg_create_order_atomic(uuid,text,citext,text,uuid,numeric,numeric,numeric,numeric,text,uuid,double precision,double precision,jsonb,uuid,text,text,text,uuid,jsonb,order_status,payment_status,numeric,numeric,integer,boolean,timestamp with time zone,boolean,numeric,integer,boolean,uuid,uuid,uuid,uuid,boolean,date,uuid)",[],[],[],0,"[""holy-grills-backend/app/services/order_service.py""]"
+hg_create_wallet_on_profile(),[],"[""public.profiles:trg_profiles_create_wallet""]",[],1,[]
+"hg_credit_delivery_hp_atomic(uuid,uuid,integer,text,text,numeric,integer)",[],[],[],0,"[""holy-grills-backend/app/services/order_service.py""]"
+hg_cron_execution_summary(text[]),[],[],[],0,"[""holy-grills-backend/app/routes/admin.py""]"
+hg_current_user_role(),"[""hg_protect_order_columns()"", ""hg_verify_rider_delivery_assignment()""]",[],"[""public.kitchen_settings:kitchen_settings: unified manage""]",2,[]
+"hg_deactivate_user(uuid,text)",[],[],[],0,[]
+hg_decrement_promo_used_count(),[],"[""public.promo_code_uses:trg_promo_code_uses_decrement""]",[],1,[]
+"hg_delivery_costs(uuid,uuid,text,jsonb)",[],[],[],0,"[""holy-grills-backend/app/routes/delivery_costs.py""]"
+"hg_delivery_pool_budget(uuid,uuid,numeric,integer)",[],[],[],0,"[""holy-grills-backend/app/routes/delivery_costs.py""]"
+"hg_delivery_pool_report(uuid,uuid,date,date,boolean)",[],[],[],0,"[""holy-grills-backend/app/routes/delivery_costs.py""]"
+hg_due_birthdays(integer),[],[],[],0,"[""holy-grills-backend/app/services/birthdays.py""]"
+"hg_due_cart_recovery(uuid,integer,integer,integer)",[],[],[],0,"[""holy-grills-backend/app/services/cart_recovery.py""]"
+hg_due_event_refunds(integer),[],[],[],0,"[""holy-grills-backend/app/services/event_refunds.py""]"
+"hg_due_guest_cart_recovery(uuid,integer,integer,integer)",[],[],[],0,"[""holy-grills-backend/app/services/cart_recovery.py""]"
+hg_due_notification_dispatch(integer),[],[],[],0,"[""holy-grills-backend/app/services/notification_outbox.py""]"
+hg_effective_rider(uuid),"[""hg_verify_rider_delivery_assignment()""]",[],"[""public.order_items:order_items: assigned rider read"", ""public.orders:orders: rider assigned batch select"", ""public.orders:orders: rider assigned batch update""]",3,"[""holy-grills-backend/app/services/order_service.py""]"
+hg_email_send_counts(date),[],[],[],0,"[""holy-grills-backend/app/services/email_usage.py""]"
+hg_enforce_pending_hp_ceiling(),[],"[""public.hp_transactions:trg_hp_transactions_pending_ceiling""]",[],1,[]
+hg_enforce_single_default_address(),[],"[""public.user_addresses:trg_user_addresses_single_default""]",[],1,"[""holy-grills-backend/app/routes/auth.py""]"
+hg_event_attendance_count(uuid),[],[],[],0,"[""holy-grills-backend/app/routes/events.py""]"
+"hg_event_payout_action(uuid,uuid,uuid,text,jsonb)",[],[],[],0,"[""holy-grills-backend/app/routes/event_organizers.py""]"
+"hg_event_refund_list(uuid,uuid)",[],[],[],0,"[""holy-grills-backend/app/routes/events.py"", ""holy-grills-backend/app/routes/event_organizers.py""]"
+hg_expire_ambassador_discounts(),[],[],[],0,"[""holy-grills-backend/app/services/ambassador_service.py""]"
+hg_expire_stale_event_tickets(),[],[],[],0,[]
+"hg_finalize_monthly_leaderboard(uuid,text,jsonb,boolean,boolean,boolean,integer,integer)",[],[],[],0,"[""holy-grills-backend/app/tasks/scheduled.py""]"
+"hg_finish_event_refund(uuid,uuid,text,text,text)",[],[],[],0,"[""holy-grills-backend/app/services/event_refunds.py""]"
+"hg_finish_notification_dispatch(uuid,uuid,jsonb)","[""hg_begin_guest_cart_dispatch(uuid,uuid,jsonb)""]",[],[],0,"[""holy-grills-backend/app/services/notification_outbox.py""]"
+hg_generate_referral_code(),"[""hg_auto_referral_code()"", ""hg_handle_new_auth_user()""]",[],[],0,[]
+hg_generate_referral_code(text),"[""hg_auto_referral_code()"", ""hg_handle_new_auth_user()""]",[],[],0,[]
+hg_graduation_eligibility(uuid),"[""hg_claim_graduation_atomic(uuid,integer)""]",[],[],0,"[""holy-grills-backend/app/routes/graduation.py""]"
+"hg_grant_ambassador_meal_discount(uuid,uuid,numeric,integer,integer,uuid,text)","[""hg_issue_ambassador_grant_atomic(uuid,uuid,text,numeric,text,text,integer,integer,text,uuid,boolean,text)""]",[],[],0,[]
+"hg_grant_exclusive_spins_atomic(uuid,uuid,uuid,integer,integer,text)",[],[],[],0,"[""holy-grills-backend/app/routes/admin.py""]"
+"hg_grant_free_sides_atomic(uuid,uuid,uuid,integer,integer,text)","[""hg_issue_ambassador_grant_atomic(uuid,uuid,text,numeric,text,text,integer,integer,text,uuid,boolean,text)""]",[],[],0,"[""holy-grills-backend/app/routes/free_sides.py""]"
+hg_grant_signup_free_side_atomic(uuid),[],[],[],0,"[""holy-grills-backend/app/services/welcome_credit_service.py""]"
+hg_guard_access_code_assignment(),[],"[""public.marketplace_access_codes:trg_marketplace_codes_assignment_guard""]",[],1,[]
+hg_guard_delivery_location_campus(),[],"[""public.gates:gates_guard_linked_campus"", ""public.hostels:hostels_guard_gate_campus""]",[],2,[]
+hg_guard_event_organizer_owner(),[],"[""public.events:trg_event_organizer_owner""]",[],1,[]
+hg_guard_issued_event_history(),[],"[""public.events:trg_guard_issued_event_history"", ""public.event_ticket_tiers:trg_guard_issued_tier_history""]",[],2,[]
+hg_guard_order_review_insert(),[],"[""public.order_reviews:aa_hg_guard_order_review_insert""]",[],1,[]
+hg_guard_share_event_insert(),[],"[""public.order_share_events:aa_hg_guard_share_event_insert""]",[],1,[]
+hg_guard_squad_member_insert(),[],"[""public.squad_members:aa_hg_guard_squad_member_insert""]",[],1,[]
+"hg_guest_cart_recovery_valid(uuid,integer,timestamp with time zone,text,uuid)","[""hg_begin_guest_cart_dispatch(uuid,uuid,jsonb)"", ""hg_capture_guest_cart_recovery_step(uuid,integer,timestamp with time zone,integer,integer,integer)"", ""hg_due_guest_cart_recovery(uuid,integer,integer,integer)""]",[],[],0,"[""holy-grills-backend/app/services/guest_cart_email.py""]"
+hg_handle_new_auth_user(),[],"[""auth.users:on_auth_user_created_hg_profile""]",[],1,[]
+hg_hp_bucket_defaults(),[],"[""public.hp_transactions:trg_hp_transactions_default_remaining""]",[],1,[]
+"hg_hp_gift_receipt(uuid,uuid)",[],[],[],0,"[""holy-grills-backend/app/routes/hp.py"", ""holy-grills-backend/app/services/hp_gifts.py""]"
+"hg_hp_grant_segment(uuid,uuid,timestamp with time zone,timestamp with time zone,uuid,integer)",[],[],[],0,"[""holy-grills-backend/app/routes/admin.py""]"
+hg_increment_promo_used_count(),[],[],[],0,[]
+hg_internal.capture_ambassador_grant_notice(uuid),"[""hg_issue_ambassador_grant_atomic(uuid,uuid,text,numeric,text,text,integer,integer,text,uuid,boolean,text)""]",[],[],0,[]
+hg_internal.capture_balance_activity(),[],"[""public.wallets:capture_initial_wallet_balance_notice"", ""public.profiles:capture_profile_hp_balance_notice"", ""public.wallets:capture_wallet_balance_notice""]",[],3,[]
+hg_internal.capture_catering_status_email(),[],"[""public.catering_requests:capture_catering_status_email""]",[],1,[]
+"hg_internal.capture_checkin_reclaim_notice(uuid,uuid,date,text)","[""hg_reclaim_login_checkin(uuid,text,uuid,numeric)""]",[],[],0,[]
+hg_internal.capture_delivery_cushion_snapshot(),[],"[""public.order_items:capture_delivery_cushion"", ""public.order_addon_selections:capture_delivery_cushion""]",[],2,[]
+hg_internal.capture_milestone_completion_notice(),[],"[""public.user_milestones:capture_milestone_completion_notice""]",[],1,[]
+"hg_internal.capture_organizer_notice(uuid,text,text,text,jsonb)","[""hg_event_payout_action(uuid,uuid,uuid,text,jsonb)"", ""hg_organizer_event_draft(uuid,uuid,text,jsonb)"", ""hg_review_organizer_event(uuid,uuid,text,jsonb)""]",[],[],0,[]
+hg_internal.capture_pending_hp_activity(),[],"[""public.hp_transactions:capture_pending_hp_notice""]",[],1,[]
+hg_internal.capture_stock_low_notice(),[],"[""public.stock_items:capture_stock_low_notice""]",[],1,[]
+"hg_internal.delivery_cost_actor(uuid,uuid)","[""hg_delivery_costs(uuid,uuid,text,jsonb)"", ""hg_delivery_pool_budget(uuid,uuid,numeric,integer)"", ""hg_delivery_pool_report(uuid,uuid,date,date,boolean)""]",[],[],0,[]
+"hg_internal.finish_guest_event_hp(uuid,uuid,integer,numeric,uuid,text)","[""hg_claim_guest_attendance_hp(uuid)"", ""hg_review_guest_attendance_hp(uuid,uuid,uuid,integer,text)""]",[],[],0,[]
+hg_internal.guard_booked_event_schedule(),[],"[""public.events:guard_booked_event_schedule""]",[],1,[]
+hg_internal.guard_cancelled_event_ticket(),[],"[""public.event_tickets:guard_cancelled_event_ticket""]",[],1,[]
+hg_internal.log_delivery_subsidy_movement(),[],"[""hg_internal.delivery_subsidy_ledger:delivery_subsidy_movement""]",[],1,[]
+hg_internal.prize_handover_effects(),[],"[""public.leaderboard_reward_fulfillments:prize_handover_guard"", ""public.hall_of_fame_rewards:prize_handover_guard"", ""public.exclusive_spin_fulfillments:prize_handover_guard"", ""public.leaderboard_reward_fulfillments:prize_handover_receipt"", ""public.hall_of_fame_rewards:prize_handover_receipt"", ""public.exclusive_spin_fulfillments:prize_handover_receipt""]",[],6,[]
+"hg_internal.queue_event_change_notices(uuid,uuid,jsonb)","[""hg_change_event_operation(uuid,uuid,uuid,text,jsonb)""]",[],[],0,[]
+hg_internal.refresh_delivery_subsidy(uuid),"[""hg_internal.sync_delivery_subsidy()""]",[],[],0,[]
+"hg_internal.save_balance_activity(uuid,text,uuid,numeric,boolean,jsonb,jsonb)","[""hg_internal.capture_balance_activity()"", ""hg_internal.capture_pending_hp_activity()""]",[],[],0,[]
+hg_internal.sync_delivery_subsidy(),[],"[""public.orders:sync_delivery_subsidy""]",[],1,[]
+hg_internal.verified_event_ticket_email(uuid),"[""hg_claim_guest_attendance_hp(uuid)"", ""hg_claim_guest_event_refunds(uuid)"", ""hg_link_verified_event_tickets(uuid)"", ""hg_review_guest_attendance_hp(uuid,uuid,uuid,integer,text)""]",[],[],0,[]
+hg_is_admin(),[],[],"[""public.brand_partnership_requests:brand_partnership_requests: admins insert"", ""public.brand_partnership_requests:brand_partnership_requests: admins read"", ""public.brand_partnership_requests:brand_partnership_requests: admins update"", ""public.cron_locks:Admins manage cron_locks"", ""public.hall_of_fame_inductees:Admins manage hall_of_fame""]",6,[]
+hg_is_ambassador_staff(uuid),[],[],"[""public.ambassador_attributions:amb_attributions_self_read"", ""public.ambassador_grants:amb_grants_self_read"", ""public.ambassador_link_clicks:amb_staff_clicks"", ""public.ambassador_meal_discount_redemptions:amb_meal_redemptions_self_read"", ""public.ambassador_meal_discounts:amb_meal_self_read"", ""public.ambassador_milestone_claims:amb_claims_self_read"", ""public.ambassador_milestones:amb_staff_milestones"", ""public.ambassador_monthly_reviews:amb_reviews_self_read"", ""public.ambassador_order_attributions:amb_order_attr_self_read"", ""public.ambassador_promo_assignments:amb_staff_promo_assignments"", ""public.ambassador_promo_messages:amb_staff_promo_messages"", ""public.ambassadors:amb_staff_ambassadors"", ""public.ambassadors:ambassadors_self_read""]",13,[]
+hg_is_campus_admin(uuid),"[""hg_admin_batch_pay_breakdown(uuid)"", ""hg_admin_rider_batches(uuid,timestamp with time zone,integer,integer)"", ""hg_admin_rider_payments(uuid,timestamp with time zone)"", ""hg_effective_rider(uuid)"", ""hg_guard_order_review_insert()"", ""hg_guard_share_event_insert()"", ""hg_guard_squad_member_insert()"", ""hg_hp_grant_segment(uuid,uuid,timestamp with time zone,timestamp with time zone,uuid,integer)"", ""hg_keep_event_door_token_private()"", ""hg_protect_leaderboard_reward_columns()"", ""hg_protect_notification_columns()"", ""hg_protect_order_columns()"", ""hg_protect_order_locks_columns()"", ""hg_protect_order_review_columns()"", ""hg_protect_profile_columns()"", ""hg_protect_squad_member_columns()"", ""hg_reserve_order_refund(uuid,numeric)""]",[],"[""public.abandoned_carts:abandoned_carts: unified access"", ""public.academic_calendar:academic_calendar: campus admins manage"", ""public.academic_calendar:academic_calendar: public reads active, admins read all"", ""public.academic_calendar:academic_calendar: super_admin manages global entries"", ""public.academic_levels:academic_levels: campus admins manage"", ""public.academic_levels:academic_levels: super_admin manages global"", ""public.admin_audit_logs:admin_audit_logs: admins insert"", ""public.admin_audit_logs:admin_audit_logs: admins read"", ""public.banners:banners: admins all"", ""public.banners:banners: enforce CMS campus reads"", ""public.batch_orders:batch_orders_admin_all"", ""public.brand_partnership_requests:brand_partnership_requests: super_admin manages"", ""public.catering_requests:catering_requests: admins all"", ""public.challenge_completions:challenge_completions: admins all"", ""public.challenges:challenges: admins all"", ""public.challenges:challenges: public read active"", ""public.daily_checkins:daily_checkins: admin write"", ""public.daily_checkins:daily_checkins_campus_scoping"", ""public.delivery_assignments:delivery_assignments: admins all"", ""public.delivery_assignments:delivery_assignments: riders read"", ""public.delivery_batches:delivery_batches: admins all"", ""public.delivery_batches:delivery_batches: riders read"", ""public.delivery_windows:delivery_windows: admins all"", ""public.delivery_windows:delivery_windows: public read active"", ""public.delivery_zones:delivery_zones: admins all"", ""public.delivery_zones:delivery_zones: public read active"", ""public.departments:departments: campus admins manage"", ""public.departments:departments: super_admin manages global"", ""public.device_fingerprints:device_fingerprints: admins all"", ""public.email_templates:email_templates: admins all"", ""public.event_checkins:event_checkins: admins all"", ""public.event_ticket_tiers:event_tiers_admin"", ""public.event_tickets:event_tickets: admins all"", ""public.events:events: admins all"", ""public.events:events: public read published"", ""public.exclusive_spin_fulfillments:exclusive_spin_fulfillments: admins all"", ""public.exclusive_spin_prizes:exclusive_spin_prizes: admins all"", ""public.exclusive_spin_prizes:exclusive_spin_prizes: authenticated read active"", ""public.exclusive_spins:exclusive_spins: admins write"", ""public.exclusive_spins:exclusive_spins: users read own"", ""public.feature_flags:feature_flags_admin_write"", ""public.first_order_gifts:first_order_gifts: admins all"", ""public.flash_redemptions:Admins manage flash_redemptions"", ""public.free_side_credits:free_side_credits: admins write"", ""public.free_side_credits:free_side_credits: users read own"", ""public.free_side_items:free_side_items: admins manage"", ""public.free_side_items:free_side_items: enforce campus reads"", ""public.gates:gates: admins all"", ""public.hall_of_fame_rewards:hall_of_fame_rewards: unified access"", ""public.hostels:hostels: admins all"", ""public.hp_bundle_purchases:Admins manage hp_bundle_purchases"", ""public.hp_bundles:Admins manage hp_bundles"", ""public.hp_expiry_log:hp_expiry_log_admin_all"", ""public.hp_tiers:hp_tiers: admins all"", ""public.hp_tiers:hp_tiers: public read active"", ""public.hp_transactions:hp_transactions: admins read"", ""public.hp_transactions:hp_transactions: users read own"", ""public.kitchen_settings:kitchen_settings: unified manage"", ""public.leaderboard_entries:leaderboard_entries: admins all"", ""public.leaderboard_reward_fulfillments:leaderboard_reward_fulfillments: admin write"", ""public.leaderboard_reward_fulfillments:leaderboard_reward_fulfillments: owner or admin read"", ""public.leaderboard_snapshots:leaderboard_snapshots: admins all"", ""public.login_streak_rewards:login_streak_rewards: admins all"", ""public.login_streaks:login_streaks: admins all"", ""public.marketplace_access_codes:marketplace_access_codes: admins all"", ""public.marketplace_code_batches:marketplace_code_batches: admins all"", ""public.marketplace_listing_availability:marketplace_listing_availability: admin manage own campus"", ""public.marketplace_listing_availability:marketplace_listing_availability: read own campus"", ""public.marketplace_listings:marketplace_listings: admins all"", ""public.marketplace_listings:marketplace_listings: public read active"", ""public.marketplace_purchase_reports:marketplace_purchase_reports: admins read"", ""public.marketplace_purchases:marketplace_purchases_campus_scoping"", ""public.marketplace_requests:marketplace_requests: admins all"", ""public.marketplace_requests:marketplace_requests: vendor read own or admin"", ""public.measurement_units:measurement_units: super_admin manages"", ""public.membership_rewards:membership_rewards: admins all"", ""public.menu_addon_groups:menu_addon_groups: admins all"", ""public.menu_addon_groups:menu_addon_groups: enforce catalogue campus reads"", ""public.menu_addons:Admins manage menu_addons"", ""public.menu_addons:menu_addons: enforce catalogue campus reads"", ""public.menu_categories:menu_categories: admins all"", ""public.menu_categories:menu_categories: enforce catalogue campus reads"", ""public.menu_categories:menu_categories: public read active"", ""public.menu_item_availability:menu_item_availability: enforce catalogue campus reads"", ""public.menu_item_variation_groups:Admins manage menu_item_variation_groups"", ""public.menu_item_variation_groups:menu_item_variation_groups: enforce catalogue campus reads"", ""public.menu_item_variation_options:Admins manage menu_item_variation_options"", ""public.menu_item_variation_options:menu_item_variation_options: enforce catalogue campus reads"", ""public.menu_items:menu_items: admins all"", ""public.menu_items:menu_items: enforce catalogue campus reads"", ""public.milestones:Anyone can view active milestones"", ""public.milestones:milestones: admins all"", ""public.monthly_hp_tracker:monthly_hp_tracker: admins all"", ""public.newsletter_campaigns:newsletter_campaigns: admins manage"", ""public.newsletter_subscriptions:newsletter_subscriptions: admins all"", ""public.notification_blasts:notification_blasts: admins all"", ""public.notification_blasts:notification_blasts_segment_scope"", ""public.notification_deliveries:notification_deliveries: admins all"", ""public.notification_log:notification_log: admins all"", ""public.notifications:notifications: admins all"", ""public.notifications:notifications: users read own"", ""public.notifications:notifications_campus_scoping"", ""public.operating_hour_overrides:operating_hour_overrides: admins all"", ""public.operating_hours:operating_hours: admins all"", ""public.order_items:order_items: admins all"", ""public.order_items:order_items: users read own"", ""public.order_locks:order_locks: owner or admin read"", ""public.order_motivations:order_motivations: admins read"", ""public.order_reviews:order_reviews: admins all"", ""public.order_share_events:order_share_events: admins all"", ""public.order_status_logs:order_status_logs: admins all"", ""public.order_streak_rewards:order_streak_rewards: admins all"", ""public.order_streaks:order_streaks: admins all"", ""public.ordering_windows:ordering_windows: admins all"", ""public.orders:orders: admins delete"", ""public.orders:orders: admins update all"", ""public.orders:orders_admin_all"", ""public.payments:payments: admins read"", ""public.pending_squad_hp:pending_squad_hp: admins view"", ""public.profiles:profiles: admins delete"", ""public.profiles:profiles: users read own"", ""public.profiles:profiles_admin_all"", ""public.promo_code_uses:promo_code_uses: admins all"", ""public.promo_codes:promo_codes: admins all"", ""public.promo_codes:promo_codes: authenticated read active"", ""public.push_subscriptions:push_subscriptions: admins read all"", ""public.redemption_cost_log:redemption_cost_log: admins manage"", ""public.redemption_cost_log:redemption_cost_log: campus admins read"", ""public.referral_codes:referral_codes: admins all"", ""public.referral_milestones:referral_milestones: admins all"", ""public.referrals:referrals: admins all"", ""public.reward_redemptions:reward_redemptions: admins all"", ""public.rewards:rewards: admins all"", ""public.rewards:rewards: public read active"", ""public.rider_profiles:rider_profiles: unified access"", ""public.scheduled_notification_sends:scheduled_notification_sends: admins view"", ""public.scheduled_notifications:scheduled_notifications: admins all"", ""public.squad_members:Admins manage squad members"", ""public.squad_roster:squad_roster: admins all"", ""public.squads:squads: admins all"", ""public.stock_items:stock_items: admins all"", ""public.stock_ledger:stock_ledger: admins all"", ""public.storefront_sections:storefront_sections: admins all"", ""public.storefront_sections:storefront_sections: enforce CMS campus reads"", ""public.storefront_sections:storefront_sections: public read active"", ""public.system_settings:system_settings: campus admins manage own, super_admin manages "", ""public.tier_monthly_perk_usage:tier_monthly_perk_usage: admins all"", ""public.user_addresses:user_addresses: unified access"", ""public.user_milestones:user_milestones: admins all"", ""public.user_tiers:user_tiers: admins all"", ""public.virtual_accounts:virtual_accounts: admins all"", ""public.wallet_topups:wallet_topups: admins all"", ""public.wallet_transactions:wallet_transactions: admins read"", ""public.wallet_transactions:wallet_transactions_campus_scoping"", ""public.wallet_withdrawals:wallet_withdrawals: admins all"", ""public.wallets:wallets: admins read"", ""public.wallets:wallets_campus_scoping"", ""public.webhook_events:webhook_events_admin_read""]",211,"[""holy-grills-backend/app/services/milestone_service.py""]"
+hg_is_campus_staff(uuid),[],[],"[""public.menu_item_availability:menu_item_availability: staff manage own campus"", ""public.order_items:order_items: campus staff read"", ""public.orders:orders_campus_scoping""]",4,[]
+hg_is_financial_admin(),[],[],[],0,[]
+hg_is_squad_roster_member(uuid),[],[],"[""public.squads:squads: roster members view""]",1,[]
+"hg_issue_ambassador_grant_atomic(uuid,uuid,text,numeric,text,text,integer,integer,text,uuid,boolean,text)",[],[],[],0,"[""holy-grills-backend/app/services/ambassador_service.py""]"
+hg_keep_event_door_token_private(),[],"[""public.events:trg_keep_event_door_token_private"", ""public.events:trg_keep_inserted_event_door_token_private""]",[],2,[]
+hg_keep_event_earnings_immutable(),[],"[""hg_internal.event_ticket_earnings:trg_immutable_event_earnings""]",[],1,[]
+hg_link_guest_orders_to_user(),[],"[""public.profiles:trg_orders_link_guest_orders""]",[],1,[]
+hg_link_guest_tickets_to_user(),[],"[""public.profiles:trg_profiles_link_guest_tickets""]",[],1,[]
+hg_link_verified_event_tickets(uuid),[],[],[],0,"[""holy-grills-backend/app/routes/events.py""]"
+hg_log_order_status_change(),[],"[""public.orders:trg_orders_log_status""]",[],1,[]
+"hg_manage_delivery_batch_atomic(uuid,text,uuid,jsonb)",[],[],[],0,"[""holy-grills-backend/app/routes/admin.py""]"
+hg_mark_abandoned_cart_recovered(),[],"[""public.orders:trg_orders_mark_cart_recovered""]",[],1,[]
+hg_mark_current_login_checkin(uuid),[],[],[],0,"[""holy-grills-backend/app/services/streak_service.py""]"
+"hg_mark_event_ticket_paid(uuid,text,text,numeric,jsonb)","[""hg_pay_event_with_delivery(uuid,text,text,numeric,jsonb)""]",[],[],0,[]
+"hg_mark_order_paid(uuid,text,text,numeric,jsonb)",[],[],[],0,"[""holy-grills-backend/app/services/order_service.py""]"
+"hg_move_deferred_orders_atomic(uuid,uuid,date)",[],[],[],0,"[""holy-grills-backend/app/routes/admin.py""]"
+"hg_move_storefront_banner(uuid,uuid,integer,jsonb)",[],[],[],0,"[""holy-grills-backend/app/routes/storefront.py""]"
+"hg_move_storefront_section(uuid,uuid,integer,jsonb)",[],[],[],0,"[""holy-grills-backend/app/routes/storefront.py""]"
+"hg_notification_recovery_list(uuid,uuid)",[],[],[],0,"[""holy-grills-backend/app/routes/notifications.py""]"
+hg_on_banner_delete(),[],"[""public.banners:trg_banner_delete""]",[],1,[]
+hg_on_event_delete(),[],"[""public.events:trg_event_delete""]",[],1,[]
+hg_on_hp_transaction_insert(),[],"[""public.hp_transactions:trg_hp_transactions_sync_profile""]",[],1,[]
+hg_on_hp_transaction_reconcile(),[],"[""public.hp_transactions:trg_hp_transactions_reconcile_balance""]",[],1,[]
+hg_on_menu_item_delete(),[],"[""public.menu_items:trg_menu_item_delete""]",[],1,[]
+hg_on_profile_delete(),[],"[""public.profiles:trg_profile_delete""]",[],1,[]
+hg_on_profile_photo_update(),[],"[""public.profiles:trg_profile_photo_update""]",[],1,[]
+hg_on_reward_delete(),[],"[""public.rewards:trg_reward_delete""]",[],1,[]
+hg_operations_cart_alert_due(uuid),"[""hg_capture_operations_emails(uuid)"", ""hg_operations_email_outbox(text,uuid,uuid,jsonb)""]",[],[],0,[]
+"hg_operations_email_outbox(text,uuid,uuid,jsonb)",[],[],[],0,"[""holy-grills-backend/app/services/operations_email.py""]"
+"hg_operations_email_status(uuid,uuid,uuid)",[],[],[],0,"[""holy-grills-backend/app/routes/admin.py""]"
+"hg_operations_summary_window(uuid,timestamp with time zone,timestamp with time zone)","[""hg_capture_operations_emails(uuid)""]",[],[],0,[]
+"hg_operations_summary(uuid,date,date)","[""hg_capture_operations_emails(uuid)""]",[],[],0,[]
+"hg_organizer_event_attendees(uuid,uuid,text,integer,integer)",[],[],[],0,"[""holy-grills-backend/app/routes/event_organizers.py""]"
+"hg_organizer_event_balance(uuid,uuid)","[""hg_event_payout_action(uuid,uuid,uuid,text,jsonb)""]",[],[],0,"[""holy-grills-backend/app/routes/event_organizers.py""]"
+"hg_organizer_event_draft(uuid,uuid,text,jsonb)",[],[],[],0,"[""holy-grills-backend/app/routes/event_organizers.py""]"
+"hg_pay_event_with_delivery(uuid,text,text,numeric,jsonb)",[],[],[],0,"[""holy-grills-backend/app/routes/events.py""]"
+hg_preserve_reward_promise(),[],"[""public.reward_redemptions:trg_reward_redemptions_preserve_promise""]",[],1,[]
+hg_prize_notice_valid(uuid),"[""hg_begin_notification_dispatch(uuid,uuid,jsonb)""]",[],[],0,"[""holy-grills-backend/app/services/notification_outbox.py""]"
+hg_prize_status_guard(),[],"[""public.hall_of_fame_rewards:trg_hof_status_guard"", ""public.leaderboard_reward_fulfillments:trg_lb_status_guard"", ""public.exclusive_spin_fulfillments:trg_spin_status_guard""]",[],3,[]
+"hg_process_birthday(uuid,integer)",[],[],[],0,"[""holy-grills-backend/app/services/birthdays.py""]"
+"hg_process_order_streak_atomic(uuid,numeric,text)",[],[],[],0,"[""holy-grills-backend/app/services/streak_service.py""]"
+hg_progress_delivery_batch(),[],"[""public.orders:trg_orders_progress_batch""]",[],1,[]
+hg_protect_leaderboard_reward_columns(),[],"[""public.leaderboard_reward_fulfillments:hg_protect_leaderboard_reward_columns_trg""]",[],1,[]
+hg_protect_notification_columns(),[],"[""public.notifications:hg_protect_notification_columns_trg""]",[],1,[]
+hg_protect_order_columns(),[],"[""public.orders:hg_protect_order_columns_trg""]",[],1,[]
+hg_protect_order_locks_columns(),[],"[""public.order_locks:hg_protect_order_locks_columns_trg""]",[],1,[]
+hg_protect_order_review_columns(),[],"[""public.order_reviews:hg_protect_order_review_columns_trg""]",[],1,[]
+hg_protect_profile_columns(),[],"[""public.profiles:trg_profiles_protect_columns""]",[],1,[]
+hg_protect_squad_member_columns(),[],"[""public.squad_members:hg_protect_squad_member_columns_trg""]",[],1,[]
+"hg_purchase_marketplace_item(uuid,uuid,integer,boolean,numeric,text,numeric)",[],[],[],0,"[""holy-grills-backend/app/routes/marketplace.py""]"
+hg_queue_birthday_reports(uuid),[],[],[],0,"[""holy-grills-backend/app/services/birthdays.py""]"
+hg_queue_event_ticket_email(uuid),"[""hg_pay_event_with_delivery(uuid,text,text,numeric,jsonb)"", ""hg_register_event_with_delivery(uuid,uuid,uuid,boolean,numeric,uuid,jsonb)"", ""hg_register_guest_event_with_delivery(uuid,citext,text,text,uuid,uuid,jsonb)""]",[],[],0,[]
+"hg_queue_newsletter_campaign(uuid,uuid,uuid,text,text)",[],[],[],0,"[""holy-grills-backend/app/routes/storefront.py""]"
+"hg_queue_operations_email(uuid,text,text,jsonb)","[""hg_capture_operations_emails(uuid)"", ""hg_capture_paid_order_alert()"", ""hg_queue_birthday_reports(uuid)""]",[],[],0,[]
+"hg_queue_scheduled_order_reminders(integer,uuid)",[],[],[],0,"[""holy-grills-backend/app/tasks/scheduled.py""]"
+hg_reactivate_user(uuid),[],[],[],0,[]
+"hg_recalculate_tier_atomic(uuid,text,integer)","[""hg_set_profile_tier_from_balance(uuid)"", ""hg_tier_maintenance_batch(uuid,text,uuid,integer,integer)""]",[],[],0,"[""holy-grills-backend/app/services/hp_service.py"", ""holy-grills-backend/app/services/tier_service.py""]"
+"hg_reclaim_login_checkin(uuid,text,uuid,numeric)",[],[],[],0,"[""holy-grills-backend/app/services/streak_service.py""]"
+"hg_reconcile_late_order_payment(uuid,text,text,numeric,jsonb)",[],[],[],0,"[""holy-grills-backend/app/services/order_service.py""]"
+"hg_reconcile_notification_dispatch(uuid,uuid,uuid,text,text,text,text)",[],[],[],0,"[""holy-grills-backend/app/routes/notifications.py""]"
+"hg_record_email_send(text,date)",[],[],[],0,"[""holy-grills-backend/app/services/email_usage.py""]"
+"hg_redeem_ambassador_meal_discount(uuid,uuid,uuid,numeric,uuid)","[""hg_create_order_atomic(uuid,text,citext,text,uuid,numeric,numeric,numeric,numeric,text,uuid,double precision,double precision,jsonb,uuid,text,text,text,uuid,jsonb,order_status,payment_status,numeric,numeric,integer,boolean,timestamp with time zone,boolean,numeric,integer,boolean,uuid,uuid,uuid,uuid,boolean,date,uuid)""]",[],[],0,"[""holy-grills-backend/app/services/ambassador_service.py""]"
+"hg_redeem_flash_reward_atomic(uuid,uuid)",[],[],[],0,"[""holy-grills-backend/app/routes/rewards.py"", ""holy-grills-backend/app/services/hp_service.py""]"
+"hg_redeem_reward(uuid,uuid)",[],[],[],0,"[""holy-grills-backend/app/routes/rewards.py""]"
+"hg_refresh_newsletter_summary(uuid,text)",[],[],[],0,"[""holy-grills-backend/app/services/newsletter_service.py""]"
+"hg_refund_order_atomic(uuid,uuid,text,numeric,text,boolean)","[""hg_abandon_checkout(uuid,uuid,text,text,text,text)""]",[],[],0,"[""holy-grills-backend/app/routes/orders.py""]"
+"hg_register_event_with_delivery(uuid,uuid,uuid,boolean,numeric,uuid,jsonb)",[],[],[],0,"[""holy-grills-backend/app/routes/events.py""]"
+"hg_register_guest_event_with_delivery(uuid,citext,text,text,uuid,uuid,jsonb)",[],[],[],0,"[""holy-grills-backend/app/routes/events.py""]"
+hg_registration_options(uuid),[],[],[],0,"[""holy-grills-backend/app/services/registration_options.py"", ""holy-grills-frontend/src/lib/registrationOptions.ts""]"
+"hg_release_email_send(text,date)",[],[],[],0,"[""holy-grills-backend/app/services/email_usage.py""]"
+hg_release_expired_event_reservation(uuid),"[""hg_expire_stale_event_tickets()"", ""register_for_event_guest_paid(uuid,citext,text,text,uuid,uuid,jsonb)"", ""register_for_event_paid(uuid,uuid,uuid,boolean,numeric,uuid,jsonb)""]",[],[],0,[]
+"hg_release_order_refund_reservation(uuid,numeric,numeric)",[],[],[],0,[]
+"hg_release_order_refund_reservation(uuid,numeric)",[],[],[],0,[]
+"hg_request_event_ticket_refund(uuid,uuid,uuid,uuid,text)","[""hg_change_event_operation(uuid,uuid,uuid,text,jsonb)"", ""hg_pay_event_with_delivery(uuid,text,text,numeric,jsonb)""]",[],[],0,"[""holy-grills-backend/app/routes/events.py""]"
+"hg_resend_event_ticket(uuid,uuid,uuid,uuid,text,boolean,text,text)",[],[],[],0,"[""holy-grills-backend/app/routes/events.py""]"
+"hg_reserve_order_refund(uuid,numeric)",[],[],[],0,[]
+hg_reset_next_order_multiplier(uuid),[],[],[],0,[]
+hg_restore_ambassador_meal_discount(uuid),"[""hg_refund_order_atomic(uuid,uuid,text,numeric,text,boolean)""]",[],[],0,"[""holy-grills-backend/app/services/ambassador_service.py""]"
+"hg_review_event_refund(uuid,uuid,uuid,uuid,text,text,text)",[],[],[],0,"[""holy-grills-backend/app/routes/events.py""]"
+"hg_review_guest_attendance_hp(uuid,uuid,uuid,integer,text)",[],[],[],0,"[""holy-grills-backend/app/routes/events.py""]"
+"hg_review_organizer_event(uuid,uuid,text,jsonb)",[],[],[],0,"[""holy-grills-backend/app/routes/event_organizers.py""]"
+"hg_rider_batch_pay(timestamp with time zone,integer,integer)",[],[],[],0,"[""holy-grills-backend/app/routes/riders.py""]"
+hg_rider_earnings(timestamp with time zone),[],[],[],0,"[""holy-grills-backend/app/routes/riders.py"", ""holy-grills-frontend/src/lib/liveApi.ts""]"
+hg_rider_stats(),[],[],[],0,"[""holy-grills-backend/app/routes/riders.py""]"
+hg_rollover_login_week(uuid),[],[],[],0,"[""holy-grills-backend/app/services/streak_service.py""]"
+hg_run_hp_expiry_check(integer),[],[],[],0,[]
+hg_run_tier_maintenance_check(uuid),[],[],[],0,[]
+"hg_scheduled_order_reminder_valid(uuid,uuid,date,text)","[""hg_begin_notification_dispatch(uuid,uuid,jsonb)""]",[],[],0,"[""holy-grills-backend/app/services/scheduled_order_reminders.py""]"
+"hg_select_free_side_atomic(uuid,uuid,uuid,uuid,uuid)",[],[],[],0,"[""holy-grills-backend/app/routes/free_sides.py""]"
+hg_set_code_campus_from_listing(),[],"[""public.marketplace_access_codes:trg_marketplace_codes_campus""]",[],1,[]
+"hg_set_event_admission_window(uuid,uuid,integer)",[],[],[],0,"[""holy-grills-backend/app/routes/events.py""]"
+hg_set_profile_tier_from_balance(uuid),"[""hg_add_hp_transaction(uuid,text,integer,text,text,uuid,uuid,jsonb,timestamp with time zone,uuid)"", ""hg_admin_marketplace_resolve(uuid,uuid,text,uuid,text)"", ""hg_claim_graduation_atomic(uuid,integer)"", ""hg_complete_active_milestone(uuid,uuid,text,integer,uuid)"", ""hg_complete_event_milestones(uuid,numeric)"", ""hg_on_hp_transaction_insert()"", ""hg_on_hp_transaction_reconcile()"", ""hg_sync_hp_balance_from_ledger(uuid)""]",[],[],0,[]
+"hg_set_stock_archived(uuid,boolean,uuid,uuid,uuid)",[],[],[],0,"[""holy-grills-backend/app/routes/kitchen.py""]"
+hg_set_updated_at(),[],"[""public.abandoned_carts:trg_abandoned_carts_updated_at"", ""public.academic_calendar:trg_academic_calendar_updated_at"", ""public.banners:trg_banners_updated_at"", ""public.cart_items:trg_cart_items_updated_at"", ""public.catering_requests:trg_catering_requests_updated_at"", ""public.delivery_zones:trg_delivery_zones_updated_at"", ""public.leaderboard_entries:trg_leaderboard_entries_updated_at"", ""public.marketplace_listings:trg_marketplace_listings_updated_at"", ""public.marketplace_purchases:trg_marketplace_purchases_updated_at"", ""public.marketplace_purchase_reports:trg_marketplace_reports_updated_at"", ""public.menu_items:trg_menu_items_updated_at"", ""public.order_reviews:trg_order_reviews_updated_at"", ""public.orders:trg_orders_updated_at"", ""public.payments:trg_payments_updated_at"", ""public.profiles:trg_profiles_updated_at"", ""public.push_subscriptions:trg_push_subscriptions_updated_at"", ""public.reward_redemptions:trg_reward_redemptions_updated_at"", ""public.rewards:trg_rewards_updated_at"", ""public.rider_profiles:trg_rider_profiles_updated_at"", ""public.storefront_sections:trg_storefront_sections_updated_at"", ""public.system_settings:trg_system_settings_updated_at"", ""public.user_addresses:trg_user_addresses_updated_at"", ""public.virtual_accounts:trg_virtual_accounts_updated_at"", ""public.wallet_topups:trg_wallet_topups_updated_at"", ""public.wallets:trg_wallets_updated_at""]",[],25,[]
+hg_snapshot_event_organizer(),[],"[""public.event_tickets:trg_event_organizer_snapshot""]",[],1,[]
+"hg_spin_exclusive_atomic(uuid,uuid)",[],[],[],0,"[""holy-grills-backend/app/routes/exclusive_spin.py""]"
+hg_stage_ready_order_groups(),[],"[""public.orders:trg_orders_stage_ready_insert"", ""public.orders:trg_orders_stage_ready_update""]",[],2,[]
+hg_stock_low_notice_valid(uuid),"[""hg_begin_notification_dispatch(uuid,uuid,jsonb)""]",[],[],0,"[""holy-grills-backend/app/services/notification_outbox.py""]"
+"hg_stock_report(uuid,uuid,date,date)",[],[],[],0,"[""holy-grills-backend/app/routes/kitchen.py""]"
+"hg_submit_order_review_atomic(uuid,uuid,integer,integer,integer,text,integer,integer,text[])",[],[],[],0,"[""holy-grills-backend/app/routes/orders.py""]"
+hg_sync_delivery_batch_window(),[],"[""public.delivery_batches:trg_delivery_batches_sync_window""]",[],1,[]
+hg_sync_hp_balance_from_ledger(uuid),[],[],[],0,[]
+hg_sync_referral_code_table(),[],"[""public.profiles:trg_profiles_sync_referral_code""]",[],1,[]
+hg_sync_review_hp_columns(),[],"[""public.order_reviews:trg_order_reviews_sync_hp""]",[],1,[]
+hg_sync_wallet_balance_to_profile(),[],"[""public.wallets:trg_wallets_sync_to_profile""]",[],1,[]
+"hg_tier_maintenance_batch(uuid,text,uuid,integer,integer)",[],[],[],0,"[""holy-grills-backend/app/tasks/scheduled.py""]"
+hg_tier_notice_valid(uuid),"[""hg_begin_notification_dispatch(uuid,uuid,jsonb)""]",[],[],0,"[""holy-grills-backend/app/services/notification_outbox.py""]"
+"hg_transfer_hp_atomic(uuid,uuid,integer,text,uuid)",[],[],[],0,"[""holy-grills-backend/app/routes/hp.py""]"
+"hg_transfer_hp_gift(uuid,uuid,integer,uuid,jsonb)",[],[],[],0,"[""holy-grills-backend/app/routes/hp.py""]"
+hg_unsubscribe_guest_cart_email(uuid),[],[],[],0,"[""holy-grills-backend/app/routes/orders.py""]"
+hg_update_listing_stock_flag(),[],"[""public.marketplace_listings:trg_marketplace_listings_stock_flag""]",[],1,[]
+"hg_update_notification_preferences_atomic(uuid,jsonb)",[],[],[],0,"[""holy-grills-backend/app/routes/notifications.py"", ""holy-grills-backend/app/services/auth_service.py""]"
+hg_user_campus_id(),[],[],"[""public.banners:banners: enforce CMS campus reads"", ""public.cart_items:cart_items: own campus menu on insert"", ""public.cart_items:cart_items: own campus menu on update"", ""public.challenges:challenges: public read active"", ""public.exclusive_spin_prizes:exclusive_spin_prizes: authenticated read active"", ""public.free_side_items:free_side_items: enforce campus reads"", ""public.marketplace_listing_availability:marketplace_listing_availability: read own campus"", ""public.marketplace_listings:marketplace_listings: public read active"", ""public.marketplace_requests:marketplace_requests: authenticated submit"", ""public.menu_addon_groups:menu_addon_groups: enforce catalogue campus reads"", ""public.menu_addons:menu_addons: enforce catalogue campus reads"", ""public.menu_categories:menu_categories: enforce catalogue campus reads"", ""public.menu_categories:menu_categories: public read active"", ""public.menu_item_availability:menu_item_availability: enforce catalogue campus reads"", ""public.menu_item_variation_groups:menu_item_variation_groups: enforce catalogue campus reads"", ""public.menu_item_variation_options:menu_item_variation_options: enforce catalogue campus reads"", ""public.menu_items:menu_items: enforce catalogue campus reads"", ""public.milestones:Anyone can view active milestones"", ""public.promo_codes:promo_codes: authenticated read active"", ""public.storefront_sections:storefront_sections: enforce CMS campus reads""]",20,"[""holy-grills-frontend/src/lib/HolyGrillContext.tsx"", ""holy-grills-frontend/src/lib/apiClient.ts"", ""holy-grills-frontend/src/lib/campusContext.tsx"", ""holy-grills-frontend/src/lib/featureConfig.ts""]"
+hg_validate_operations_email_setting(),[],"[""public.system_settings:aa_validate_operations_email_setting""]",[],1,[]
+hg_validate_system_setting(),[],"[""public.system_settings:trg_system_settings_validate""]",[],1,"[""holy-grills-backend/app/routes/admin_gifts.py"", ""holy-grills-frontend/src/components/admin/AdminSystemSettings.tsx""]"
+hg_verify_graduation_claim(),[],"[""public.profiles:trg_profiles_graduation_claim""]",[],1,[]
+hg_verify_order_status_transition(),[],"[""public.orders:trg_orders_state_machine""]",[],1,[]
+hg_verify_promo_use_limit(),[],"[""public.promo_code_uses:trg_promo_code_uses_limit_check""]",[],1,[]
+hg_verify_referral_integrity(),[],"[""public.referrals:trg_referral_integrity_check""]",[],1,[]
+hg_verify_refund_conservation(),[],"[""public.wallet_transactions:trg_wallet_transactions_refund_conservation""]",[],1,[]
+hg_verify_rider_delivery_assignment(),[],"[""public.orders:trg_orders_rider_scoping""]",[],1,[]
+hg_verify_wallet_conservation_invariant(),[],[],[],0,[]
+"hg_wallet_auto_funding(text,uuid,uuid,jsonb)",[],[],[],0,"[""holy-grills-backend/app/services/auto_funding.py""]"
+"hg_wallet_funding_analytics(uuid,uuid,date,date)",[],[],[],0,"[""holy-grills-backend/app/routes/analytics.py""]"
+"hg_wallet_funding_attention(text,uuid,integer)",[],[],[],0,"[""holy-grills-backend/app/services/auto_funding.py""]"
+"hg_wallet_transfer_limit(text,uuid,numeric)","[""hg_wallet_transfer(text,uuid,uuid,jsonb)""]",[],[],0,[]
+"hg_wallet_transfer_receipt(uuid,uuid)","[""hg_wallet_transfer(text,uuid,uuid,jsonb)""]",[],[],0,[]
+"hg_wallet_transfer(text,uuid,uuid,jsonb)",[],[],[],0,"[""holy-grills-backend/app/services/wallet_transfers.py""]"
+"hg_write_ambassador_milestone(uuid,uuid,uuid,uuid,jsonb,timestamp with time zone,boolean)",[],[],[],0,"[""holy-grills-backend/app/routes/ambassadors.py""]"
+"increment_monthly_hp_tracker(uuid,text,integer)","[""hg_admit_event_ticket(uuid,uuid,uuid,text,uuid,integer)"", ""hg_award_membership_anniversary(uuid)"", ""hg_claim_graduation_atomic(uuid,integer)"", ""hg_claim_pending_squad_hp(uuid,uuid)"", ""hg_complete_active_milestone(uuid,uuid,text,integer,uuid)"", ""hg_complete_delivery_rewards_atomic(uuid,jsonb,jsonb)"", ""hg_complete_pending_milestone(uuid,uuid,text,integer)"", ""hg_credit_delivery_hp_atomic(uuid,uuid,integer,text,text,numeric,integer)"", ""hg_internal.finish_guest_event_hp(uuid,uuid,integer,numeric,uuid,text)"", ""hg_process_birthday(uuid,integer)"", ""hg_process_order_streak_atomic(uuid,numeric,text)"", ""hg_rollover_login_week(uuid)"", ""hg_spin_exclusive_atomic(uuid,uuid)""]",[],[],0,"[""holy-grills-backend/app/services/hp_service.py""]"
+"record_hp_transaction_atomic(uuid,integer,text,text,text,text,uuid,uuid,text,uuid)","[""hg_admin_expire_hp(uuid,uuid,integer,integer,text,uuid)"", ""hg_admin_marketplace_resolve(uuid,uuid,text,uuid,text)"", ""hg_admit_event_ticket(uuid,uuid,uuid,text,uuid,integer)"", ""hg_award_membership_anniversary(uuid)"", ""hg_claim_gift_campaign_atomic(uuid,uuid)"", ""hg_claim_graduation_atomic(uuid,integer)"", ""hg_claim_pending_squad_hp(uuid,uuid)"", ""hg_complete_active_milestone(uuid,uuid,text,integer,uuid)"", ""hg_complete_delivery_rewards_atomic(uuid,jsonb,jsonb)"", ""hg_complete_pending_milestone(uuid,uuid,text,integer)"", ""hg_internal.finish_guest_event_hp(uuid,uuid,integer,numeric,uuid,text)"", ""hg_issue_ambassador_grant_atomic(uuid,uuid,text,numeric,text,text,integer,integer,text,uuid,boolean,text)"", ""hg_process_birthday(uuid,integer)"", ""hg_process_order_streak_atomic(uuid,numeric,text)"", ""hg_protect_order_columns()"", ""hg_redeem_flash_reward_atomic(uuid,uuid)"", ""hg_redeem_reward(uuid,uuid)"", ""hg_refund_order_atomic(uuid,uuid,text,numeric,text,boolean)"", ""hg_rollover_login_week(uuid)"", ""hg_spin_exclusive_atomic(uuid,uuid)"", ""hg_submit_order_review_atomic(uuid,uuid,integer,integer,integer,text,integer,integer,text[])"", ""hg_transfer_hp_atomic(uuid,uuid,integer,text,uuid)"", ""hg_transfer_hp_gift(uuid,uuid,integer,uuid,jsonb)""]",[],[],0,"[""holy-grills-backend/app/services/economics_dashboard_service.py"", ""holy-grills-backend/app/services/hp_service.py""]"
+"register_event_guest(uuid,citext,text,text,jsonb,uuid)",[],[],[],0,[]
+"register_for_event_atomic(uuid,uuid,uuid,jsonb,uuid)",[],[],[],0,[]
+"register_for_event_guest_paid(uuid,citext,text,text,uuid,uuid,jsonb)","[""hg_register_guest_event_with_delivery(uuid,citext,text,text,uuid,uuid,jsonb)""]",[],[],0,[]
+"register_for_event_paid(uuid,uuid,uuid,boolean,numeric,uuid,jsonb)","[""hg_register_event_with_delivery(uuid,uuid,uuid,boolean,numeric,uuid,jsonb)""]",[],[],0,[]
+release_cron_lock(text),[],[],[],0,"[""holy-grills-backend/app/tasks/scheduled.py""]"
+rls_auto_enable(),[],[],[],0,[]
+set_updated_at(),[],"[""public.challenges:trg_challenges_updated_at"", ""public.events:trg_events_updated_at""]",[],2,[]
+try_acquire_cron_lock(text),[],[],[],0,"[""holy-grills-backend/app/tasks/scheduled.py""]"
+"unlock_pending_hp_fifo_atomic(uuid,uuid,integer,uuid)","[""hg_complete_delivery_rewards_atomic(uuid,jsonb,jsonb)""]",[],[],0,"[""holy-grills-backend/app/services/hp_service.py""]"

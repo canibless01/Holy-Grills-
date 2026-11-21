@@ -1,0 +1,17 @@
+anon,name,options,authenticated
+False,payment_reconciliation_summary,"[""security_invoker=true""]",True
+False,reporting_abandoned_carts,"[""security_invoker=true""]",True
+False,reporting_event_checkins,"[""security_invoker=true""]",True
+False,reporting_event_tickets,"[""security_invoker=true""]",True
+False,reporting_first_order_gifts,"[""security_invoker=true""]",True
+False,reporting_hp_transactions,"[""security_invoker=true""]",True
+False,reporting_marketplace_purchases,"[""security_invoker=true""]",True
+False,reporting_order_items,"[""security_invoker=true""]",True
+False,reporting_orders,"[""security_invoker=true""]",True
+False,reporting_profiles,"[""security_invoker=true""]",True
+False,reporting_redemption_cost_log,"[""security_invoker=true""]",True
+False,reporting_referrals,"[""security_invoker=true""]",True
+False,reporting_wallet_transactions,"[""security_invoker=true""]",True
+False,rls_enforcement_status,"[""security_invoker=true""]",True
+False,schema_contract,"[""security_invoker=true""]",True
+False,security_advisory_summary,"[""security_invoker=true""]",True

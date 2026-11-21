@@ -94,7 +94,7 @@ class RewardsInteractionTests(unittest.TestCase):
 
     def test_transfer_threshold_counts_only_delivered_orders(self):
         self.query.execute.side_effect = [{'value': 3}, [{'id': 'one'}, {'id': 'two'}]]
-        with self.app.app_context():
+        with self.app.app_context(), patch.object(hp, 'get_db', return_value=self.db):
             minimum, delivered = hp._transfer_order_eligibility(self.db, 'fixture-user')
         self.assertEqual((minimum, delivered), (3, 2))
         self.query.eq.assert_any_call('status', 'delivered')
