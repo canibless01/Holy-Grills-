@@ -1,6 +1,6 @@
 import ModifierCushions from './ModifierCushions';
 import { confirmAction } from '@/lib/confirmAction';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Plus, Trash2, Save, Pencil } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
@@ -23,27 +23,50 @@ export default function AdminAddons() {
   const [loadError, setLoadError] = useState(false);
   const [editing, setEditing] = useState(null); // global add-on being edited inline
 
-  const load = async (id = itemId) => {
-    let c = config;
-    try { if (!c) { c = await mockApi.admin.getAddonsConfig(); setConfig(c); } }
-    catch { if (!c) { c = { global_addons: [] }; setConfig(c); } }
-    if (!menuItems.length) {
-      try { const mi = await mockApi.admin.getMenuItems(); setMenuItems(mi || []); if (mi?.length && !id) { id = mi[0].id; setItemId(id); } } catch { /* ignore */ }
-    }
-    if (!id) { setVarGroups([]); setAddonGroups([]); return; }
-    setLoadError(false);
+  const generation = useRef(0);
+  const [initialError, setInitialError] = useState(false);
+  const [globalError, setGlobalError] = useState(false);
+  const [globalBusy, setGlobalBusy] = useState(false);
+  const globalWrite = useRef(false);
+  const modifierWrite = useRef(false);
+  const [loadedItem, setLoadedItem] = useState('');
+  const [reading, setReading] = useState(false);
+
+  const bootstrap = async () => {
+    setInitialError(false);
+    try {
+      const [c, mi] = await Promise.all([mockApi.admin.getAddonsConfig(), mockApi.admin.getMenuItems()]);
+      setConfig(c); setMenuItems(mi || []);
+      setItemId(current => current || mi?.[0]?.id || '');
+    } catch { setInitialError(true); }
+  };
+  useEffect(() => { void bootstrap(); }, []);
+
+  const load = async (id: string) => {
+    const request = ++generation.current;
+    setLoadedItem(''); setReading(true); setLoadError(false);
+    if (!id) { setVarGroups([]); setAddonGroups([]); setReading(false); return; }
     try {
       const [detail, addons] = await Promise.all([mockApi.menu.getItem(id), mockApi.menu.getAddons(id)]);
+      if (request !== generation.current) return;
       setVarGroups((detail?.variation_groups || []).map((g) => ({ ...g, optionsText: optsToText(g.options || g.variations || []) })));
       setAddonGroups((addons?.addon_groups || []).map((g) => ({ ...g, addonsText: (g.addons || []).map((a) => `${a.name}:${a.price}`).join('\n') })));
-    } catch { setLoadError(true); }
+      setLoadedItem(id);
+    } catch { if (request === generation.current) setLoadError(true); }
+    finally { if (request === generation.current) setReading(false); }
   };
-  useEffect(() => { load(); }, [itemId]);
+  useEffect(() => { void load(itemId); return () => { generation.current += 1; }; }, [itemId]);
 
-  const reloadGlobal = async () => { try { setConfig(await mockApi.admin.getAddonsConfig()); } catch { /* ignore */ } };
+  const reloadGlobal = async () => {
+    setGlobalError(false);
+    try { setConfig(await mockApi.admin.getAddonsConfig()); }
+    catch { setGlobalError(true); }
+  };
   const addGlobal = () => setEditing({ name: '', price: 0, cushion_amount: 0 });
   const saveGlobal = async () => {
-    if (!editing.name) { toast({ title: msg('FE_ADMIN_ADDONS_NAME_REQUIRED', 'Name required'), variant: 'destructive' }); return; }
+    if (globalWrite.current || !editing) return;
+    if (!editing.name.trim()) { toast({ title: msg('FE_ADMIN_ADDONS_NAME_REQUIRED', 'Name required'), variant: 'destructive' }); return; }
+    globalWrite.current = true; setGlobalBusy(true);
     try {
       if (editing.id) await mockApi.admin.updateGlobalAddon(editing.id, { name: editing.name, price: Number(editing.price), cushion_amount: Number(editing.cushion_amount) });
       else await mockApi.admin.createGlobalAddon({ name: editing.name, price: Number(editing.price), cushion_amount: Number(editing.cushion_amount), group_id: null });
@@ -51,6 +74,7 @@ export default function AdminAddons() {
       setEditing(null);
       await reloadGlobal();
     } catch (e) { toast({ title: msg('FE_ADMIN_ADDONS_SAVE_FAILED', 'Save failed'), description: e.message, variant: 'destructive' }); }
+    finally { globalWrite.current = false; setGlobalBusy(false); }
   };
   const delGlobal = async (id) => { if (!(await confirmAction({ title: "Archive this global addon?", destructive: true, confirmLabel: "Archive" }))) return; try { await mockApi.admin.deleteGlobalAddon(id); toast({ title: msg('FE_ADMIN_ADDONS_ADDON_ARCHIVED', 'Addon archived') }); await reloadGlobal(); } catch (e) { toast({ title: msg('FE_ADMIN_ADDONS_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); } };
 
@@ -58,7 +82,8 @@ export default function AdminAddons() {
   const addAddonGroup = () => setAddonGroups((gs) => [...gs, { id: `ag_${Date.now()}`, name: '', is_required: false, min_select: 0, max_select: 3, addonsText: '' }]);
 
   const save = async () => {
-    if (!itemId || loadError) return;
+    if (modifierWrite.current || !itemId || loadError || reading || loadedItem !== itemId) return;
+    modifierWrite.current = true;
     setSaving(true);
     try {
       const payload = modifierEditorPayload(varGroups, addonGroups);
@@ -66,13 +91,16 @@ export default function AdminAddons() {
       toast({ title: msg('FE_ADMIN_ADDONS_MODIFIERS_SAVED', '✅ Modifiers saved') });
       await load(itemId);
     } catch (e) { toast({ title: msg('FE_ADMIN_ADDONS_SAVE_FAILED', 'Save failed'), description: e.message, variant: 'destructive' }); }
-    setSaving(false);
+    modifierWrite.current = false; setSaving(false);
   };
 
+  if (initialError) return <div role="alert"><p>{msg('FE_ADMIN_ADDONS_READ_FAILED', 'Add-ons could not be loaded. Retry before editing.')}</p><button onClick={bootstrap}>{msg('FE_LOOKUP_RETRY', 'Retry')}</button></div>;
   if (!config) return <StaffPanelSkeleton />;
 
   return (
     <div className="space-y-5">
+      {globalError && <div role="alert"><p>{msg('FE_ADMIN_ADDONS_REFRESH_FAILED', 'The saved add-on list could not be refreshed.')}</p><button onClick={reloadGlobal}>{msg('FE_LOOKUP_RETRY', 'Retry')}</button></div>}
+      <fieldset disabled={globalBusy} className="min-w-0">
       {/* Global add-ons — independent items customers can add to any order. */}
       <div>
         <div className="flex items-center justify-between mb-2">
@@ -108,17 +136,20 @@ export default function AdminAddons() {
         )}
       </div>
 
+      </fieldset>
       {/* Per-item modifiers */}
       <div>
         <h3 className="font-bold text-sm text-foreground mb-1">Per-Item Modifiers</h3>
         <p className="text-[11px] text-muted-foreground mb-2">Variation groups (combo choices with price deltas) and add-on groups (optional extras with a min/max) scoped to a single menu item.</p>
-        <select aria-label={msg('FE_ADMIN_ADDONS_MENU_ITEM_FOR_MODIFIERS', "Menu item for modifiers")} value={itemId} onChange={(e) => setItemId(e.target.value)} className="w-full p-2.5 rounded-xl border border-border text-sm mb-3">
+        <select aria-label={msg('FE_ADMIN_ADDONS_MENU_ITEM_FOR_MODIFIERS', "Menu item for modifiers")} disabled={saving} value={itemId} onChange={(e) => setItemId(e.target.value)} className="w-full p-2.5 rounded-xl border border-border text-sm mb-3">
           <option value="" disabled>Select a menu item</option>
           {menuItems.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
         </select>
 
         {loadError && <p role="alert" className="text-sm text-destructive">{msg('FE_ADMIN_ADDONS_MODIFIERS_COULD_NOT_BE_LOADED_SELECT_THE_ITEM_AG', "Modifiers could not be loaded. Select the item again before saving.")}</p>}
-        <div className="space-y-3">
+        {loadError && <button onClick={() => load(itemId)}>{msg('FE_LOOKUP_RETRY', 'Retry')}</button>}
+        {reading && <p role="status">{msg('FE_ADMIN_ADDONS_READING', 'Loading modifiers…')}</p>}
+        <fieldset disabled={saving || reading || loadError || loadedItem !== itemId} className="space-y-3 min-w-0">
           <div className="flex items-center justify-between"><span className="text-xs font-bold text-muted-foreground uppercase">{msg('FE_ADMIN_ADDONS_VARIATION_GROUPS', "Variation Groups")}</span><button aria-label={msg('FE_ADMIN_ADDONS_ADD_VARIATION_GROUP', "Add variation group")} onClick={addVarGroup} className="text-xs font-bold text-primary flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> {msg('FE_ADMIN_ADDONS_GROUP', "Group")}</button></div>
           {varGroups.map((g, gi) => (
             <Card key={g.id}>
@@ -151,9 +182,9 @@ export default function AdminAddons() {
               </div>
             </Card>
           ))}
-        </div>
+        </fieldset>
 
-        <button onClick={save} disabled={saving || loadError || !itemId} className="mt-4 w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"><Save className="w-4 h-4" /> {msg('FE_ADMIN_ADDONS_SAVE_MODIFIERS', "Save Modifiers")}</button>
+        <button onClick={save} disabled={saving || reading || loadError || !itemId || loadedItem !== itemId} className="mt-4 w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"><Save className="w-4 h-4" /> {msg('FE_ADMIN_ADDONS_SAVE_MODIFIERS', "Save Modifiers")}</button>
       </div>
     </div>
   );

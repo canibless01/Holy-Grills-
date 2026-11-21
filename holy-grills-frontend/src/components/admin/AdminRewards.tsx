@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Plus, Pencil, Trash2, Check, Zap, Clock, Flame, Ban, EyeOff } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import { formatNaira } from '@/lib/hgUtils';
@@ -94,6 +94,8 @@ export default function AdminRewards() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [modal, setModal] = useState(null);
+  const saveInFlight = useRef(false);
+  const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [saveConflict, setSaveConflict] = useState(false);
   const [pricePreview, setPricePreview] = useState<any>(null);
@@ -133,6 +135,8 @@ export default function AdminRewards() {
   const tierList = hpTiers;
 
   const save = async () => {
+    if (saveInFlight.current || !modal) return;
+    saveInFlight.current = true; setSaving(true);
     setSaveError(null); setSaveConflict(false);
     // hp_cost / reward_value / hp_liability are server-computed read-only
     // outputs — never submitted from the form.
@@ -154,7 +158,7 @@ export default function AdminRewards() {
     } catch (e) {
       // Inline — the backend owns the message (e.g. economics validation).
       setSaveError(e.message); setSaveConflict(e.status === 409);
-    }
+    } finally { saveInFlight.current = false; setSaving(false); }
   };
   const remove = async (id) => { await mockApi.admin.deleteReward(id); await load(); };
 
@@ -239,9 +243,9 @@ export default function AdminRewards() {
           })}
         </div>
       )}
-      <Modal open={!!modal} onClose={() => { setModal(null); setSaveError(null); setSaveConflict(false); }} title={modal?.isNew ? 'New Reward' : 'Edit Reward'}>
+      <Modal open={!!modal} onClose={() => { if (!saveInFlight.current) { setModal(null); setSaveError(null); setSaveConflict(false); } }} title={modal?.isNew ? 'New Reward' : 'Edit Reward'}>
         {modal && (
-          <div className="space-y-3">
+          <fieldset disabled={saving} className="space-y-3">
             {modal.isNew && <AdminScopeBadge />}
             {modal.isNew && writeScope.isGlobal && (
               <div className="flex gap-2 rounded-xl border border-warn/40 bg-warn/10 p-3 text-[11px] font-semibold text-warn">
@@ -307,8 +311,8 @@ export default function AdminRewards() {
 
             {saveConflict && <button type="button" onClick={() => { setModal(null); setSaveConflict(false); setSaveError(null); void load(); }} className="text-primary underline text-sm font-bold">{msg('FE_REWARD_RELOAD', 'Reload rewards')}</button>}
             {saveError && <p className="text-[11px] font-bold text-destructive text-center">⚠ {saveError}</p>}
-            <button onClick={save} disabled={previewBusy || !!previewError || (pricingChanged && !!econGroup && !econSummary)} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed">{modal.isNew ? 'Create Reward' : 'Save Changes'}</button>
-          </div>
+            <button onClick={save} disabled={saving || previewBusy || !!previewError || (pricingChanged && !!econGroup && !econSummary)} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed">{saving ? 'Saving…' : modal.isNew ? 'Create Reward' : 'Save Changes'}</button>
+          </fieldset>
         )}
       </Modal>
 

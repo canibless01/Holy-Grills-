@@ -40,6 +40,7 @@ export default function AdminMenu() {
   };
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [modal, setModal] = useState(null);
   const [categories, setCategories] = useState([]);
   const [selected, setSelected] = useState(new Set());
@@ -49,7 +50,7 @@ export default function AdminMenu() {
   const [showCats, setShowCats] = useState(false);
 
   const load = async () => {
-    setLoading(true);
+    setLoading(true); setLoadError(false);
     try {
       // F5 GAP (reported): the "Archived" view used GET /items/archived, which no
       // backend route serves (menu.py filters is_archived but never lists archived
@@ -58,7 +59,7 @@ export default function AdminMenu() {
       const all = await mockApi.admin.getMenuItems();
       // unwrap() already extracted the rows (or returned []).
       setItems(all);
-    } catch { setItems([]); }
+    } catch { setLoadError(true); }
     setLoading(false);
   };
   useEffect(() => { load(); setSelected(new Set()); }, []);
@@ -158,6 +159,7 @@ export default function AdminMenu() {
   };
 
   if (loading) return <StaffPanelSkeleton />;
+  if (loadError) return <div role="alert" className="rounded-2xl border border-border p-4"><p>{msg('FE_ADMIN_MENU_READ_FAILED', 'Menu items could not be loaded. Retry before editing.')}</p><button onClick={load} className="mt-3 text-primary font-bold">{msg('FE_LOOKUP_RETRY', 'Retry')}</button></div>;
 
   return (
     <div className="space-y-3">
@@ -217,7 +219,7 @@ export default function AdminMenu() {
         ))
       )}
 
-      <Modal open={!!modal} onClose={() => setModal(null)} title={modal?.isNew ? 'New Menu Item' : 'Edit Menu Item'}>
+      <Modal open={!!modal} onClose={() => { if (!saveInFlight.current) setModal(null); }} title={modal?.isNew ? 'New Menu Item' : 'Edit Menu Item'}>
         {modal && (
           <div className="space-y-3">
             <Field label="Name"><TextInput value={modal.item.name} onChange={(e) => setModal({ item: { ...modal.item, name: e.target.value }, isNew: modal.isNew })} /></Field>

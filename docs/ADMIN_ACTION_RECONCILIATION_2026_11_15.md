@@ -55,3 +55,5 @@ Shared shell: [navigation evidence](ADMIN_NAVIGATION_EVIDENCE_2026_11_14.md) cov
 - Marketplace expansion, group tickets, official transfer, delegated door staff, broad visual redesign and optional schema/data deletion remain deferred as in the master.
 
 Public/profile extras closed in this run: [profile/account recovery](PROFILE_ACCOUNT_RECOVERY_2026_11_15.md) and [preferences/contact/popups](PUBLIC_CONTACT_PREFERENCES_POPUPS_2026_11_15.md). No customer cleanup or production broadcasts are part of this matrix.
+
+21 November continuation: [editor recovery](ADMIN_EDITOR_RECOVERY_2026_11_21.md) adds native menu failure/Retry, add-on reversed-item/draft/pending-save and reward duplicate-save recovery at phone/desktop widths. Remaining editor reconciliation is listed there.
