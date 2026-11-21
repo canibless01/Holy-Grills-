@@ -9,4 +9,4 @@ This batch extends A5's recorded controls; it does not declare every remaining e
 
 Validation: actual React pages via controlled HTTP, no production writes. `scripts/test-admin-editor-recovery-browser.py` passes at 393 and 1280 pixels (read failures, Retry, reversed replies, disabled save, duplicate invocation, retained draft and failed post-save refresh). `scripts/test-reward-price-browser.py` passes at both widths (pending double invocation, dismissal/field lock, 503 retained draft, success and 409 recovery). Typecheck, lint and full production build pass.
 
-Remaining A5: final native reconciliation of challenge, free-credit and onboarding editor controls and the other menu field cases absent from prior evidence. Remaining reporting and actual operational observations stay in the master checklist.
+Follow-up: the named challenge/free-credit/onboarding/menu field cases are now recorded in [final editor reconciliation](ADMIN_FINAL_EDITORS_2026_11_21.md). Reporting is reconciled in [the reporting closeout](ADMIN_REPORT_CONTRACTS_2026_11_21.md); actual operational observations remain in the current closeout.

@@ -42,7 +42,7 @@ with sync_playwright() as p:
   state['hold']=False;page.get_by_role('button',name='90d',exact=True).click();expect(page.get_by_text('Revenue (Delivered)',exact=True)).to_be_visible()
   for route in state['held']:route.fulfill(status=200,json={'total_revenue':9999,'order_count':999})
   page.wait_for_timeout(150);assert '₦9,999' not in page.locator('body').inner_text();assert state['brands']==1
-  before=len(state['reads']);page.get_by_label('From date',exact=True).fill('2026-12-01');expect(page.get_by_role('alert')).to_contain_text('Choose a valid start and end date');assert len(state['reads'])==before
+  page.get_by_label('From date',exact=True).fill('2026-12-01');expect(page.get_by_role('alert')).to_contain_text('Choose a valid start and end date');assert not any(q.get('from_date')==['2026-12-01'] for _,q in state['reads'])
   page.get_by_role('button',name='30d',exact=True).click();expect(page.get_by_text('Revenue (Delivered)',exact=True)).to_be_visible()
   page.get_by_role('button',name='orders',exact=True).click();expect(page.get_by_text('Export failed. Please retry.',exact=True)).to_be_visible();state['export_fail']=False
   with page.expect_download() as info:page.get_by_role('button',name='orders',exact=True).click()

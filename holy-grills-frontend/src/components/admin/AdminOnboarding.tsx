@@ -17,6 +17,7 @@ export default function AdminOnboarding() {
   const scopeKey = scopeCampus || 'global';
   const scope = scopeCampus ? { campus_id: scopeCampus } : { scope: 'global' };
   const generation = useRef(0);
+  const saveInFlight = useRef(false);
   const [settings, setSettings] = useState(null);
   const [inherited, setInherited] = useState(false);
   const [gifts, setGifts] = useState([]);
@@ -42,7 +43,8 @@ export default function AdminOnboarding() {
   useEffect(() => { load(); return () => { generation.current += 1; }; }, [scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = async () => {
-    if (saving) return;
+    if (saveInFlight.current) return;
+    saveInFlight.current = true;
     const requestId = generation.current;
     setSaving(true);
     try {
@@ -55,7 +57,7 @@ export default function AdminOnboarding() {
       }
     } catch (error) {
       if (requestId === generation.current) toast({ title: msg('FE_ADMIN_ONBOARDING_FAILED', 'Failed'), description: error.message, variant: 'destructive' });
-    } finally { setSaving(false); }
+    } finally { saveInFlight.current = false; setSaving(false); }
   };
   const updateGift = async (id, status) => {
     const requestId = generation.current;

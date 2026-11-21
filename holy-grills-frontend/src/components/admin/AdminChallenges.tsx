@@ -1,5 +1,5 @@
 import { confirmAction } from '@/lib/confirmAction';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Plus, Trash2, Pencil, Gift } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
@@ -135,9 +135,11 @@ export default function AdminChallenges() {
 function ChallengeModal({ item, onClose, onSaved }) {
   const [form, setForm] = useState(item ? { ...item } : { title: '', description: '', trigger_type: 'order_count', trigger_value: 1, hp_awarded: 50, time_window: 'weekly' });
   const [submitting, setSubmitting] = useState(false);
+  const submitInFlight = useRef(false);
 
   const submit = async () => {
-    setSubmitting(true);
+    if (submitInFlight.current) return;
+    submitInFlight.current = true; setSubmitting(true);
     const body = {
       title: form.title,
       description: form.description,
@@ -155,12 +157,12 @@ function ChallengeModal({ item, onClose, onSaved }) {
       else { await mockApi.admin.createChallenge(body); toast({ title: msg('FE_ADMIN_CHALLENGES_MILESTONE_CREATED', '✅ Milestone created'), description: body.is_active ? msg('FE_ADMIN_CHALLENGES_TITLE_IS_NOW_LIVE', '"{title}" is now live.', { title: body.title }) : msg('FE_ADMIN_CHALLENGES_SAVED_PAUSED', '"{title}" is saved and paused.', { title: body.title }) }); }
       onClose(); onSaved();
     } catch (e) { toast({ title: msg('FE_ADMIN_CHALLENGES_FAILED', 'Failed'), description: e.message, variant: 'destructive' }); }
-    setSubmitting(false);
+    submitInFlight.current = false; setSubmitting(false);
   };
 
   return (
-    <Modal open onClose={onClose} title={item ? 'Edit Milestone' : 'New Milestone'}>
-      <div className="space-y-3">
+    <Modal open onClose={() => { if (!submitInFlight.current) onClose(); }} title={item ? 'Edit Milestone' : 'New Milestone'}>
+      <fieldset disabled={submitting} className="space-y-3">
         <Field label="Title"><TextInput value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
         <Field label="Description"><TextInput value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
         <div className="grid grid-cols-2 gap-3">
@@ -183,7 +185,7 @@ function ChallengeModal({ item, onClose, onSaved }) {
         </div>
         <Field label={msg('FE_ADMIN_CHALLENGES_ACTIVE', 'Active')}><Toggle label={msg('FE_ADMIN_CHALLENGES_ACTIVE', 'Active')} checked={!!form.is_active} onChange={(value) => setForm({ ...form, is_active: value })} /></Field>
         <button onClick={submit} disabled={submitting || !form.title} className="w-full py-3 rounded-full bg-gradient-cta text-white font-bold disabled:opacity-50">{submitting ? 'Saving...' : 'Save Milestone'}</button>
-      </div>
+      </fieldset>
     </Modal>
   );
 }

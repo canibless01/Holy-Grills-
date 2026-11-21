@@ -25,6 +25,7 @@ export default function AdminFreeCredits() {
   useMessages();
   const { user } = useHolyGrill();
   const grantingRef = useRef(false);
+  const itemInFlight = useRef(false);
   const [loadError, setLoadError] = useState('');
   const isSuperAdmin = useIsSuperAdmin();
   const [items, setItems] = useState([]);
@@ -55,8 +56,9 @@ export default function AdminFreeCredits() {
   };
 
   const saveItem = async () => {
+    if (itemInFlight.current) return;
     if (!editItem?.name?.trim()) { toast({ title: msg('FE_ADMIN_FREE_CREDITS_NAME_IS_REQUIRED', 'Name is required'), variant: 'destructive' }); return; }
-    setBusy('item');
+    itemInFlight.current = true; setBusy('item');
     try {
       const body = { name: editItem.name.trim(), image_url: editItem.image_url || null, is_active: editItem.is_active !== false, intent_key: editItem.intent_key, expected_updated_at: editItem.updated_at };
       if (editItem.id) await mockApi.admin.updateFreeSideItem(editItem.id, body);
@@ -67,7 +69,7 @@ export default function AdminFreeCredits() {
     } catch (e) {
       toast({ title: msg('FE_ADMIN_FREE_CREDITS_FAILED_TO_SAVE', 'Failed to save'), description: e.message, variant: 'destructive' });
     }
-    setBusy(null);
+    itemInFlight.current = false; setBusy(null);
   };
 
   const toggleItem = async (item) => {
@@ -256,9 +258,9 @@ export default function AdminFreeCredits() {
         )}
       </Card>
 
-      <Modal open={!!editItem} onClose={() => setEditItem(null)} title={editItem?.id ? msg('FE_ADMIN_FREE_SIDE_EDIT_TITLE', 'Edit free side') : msg('FE_ADMIN_FREE_SIDE_ADD_TITLE', 'Add free side')}>
+      <Modal open={!!editItem} onClose={() => { if (!itemInFlight.current) setEditItem(null); }} title={editItem?.id ? msg('FE_ADMIN_FREE_SIDE_EDIT_TITLE', 'Edit free side') : msg('FE_ADMIN_FREE_SIDE_ADD_TITLE', 'Add free side')}>
         {editItem && (
-          <div className="space-y-3">
+          <fieldset disabled={busy === 'item'} className="space-y-3">
             <Field label={msg('FE_ADMIN_FREE_SIDE_NAME', 'Name')}><TextInput value={editItem.name} onChange={(e) => setEditItem({ ...editItem, name: e.target.value })} placeholder={msg('FE_ADMIN_FREE_SIDE_NAME_EXAMPLE', 'e.g. Coleslaw')} /></Field>
             <Field label={msg('FE_ADMIN_FREE_SIDE_IMAGE', 'Image (optional)')}><ImageUploader value={editItem.image_url} onChange={(url) => setEditItem({ ...editItem, image_url: url })} folder="free_side_items" /></Field>
             {editItem.id && (
@@ -273,7 +275,7 @@ export default function AdminFreeCredits() {
                 <Save className="w-3.5 h-3.5" /> {busy === 'item' ? msg('FE_ADMIN_FREE_SIDE_SAVING', 'Saving...') : msg('FE_ADMIN_FREE_SIDE_SAVE', 'Save side')}
               </button>
             </div>
-          </div>
+          </fieldset>
         )}
       </Modal>
     </div>

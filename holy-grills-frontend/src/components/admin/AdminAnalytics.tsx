@@ -240,7 +240,7 @@ export default function AdminAnalytics() {
       </Card>
 
       <p className="text-xs text-muted-foreground">{msg('FE_ANALYTICS_RANGE_SCOPE','Dates filter sales, orders, menu items, HP activity, timing, add-ons, delivery locations, squads, demographics and payment charts. Tier membership and user exports are current snapshots. Referrals, gifts, engagement, marketplace and cart totals are all time; retention uses its own cohorts and the academic baseline uses 90 days. Calendar dates use Lagos time.')}</p>
-      {loading ? <div role="status" aria-label={msg('FE_LOOKUP_LOADING','Loading…')}><Skeleton className="h-64" /></div> : loadError ? <Card className="p-5"><div role="alert" className="space-y-3"><p>{loadError}</p><button onClick={() => { void load(); }} className="rounded-full bg-primary px-4 py-2 text-sm font-bold text-white">{msg('FE_LOOKUP_RETRY','Retry')}</button></div></Card> : <>
+      {loading ? <div role="status" aria-label={msg('FE_LOOKUP_LOADING','Loading…')}><Skeleton className="h-64" /></div> : loadError || !fromDate || !toDate || fromDate > toDate ? <Card className="p-5"><div role="alert" className="space-y-3"><p>{loadError || msg('FE_ANALYTICS_RANGE_INVALID','Choose a valid start and end date, with the start no later than the end.')}</p><button onClick={() => { void load(); }} className="rounded-full bg-primary px-4 py-2 text-sm font-bold text-white">{msg('FE_LOOKUP_RETRY','Retry')}</button></div></Card> : <>
       {/* KPIs — headline metrics */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map((k, i) => (

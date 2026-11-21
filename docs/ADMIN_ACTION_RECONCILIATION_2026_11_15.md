@@ -49,11 +49,13 @@ Shared shell: [navigation evidence](ADMIN_NAVIGATION_EVIDENCE_2026_11_14.md) cov
 
 - Campus editor and Hall-of-Fame transition modal controls are closed for the cases in [their current evidence](ADMIN_CAMPUS_PRIZE_CONTROLS_2026_11_15.md).
 - Reporting current/historical attribution, populated actual chart responses, shared date-aware requests and all four CSV controls are reconciled in [21 November reporting](ADMIN_REPORT_CONTRACTS_2026_11_21.md). Independent read APIs do not claim one atomic reporting snapshot; historical tier-at-purchase reconstruction is not an existing feature.
-- Menu/addon/reward/spin/onboarding rows retain their documented consumer and selected editor evidence; a final field-by-field reconciliation of any editor action absent from those assertions is still A5 work. The table deliberately does not turn a consumer test into editor approval.
-- A4 final enabled-setting-to-consumer checklist, A7 historical policy/object/migration inventory and O4/O5 are the other chat's scope. Retain its latest pushed changes.
+- Menu/addon/reward/challenge/free-credit/onboarding native field and recovery follow-ups are recorded in [final editor reconciliation](ADMIN_FINAL_EDITORS_2026_11_21.md); spin retains its existing replay/version/session evidence. Consumer tests are linked separately from editor assertions.
+- A4/A7 and O4/O5 recorded review is complete in [the current closeout](AUDIT_CLOSEOUT_2026_11_21.md). Retain its latest pushed changes. Operational O1–O3 observations remain explicit.
 - Catering DB-update-to-email capture is now closed by the other chat in [settings/catering recovery](SETTINGS_CONSUMERS_CATERING_RECOVERY_2026_11_15.md); real inbox/device/scheduled-worker/provider observations remain O1–O3.
 - Marketplace expansion, group tickets, official transfer, delegated door staff, broad visual redesign and optional schema/data deletion remain deferred as in the master.
 
 Public/profile extras closed in this run: [profile/account recovery](PROFILE_ACCOUNT_RECOVERY_2026_11_15.md) and [preferences/contact/popups](PUBLIC_CONTACT_PREFERENCES_POPUPS_2026_11_15.md). No customer cleanup or production broadcasts are part of this matrix.
 
 21 November continuation: [editor recovery](ADMIN_EDITOR_RECOVERY_2026_11_21.md) adds native menu failure/Retry, add-on reversed-item/draft/pending-save and reward duplicate-save recovery at phone/desktop widths. Remaining editor reconciliation is listed there.
+
+Final continuation index: [21 November closeout and precise operational remainder](AUDIT_CLOSEOUT_2026_11_21.md).

@@ -2,7 +2,11 @@
 
 Checked against GitHub main `8f47c0a`, the actual admin section registry, both current checkpoints and later closure evidence. This supersedes the old A/B split as a remaining-work list. Historical October “open” rows must not be treated as newly unfinished implementation.
 
-**The complete admin page-by-page audit is not signed off.** Most core flows already have implementation and passing evidence. The list below records outstanding verification breadth, configuration/operational acceptance and deferred product work separately. An outstanding verification item is not evidence that its feature is broken. There is no evidence-based percentage completion: the total number of meaningful input/role/failure combinations has not been counted.
+## Current closeout — 21 November 2026
+
+[Current closeout](AUDIT_CLOSEOUT_2026_11_21.md) supersedes the historical task sequence below. The named reporting/current-tier/CSV and remaining native editor follow-ups now have [A2 evidence](ADMIN_REPORT_CONTRACTS_2026_11_21.md) and [A5 evidence](ADMIN_FINAL_EDITORS_2026_11_21.md). The remaining acceptance list is O1–O3: real scheduled-reminder receipt/tap, the next monthly run and real interruption observation, and still-unobserved provider settlement/failover/quota behavior. O4/O5 were assessed and remain documented plan/managed limits. Deferred expansion is unchanged. Combined backend: 1,955 passed.
+
+**Full production acceptance remains open for the operational observations above.** Most core flows already have implementation and passing evidence. The list below records outstanding verification breadth, configuration/operational acceptance and deferred product work separately. An outstanding verification item is not evidence that its feature is broken. There is no evidence-based percentage completion: the total number of meaningful input/role/failure combinations has not been counted.
 
 ## Active audit work — shared ownership
 
@@ -44,7 +48,7 @@ Existing admin chat retains **A1, A2, A3, A5, A6** and their explicit residual c
 - **Community manager report:** the actual recipient-schema mismatch is fixed; direct WhatsApp links, scoped promo uploads and roster/promo/recommendation controls pass in `COMMUNITY_MANAGER_SHARING_2026_11_21.md`. No schema/grant expansion or real message.
 - **A7/O4/O5:** the metadata/policy/grant/dependency inventory and configuration assessment are recorded in `DATABASE_INVENTORY_CONFIG_REVIEW_2026_11_21.md`. The inactive-super-admin global-policy defect is fixed and role-tested. Free-plan password protection and non-relocatable pg_net are documented external/managed exceptions, with no upgrade or unsafe rebuild. This pass is complete; optional deletion remains deferred.
 
-### Next execution order
+### Historical execution order (superseded by the current closeout)
 
 Existing chat: A1 navigation/action coverage → A2 reporting/leaderboard gaps → A3 identity/configuration exceptions → uncovered A5/A6 actions. A4 and A7 recorded reviews and O4/O5 assessments are complete in the linked 21 November evidence; do not restart them from the original inventory. Remaining broader A2/A5 reconciliation and O1–O3 observations retain their explicit limits. Fix reproduced defects and push in batches. Existing passing cases remain regression anchors. New findings will be added under their ID rather than silently expanding the backlog.
 

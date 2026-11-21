@@ -127,3 +127,7 @@ The historical tables above are not a current backlog: later closure records in 
 ### Staff/account concurrent edits — 15 November 2026
 
 [Native, handler and independent-session evidence](ADMIN_IDENTITY_CONCURRENCY_2026_11_15.md) closes compared-state role/access races and pending controls. Full backend 1,880 and production build pass. Existing campus-admin community-manager account control is preserved; no new permission policy or migration.
+
+### Current closeout — 21 November 2026
+
+[Current closeout](AUDIT_CLOSEOUT_2026_11_21.md) supersedes historical next-task wording above. Reporting/attribution/CSV and the named remaining native editor cases now have linked evidence. Combined backend: 1,955 passed. Real scheduled-reminder receipt/tap, future monthly execution/actual interruption and still-unobserved provider operations remain explicit acceptance; deferred expansion and reviewed managed/plan limits are separate.
