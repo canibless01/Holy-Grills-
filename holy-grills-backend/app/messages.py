@@ -17,6 +17,7 @@ Rules for editing this file:
 """
 
 class MSG:
+    ORDER_AUTO_PREPARATION_NOTE = "Ordering window closed; paid order moved to preparation automatically."
     STORE_PICKUP_CONFIG_INVALID = "Enter a pickup-point name and street address. Keep each instruction or address within 500 characters."
     STORE_PICKUP_CAMPUS_REQUIRED = "Select a campus to configure its physical pickup point."
     STORE_PICKUP_UNAVAILABLE = "Store pickup is not available for this campus. Choose delivery instead."

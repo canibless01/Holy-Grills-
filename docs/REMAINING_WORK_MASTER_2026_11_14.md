@@ -1,5 +1,7 @@
 # Remaining work — consolidated across both chats, 14 November 2026
 
+22 November addition: event workspace presentation and requested Hot Dog content are complete; [disabled store pickup](STORE_PICKUP_2026_11_22.md) and [separately gated automatic preparation](AUTOMATIC_PREPARATION_2026_11_22.md) are implemented and tested. Neither release flag is enabled. The prior [audit closeout](AUDIT_CLOSEOUT_2026_11_21.md) remains the baseline for completed admin work and remaining operational/deferred scope.
+
 Checked against GitHub main `8f47c0a`, the actual admin section registry, both current checkpoints and later closure evidence. This supersedes the old A/B split as a remaining-work list. Historical October “open” rows must not be treated as newly unfinished implementation.
 
 ## Current closeout — 21 November 2026

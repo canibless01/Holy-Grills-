@@ -283,7 +283,7 @@ def calculate_fee():
         from app.services.store_pickup import require_pickup
         from app.routes.events import _get_campus_id
         try:
-            option = require_pickup(_get_campus_id())
+            option = require_pickup(getattr(g, 'campus_id', None) or _get_campus_id())
             return jsonify({'delivery_type': delivery_type, 'delivery_fee': 0, 'location_name': option['name']}), 200
         except ValueError:
             return jsonify({'error': MSG.STORE_PICKUP_UNAVAILABLE}), 400
@@ -747,9 +747,10 @@ def admin_delete_gate(gate_id):
 @optional_auth
 def store_pickup_option():
     from app.services.store_pickup import pickup_option
-    from app.middleware.auth import header_campus_id
-    campus=resolve_scoped_campus_id() or (header_campus_id() if not getattr(g,'user_id',None) else None)
-    try:return jsonify(pickup_option(campus)),200
+    from app.routes.events import _get_campus_id
+    try:
+        campus = getattr(g, 'campus_id', None) or _get_campus_id()
+        return jsonify(pickup_option(campus)),200
     except (SupabaseError,requests.RequestException) as exc:return db_error_response(exc,'store_pickup.option')
 
 

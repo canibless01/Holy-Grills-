@@ -1772,7 +1772,7 @@ def _restore_order_consumables(order: dict) -> None:
         logger.error("cancel: meal discount restore failed for order %s: %s", order_id, exc)
 
 
-def update_order_status(order_id: str, new_status: str, changed_by: str = None, notes: str = "") -> dict:
+def update_order_status(order_id: str, new_status: str, changed_by: str = None, notes: str = "", *, _system_task: bool = False) -> dict:
     """
     Transition order status. Validates the state machine. Awards HP on delivery.
     Notifications and delivery rewards run in a daemon thread so the response
@@ -1783,10 +1783,12 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
     'refunded' can only be reached through the dedicated refund action, never a plain status change.
     """
     import threading as _threading
-    from flask import current_app as _app, has_app_context, g
+    from flask import current_app as _app, has_app_context, has_request_context, g
+    if _system_task and (has_request_context() or changed_by is not None):
+        raise OrderForbiddenError(MSG.ORDER_ACCESS_DENIED)
     if new_status in ("cancelled", "refunded"):
         raise OrderConflictError(MSG.ORDER_FINANCIAL_EXIT_USE_ENDPOINT)
-    db = get_user_client()
+    db = get_db() if _system_task else get_user_client()
     order = db.table("orders").select("*").eq("id", order_id).single().execute()
     if not order:
         raise OrderNotFoundError(MSG.RIDER_ORDER_NOT_FOUND)

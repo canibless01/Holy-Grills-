@@ -30,6 +30,14 @@ class StorePickupTests(unittest.TestCase):
         with patch.object(pickup,'is_feature_enabled',return_value=True), patch.object(pickup,'location_row',return_value={'value':LOCATION}):
             self.assertEqual(pickup.require_pickup(CAMPUS), {'enabled':True, **LOCATION,'fee':0})
 
+    def test_super_admin_student_checkout_uses_profile_not_admin_all_campuses(self):
+        app=Flask(__name__)
+        with app.test_request_context(headers={'X-Campus-ID':'other'}), patch.object(pickup,'pickup_option',return_value={'enabled':False}) as option:
+            g.user_id='staff';g.user_role='super_admin';g.campus_id=CAMPUS
+            response,code=inspect.unwrap(delivery.store_pickup_option)()
+        assert code==200
+        option.assert_called_once_with(CAMPUS)
+
     def test_read_failure_is_not_silently_an_enabled_or_free_delivery(self):
         with patch.object(pickup,'is_feature_enabled',return_value=True), patch.object(pickup,'location_row',side_effect=RuntimeError('read failed')):
             with self.assertRaises(RuntimeError):pickup.require_pickup(CAMPUS)

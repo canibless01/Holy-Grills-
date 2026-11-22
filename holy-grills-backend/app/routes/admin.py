@@ -1609,6 +1609,7 @@ _NUDGE_COOLDOWN_HOURS = 24
 
 # job name -> (expected run interval in minutes, description). Keep in step with celery_app.conf.beat_schedule.
 _CRON_INTERVAL_MINUTES = {
+    "auto-prepare-closed-windows":    (1, "every 1 minute"),
     "birthday-hp":                   (1440, "daily @ 08:00 WAT"),
     "monthly-birthday-report":       (44640, "1st of month @ 07:00 WAT"),
     "tier-grace-period-check":       (1440, "daily @ 03:00 WAT"),
@@ -1634,7 +1635,8 @@ _CRON_INTERVAL_MINUTES = {
 def _cron_intervals():
     from app.tasks.celery_app import celery_app
     intervals = dict(_CRON_INTERVAL_MINUTES)
-    for job, key in (("scan-abandoned-carts", "abandoned-cart-scan"),
+    for job, key in (("auto-prepare-closed-windows", "auto-prepare-closed-windows"),
+                     ("scan-abandoned-carts", "abandoned-cart-scan"),
                      ("process-scheduled-orders", "process-scheduled-orders"),
                      ("check-post-delivery-nudges", "check-post-delivery-nudges"),
                      ("send-newsletter-campaigns", "send-newsletter-campaigns")):
@@ -1843,6 +1845,7 @@ def run_cron_job(job_name):
         send_scheduled_blasts,
         automatic_wallet_funding,
         process_scheduled_orders,
+        auto_prepare_closed_windows,
     )
     from app.tasks.scheduled import check_post_delivery_nudges, grant_monthly_tier_perks
 
@@ -1863,6 +1866,7 @@ def run_cron_job(job_name):
         "send-scheduled-blasts":         send_scheduled_blasts,
         "automatic-wallet-funding":      automatic_wallet_funding,
         "process-scheduled-orders":      process_scheduled_orders,
+        "auto-prepare-closed-windows":    auto_prepare_closed_windows,
         "check-post-delivery-nudges":    check_post_delivery_nudges,
         "grant-monthly-tier-perks":      grant_monthly_tier_perks,
     }

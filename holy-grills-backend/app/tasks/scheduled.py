@@ -1396,3 +1396,18 @@ def send_newsletter_campaigns(self):
             # The job stays locked, so its next scheduled run may skip itself.
             logger.warning("cron: could not release the job lock after this "
                            "run (%s) — the job may be skipped next time", exc)
+
+
+@celery_app.task(name="app.tasks.scheduled.auto_prepare_closed_windows", bind=True, max_retries=3)
+@with_cron_logging("auto-prepare-closed-windows")
+def auto_prepare_closed_windows(self):
+    """Existing worker/beat; paid due-day orders only, gated separately from pickup."""
+    from app.services.automatic_preparation import prepare_closed_windows
+    db = get_db()
+    job = "auto_prepare_closed_windows"
+    if not db.rpc("try_acquire_cron_lock", {"p_job_name": job}):
+        return {"skipped": "Lock not acquired"}
+    try:
+        return prepare_closed_windows()
+    finally:
+        db.rpc("release_cron_lock", {"p_job_name": job})

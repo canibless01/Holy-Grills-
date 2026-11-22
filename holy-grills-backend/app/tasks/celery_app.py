@@ -63,6 +63,10 @@ def _scan_schedule(variable, default_minutes):
 
 
 celery_app.conf.beat_schedule = {
+    "auto-prepare-closed-windows": {
+        "task": "app.tasks.scheduled.auto_prepare_closed_windows",
+        "schedule": _scan_schedule("CELERY_AUTO_PREPARE_SCAN_MINUTES", 1),
+    },
     "automatic-wallet-funding": {
         "task": "app.tasks.scheduled.automatic_wallet_funding",
         "schedule": crontab(minute="*/15"),
