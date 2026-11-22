@@ -33,11 +33,22 @@ def connection_environment(url):
             'PGCONNECT_TIMEOUT':'15','PGOPTIONS':'-c default_transaction_read_only=on'}
 
 
+def compatible_pg_dump(min_major=17):
+    binary=shutil.which('pg_dump')
+    if not binary:return None
+    try:
+        result=subprocess.run([binary,'--version'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        if result.returncode:return None
+        match=re.search(r'PostgreSQL\)\s+(\d+)',result.stdout)
+        return binary if match and int(match.group(1))>=min_major else None
+    except OSError:return None
+
+
 def safe_run_dump(env, schemas, destination, docker_image='postgres:17-alpine', snapshot=None):
     args=['--schema-only','--no-owner','--no-tablespaces','--no-publications','--lock-wait-timeout=10s']
     if snapshot:args.extend(['--snapshot',snapshot])
     for schema in schemas:args.extend(['--schema',schema])
-    binary=shutil.which('pg_dump')
+    binary=compatible_pg_dump()
     if binary:
         command=[binary,*args]
     elif shutil.which('docker'):

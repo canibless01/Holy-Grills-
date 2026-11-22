@@ -24,6 +24,10 @@ The exporter is implemented and verified using a real PostgreSQL 17 dump and fre
 
 175 relations includes the 157 tables, 16 views and 2 sequences. Counts are a dated inventory, not a promise that future changes keep the same counts.
 
+## Browser-only alternative
+
+If this workspace cannot reach PostgreSQL, use [the browser-terminal instructions](CLOUD_SHELL.md). The prepared wrapper prompts privately for the source session-pooler URL, runs the same exporter and downloads a private ZIP. No Supabase upgrade or source database change is needed.
+
 ## 1. Produce the actual SQL baseline
 
 On a trusted machine with this repository, the backend's Python dependencies (`psycopg2`) and PostgreSQL **17 or later** client tools installed:
@@ -36,7 +40,7 @@ On a trusted machine with this repository, the backend's Python dependencies (`p
 python tools/export_database_architecture.py --output database-architecture-2026-11-22
 ```
 
-Use the Python interpreter where backend dependencies are installed. Alternatively the exporter uses Docker's `postgres:17-alpine` image if native `pg_dump` is absent; Docker host networking must reach the configured database host (Linux or explicitly supported Docker Desktop host networking). Native PostgreSQL client tools are the simpler cross-platform option.
+Use the Python interpreter where backend dependencies are installed. Alternatively the exporter uses Docker's `postgres:17-alpine` image if native `pg_dump` is absent; Docker host networking must reach the configured database host (Linux or explicitly supported Docker Desktop host networking). Native PostgreSQL client tools are the simpler cross-platform option. An installed client older than PostgreSQL 17 is skipped in favor of the Docker 17 client.
 
 The exporter never applies SQL, never dumps rows, never resets a project, and uses read-only sessions. Both dumps import the same exported PostgreSQL snapshot held open by the inventory transaction. Output uses a new empty directory; an interrupted dump cannot masquerade as a finished file. The completion marker is **manifest.json**.
 
@@ -94,7 +98,7 @@ There are **five database cron jobs** in the captured source, in addition to the
 
 ## Validation performed here
 
-- Five exporter safeguard tests pass (credential handling, schema-only invocation, failed-output safety, managed overlays and targeted public-schema compatibility).
+- Eight exporter safeguard tests pass (credential handling, schema-only invocation, failed-output safety, managed overlays and targeted public-schema compatibility).
 - A real disposable localhost PostgreSQL 17 source → dump → empty-target restore passes: enum, indexes, invoker view, RLS, service-only function grants, Auth signup trigger and Storage policy survive. Customer/price sentinels are absent and the restored menu is empty.
 - Source production access in this task was read-only metadata and the owner's requested order eligibility lookup. No customer messages or fake paid orders were created.
 

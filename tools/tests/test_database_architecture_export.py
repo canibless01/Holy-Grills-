@@ -46,3 +46,10 @@ def test_public_schema_normalization_preserves_reference_code():
 def test_remote_credentials_never_use_plaintext_database_transport():
  with pytest.raises(ValueError):module.connection_environment('postgresql://postgres:secret@remote.example/postgres?sslmode=disable')
  assert module.connection_environment('postgresql://postgres:secret@localhost/postgres?sslmode=disable')['PGSSLMODE']=='disable'
+
+
+@pytest.mark.parametrize('version,expected',[('pg_dump (PostgreSQL) 15.12',None),('pg_dump (PostgreSQL) 17.6','/bin/pg_dump'),('pg_dump (PostgreSQL) 18.1','/bin/pg_dump')])
+def test_older_browser_terminal_client_falls_back_to_postgres17(version,expected):
+ class Result:returncode=0;stdout=version
+ with patch.object(module.shutil,'which',return_value='/bin/pg_dump'),patch.object(module.subprocess,'run',return_value=Result()):
+  assert module.compatible_pg_dump()==expected

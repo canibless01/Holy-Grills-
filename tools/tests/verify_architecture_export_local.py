@@ -35,7 +35,11 @@ with psycopg2.connect(dbname=source,**BASE) as c:
   INSERT INTO auth.users(id) VALUES('11111111-1111-4111-8111-111111111111');
   UPDATE public.profiles SET email='PRIVATE_CUSTOMER_SENTINEL@example.invalid';''')
 env={**os.environ,'ARCH_TEST_SOURCE_URL':url.rsplit('/',1)[0]+'/'+source+'?sslmode=disable'}
-r=subprocess.run([sys.executable,str(ROOT/'tools/export_database_architecture.py'),'--url-env','ARCH_TEST_SOURCE_URL','--output',str(out)],env=env,capture_output=True,text=True)
+command=[sys.executable,str(ROOT/'tools/export_database_architecture.py'),'--url-env','ARCH_TEST_SOURCE_URL','--output',str(out)]
+if os.environ.get('ARCHITECTURE_TEST_BROWSER_WRAPPER')=='1':
+ env.update(SOURCE_DATABASE_URL=env['ARCH_TEST_SOURCE_URL'],HG_SCHEMA_EXPORT_PYTHON=sys.executable)
+ command=['bash',str(ROOT/'tools/export_schema_browser_terminal.sh'),str(out)]
+r=subprocess.run(command,env=env,capture_output=True,text=True)
 assert r.returncode==0,(r.stdout,r.stderr)
 text=(out/'application.sql').read_text()
 assert 'PRIVATE_CUSTOMER_SENTINEL' not in text and '987654321.12' not in text
