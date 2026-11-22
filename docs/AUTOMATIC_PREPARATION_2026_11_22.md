@@ -20,4 +20,4 @@ When enabled, the existing Celery worker/beat checks once per minute by default.
 
 ## Operational acceptance
 
-Observe the new job receipt after worker/beat deployment. Before enabling for actual orders, configure/review the campus ordering cutoffs. The real enabled production cutoff/customer notification observation remains distinct from the passing local producer/database proof. No live customer order or feature flag was changed to manufacture that observation.
+Observed the deployed job’s first successful receipt at **16:50 WAT on 22 November**, revision `34a5c97`, with an empty result while the release flag remained off. Vercel frontend and Railway API, worker and beat all reported successful deployment for that application revision. Before enabling for actual orders, configure/review the campus ordering cutoffs. The real enabled production cutoff/customer notification observation remains distinct from the passing local producer/database proof. No live customer order or feature flag was changed to manufacture that observation.
