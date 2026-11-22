@@ -64,3 +64,16 @@ def test_worker_lock_release_and_existing_beat_registration():
         assert scheduled.auto_prepare_closed_windows.run()['campus']['prepared']==2
     assert db.rpc.call_args.args==('release_cron_lock',{'p_job_name':'auto_prepare_closed_windows'})
     job=celery_app.conf.beat_schedule['auto-prepare-closed-windows'];assert job['task']=='app.tasks.scheduled.auto_prepare_closed_windows'
+
+
+def test_hourly_default_and_admin_cadence_agree():
+    import os
+    from app.tasks.celery_app import _scan_schedule
+    from app.routes.admin import _cron_intervals
+    with patch.dict(os.environ, {'CELERY_AUTO_PREPARE_SCAN_MINUTES': ''}):
+        schedule = _scan_schedule('CELERY_AUTO_PREPARE_SCAN_MINUTES', 60)
+    assert schedule.minute == {0}
+    assert len(schedule.hour) == 24
+    configured = celery_app.conf.beat_schedule['auto-prepare-closed-windows']['schedule']
+    minutes = 60 // len(configured.minute)
+    assert _cron_intervals()['auto-prepare-closed-windows'][0] == minutes

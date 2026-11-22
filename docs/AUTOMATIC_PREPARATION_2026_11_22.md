@@ -2,14 +2,14 @@
 
 Implemented as an independent **`auto_prepare_closed_windows`** feature flag, initially **false**. This does not depend on or activate physical-store pickup. Enable it for a campus when the kitchen is ready to use the workflow.
 
-When enabled, the existing Celery worker/beat checks once per minute by default. After a window's effective closing time in Africa/Lagos, its paid orders due today move from received/paid to preparing. Staff still mark Ready; delivery continues through rider assignment/dispatch/delivery, while pickup ends with confirmed collection. Preparation does not award completion HP or pretend that food has been collected/delivered.
+When enabled, the existing Celery worker/beat checks once per hour, at the top of the hour, by default. After a window's effective closing time in Africa/Lagos, its paid orders due today move from received/paid to preparing. Staff still mark Ready; delivery continues through rider assignment/dispatch/delivery, while pickup ends with confirmed collection. Preparation does not award completion HP or pretend that food has been collected/delivered.
 
 - Reuses the ordering gate's precedence: dated windows, campus/global date override, recurring windows, then operating-hours/config fallback. An override extending the cutoff prevents early preparation. Failed override reads stop automatic actions.
 - Unpaid, future-day, old-day, test and still-open-window orders are excluded. A manually closed/all-day closed window and unsupported overnight windows stay manual. An order tied to a window absent from today's effective schedule is not guessed into another window.
 - Uses normal status validation, payment/due-day checks and compare-and-set transitions. A competing kitchen action, cancellation or worker scan cannot apply the transition twice. Failed transitions remain eligible for a later scan.
-- Processes at most 200 eligible orders per campus per scan; remaining orders follow on subsequent scans. Timing is approximately one minute plus queue/network delay, not a guaranteed instantaneous timer.
+- Processes at most 200 eligible orders per campus per scan; remaining orders follow on subsequent scans. Orders move at the next hourly check after their cutoff, plus queue/network delay; a cutoff between hourly checks can wait up to an hour.
 - A dedicated background-only service-client path is required because an ordinary request client has no worker JWT. HTTP requests and calls impersonating a staff actor are rejected from this private path. Browser/client financial and role checks remain unchanged.
-- Uses the existing deployment's Celery worker, beat and cron lock. **No external cron provider was added.** Admin System displays its cadence/receipts and retains the existing protected manual-run controls. `CELERY_AUTO_PREPARE_SCAN_MINUTES` optionally changes cadence; no environment edit is needed for the one-minute default. Existing scheduled-order reminder cadence is unchanged.
+- Uses the existing deployment's Celery worker, beat and cron lock. **No external cron provider was added.** Admin System displays its cadence/receipts and retains the existing protected manual-run controls. `CELERY_AUTO_PREPARE_SCAN_MINUTES` optionally changes cadence; no environment edit is needed for the hourly default. Existing scheduled-order reminder cadence is unchanged.
 
 ## Verification
 
@@ -21,3 +21,5 @@ When enabled, the existing Celery worker/beat checks once per minute by default.
 ## Operational acceptance
 
 Observed the deployed job’s first successful receipt at **16:50 WAT on 22 November**, revision `34a5c97`, with an empty result while the release flag remained off. Vercel frontend and Railway API, worker and beat all reported successful deployment for that application revision. Before enabling for actual orders, configure/review the campus ordering cutoffs. The real enabled production cutoff/customer notification observation remains distinct from the passing local producer/database proof. No live customer order or feature flag was changed to manufacture that observation.
+
+22 November cadence adjustment: changed the default from every minute to every hour at the owner’s request. The environment override remains available; `CELERY_AUTO_PREPARE_SCAN_MINUTES=60` explicitly selects hourly checks. The release flag stays disabled.

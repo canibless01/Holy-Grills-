@@ -1609,7 +1609,7 @@ _NUDGE_COOLDOWN_HOURS = 24
 
 # job name -> (expected run interval in minutes, description). Keep in step with celery_app.conf.beat_schedule.
 _CRON_INTERVAL_MINUTES = {
-    "auto-prepare-closed-windows":    (1, "every 1 minute"),
+    "auto-prepare-closed-windows":    (60, "every 60 minutes"),
     "birthday-hp":                   (1440, "daily @ 08:00 WAT"),
     "monthly-birthday-report":       (44640, "1st of month @ 07:00 WAT"),
     "tier-grace-period-check":       (1440, "daily @ 03:00 WAT"),
