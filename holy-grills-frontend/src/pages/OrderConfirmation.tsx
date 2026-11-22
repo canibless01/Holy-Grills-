@@ -1,3 +1,4 @@
+import DeliveryAddress from '@/components/DeliveryAddress';
 import { settlePaidCart } from '@/lib/paidCart';
 import { guestOrderToken, paymentReturnToken, saveGuestOrder, settleGuestCart } from '@/lib/guestOrders';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
@@ -222,15 +223,15 @@ export default function OrderConfirmation() {
         <div className="flex items-center gap-3 text-sm">
           <MapPin className="w-4 h-4 text-muted-foreground shrink-0" />
           <div>
-            <div className="text-xs text-muted-foreground">Delivery to</div>
-            <div className="font-semibold text-foreground">{order.delivery_address?.line1 || msg('FE_ORDER_ADDRESS_UNAVAILABLE', 'Delivery details unavailable')}</div>
+            <div className="text-xs text-muted-foreground">{order.delivery_type === 'store_pickup' ? msg('FE_STORE_PICKUP', 'Store pickup') : 'Delivery to'}</div>
+            <div className="font-semibold text-foreground">{order.delivery_type === 'store_pickup' ? <DeliveryAddress order={order} /> : order.delivery_address?.line1 || msg('FE_ORDER_ADDRESS_UNAVAILABLE', 'Delivery details unavailable')}</div>
           </div>
         </div>
         <div className="flex items-center gap-3 text-sm">
           <Package className="w-4 h-4 text-muted-foreground shrink-0" />
           <div>
             <div className="text-xs text-muted-foreground">Window</div>
-            <div className="font-semibold text-foreground">{order.delivery_window?.label || (winStart && winEnd ? `${to12h(winStart)}–${to12h(winEnd)}` : msg('FE_ORDER_WINDOW_PENDING', 'Delivery window will be assigned'))}</div>
+            <div className="font-semibold text-foreground">{order.delivery_type === 'store_pickup' ? msg('FE_STORE_PICKUP_WHEN_READY', 'We’ll notify you when your order is ready for collection.') : order.delivery_window?.label || (winStart && winEnd ? `${to12h(winStart)}–${to12h(winEnd)}` : msg('FE_ORDER_WINDOW_PENDING', 'Delivery window will be assigned'))}</div>
           </div>
         </div>
         <div className="flex items-center gap-3 text-sm">

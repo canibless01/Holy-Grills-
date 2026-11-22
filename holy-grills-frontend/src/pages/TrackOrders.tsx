@@ -225,7 +225,10 @@ export default function TrackOrders() {
       ) : (
         <motion.div variants={staggerContainer(0.06)} initial="hidden" animate="show" className="space-y-3">
           {all.map((order) => {
-            const statusIndex = ORDER_STATUS_FLOW.indexOf(order.status);
+            const pickup = order.delivery_type === 'store_pickup';
+            const statusFlow = pickup ? ['received', 'preparing', 'ready', 'delivered'] : ORDER_STATUS_FLOW;
+            const statusLabel = status => pickup && status === 'delivered' ? msg('FE_STORE_PICKUP_COLLECTED', 'Collected') : ORDER_STATUS_LABELS[status];
+            const statusIndex = statusFlow.indexOf(order.status);
             const isGuest = !!order.claim_token && !order.user_id;
             const href = `/orders/${order.id}${isGuest ? `?claim_token=${encodeURIComponent(order.claim_token)}` : ''}`;
             return (
@@ -234,7 +237,7 @@ export default function TrackOrders() {
                 <div className="flex items-center justify-between p-4 bg-gradient-dark text-white">
                   <div>
                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${ORDER_STATUS_COLORS_ON_DARK[order.status] || ORDER_STATUS_COLORS[order.status]}`}>
-                      {ORDER_STATUS_LABELS[order.status]}
+                      {statusLabel(order.status)}
                     </span>
                     <div className="text-xs text-white/70 mt-1 flex items-center gap-1.5">
                       #{(order.order_number || order.id || '').toUpperCase()}
@@ -253,15 +256,15 @@ export default function TrackOrders() {
                 {order.status !== 'cancelled' && order.status !== 'refunded' && (
                   <div className="px-4 py-4">
                     <div className="flex items-center gap-0.5">
-                      {ORDER_STATUS_FLOW.map((step, i) => (
+                      {statusFlow.map((step, i) => (
                         <React.Fragment key={step}>
                           <div className={`flex flex-col items-center ${i <= statusIndex ? 'text-primary' : 'text-muted-foreground'}`}>
                             <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold ${i <= statusIndex ? 'bg-gradient-cta text-white' : 'bg-muted text-muted-foreground'}`}>
                               {i < statusIndex ? <Check className="w-3.5 h-3.5 text-white" /> : i + 1}
                             </div>
-                            <span className="text-[8px] mt-1 font-semibold whitespace-nowrap">{ORDER_STATUS_LABELS[step].split(' ')[0]}</span>
+                            <span className="text-[8px] mt-1 font-semibold whitespace-nowrap">{statusLabel(step).split(' ')[0]}</span>
                           </div>
-                          {i < ORDER_STATUS_FLOW.length - 1 && (
+                          {i < statusFlow.length - 1 && (
                             <div className={`flex-1 h-0.5 rounded-full ${i < statusIndex ? 'bg-primary' : 'bg-border'}`} />
                           )}
                         </React.Fragment>

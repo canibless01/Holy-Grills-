@@ -1,3 +1,4 @@
+import DeliveryAddress from '@/components/DeliveryAddress';
 import { googleReviewUrl as configuredGoogleReviewUrl } from '@/lib/googleReviews';
 import { settlePaidCart } from '@/lib/paidCart';
 import { guestOrderToken, guestOrders, forgetGuestOrder, settleGuestCart } from '@/lib/guestOrders';
@@ -203,7 +204,10 @@ export default function OrderDetail() {
     );
   }
 
-  const statusIndex = ORDER_STATUS_FLOW.indexOf(order.status);
+  const pickup = order.delivery_type === 'store_pickup';
+            const statusFlow = pickup ? ['received', 'preparing', 'ready', 'delivered'] : ORDER_STATUS_FLOW;
+            const statusLabel = status => pickup && status === 'delivered' ? msg('FE_STORE_PICKUP_COLLECTED', 'Collected') : ORDER_STATUS_LABELS[status];
+            const statusIndex = statusFlow.indexOf(order.status);
   const etaMin = order.delivery_batch ? ({ preparing: 25, ready: 15, assigned: 18, out_for_delivery: 12 }[order.status] || 0) : 0;
   const isScheduled = order.status === 'scheduled' || order.is_scheduled || !!order.scheduled_for;
   const canCancel = order.status === 'received' || isScheduled;
@@ -225,7 +229,7 @@ export default function OrderDetail() {
       >
         <div className="flex items-center justify-between mb-3">
           <span className={`px-3 py-1 rounded-full text-xs font-bold ${ORDER_STATUS_COLORS_ON_DARK[order.status] || ORDER_STATUS_COLORS[order.status]}`}>
-            {ORDER_STATUS_LABELS[order.status] || order.status}
+            {statusLabel(order.status) || order.status}
           </span>
           <span className="text-xs text-white/70 font-mono">#{(order.order_number || order.id || '').toUpperCase()}</span>
         </div>
@@ -233,15 +237,15 @@ export default function OrderDetail() {
         {/* Progress Timeline */}
         {order.status !== 'cancelled' && order.status !== 'refunded' && (
           <div className="flex items-center gap-0.5 mt-4">
-            {ORDER_STATUS_FLOW.map((step, i) => (
+            {statusFlow.map((step, i) => (
               <React.Fragment key={step}>
                 <div className="flex flex-col items-center">
                   <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold ${i <= statusIndex ? 'bg-gradient-cta text-white' : 'bg-white/15 text-white/50'}`}>
                     {i < statusIndex ? <Check className="w-3.5 h-3.5 text-white" /> : i + 1}
                   </div>
-                  <span className="text-[8px] mt-1 font-semibold whitespace-nowrap text-white/70">{ORDER_STATUS_LABELS[step].split(' ')[0]}</span>
+                  <span className="text-[8px] mt-1 font-semibold whitespace-nowrap text-white/70">{statusLabel(step).split(' ')[0]}</span>
                 </div>
-                {i < ORDER_STATUS_FLOW.length - 1 && (
+                {i < statusFlow.length - 1 && (
                   <div className={`flex-1 h-0.5 rounded-full ${i < statusIndex ? 'bg-primary' : 'bg-white/15'}`} />
                 )}
               </React.Fragment>
@@ -298,16 +302,16 @@ export default function OrderDetail() {
         {order.delivered_at && (
           <div className="flex items-center gap-3 text-sm">
             <Check className="w-4 h-4 text-success shrink-0" />
-            <div><div className="text-xs text-muted-foreground">Delivered</div><div className="font-semibold text-foreground">{formatDateTime(order.delivered_at)}</div></div>
+            <div><div className="text-xs text-muted-foreground">{order.delivery_type === 'store_pickup' ? msg('FE_STORE_PICKUP_COLLECTED', 'Collected') : 'Delivered'}</div><div className="font-semibold text-foreground">{formatDateTime(order.delivered_at)}</div></div>
           </div>
         )}
         <div className="flex items-center gap-3 text-sm">
           <MapPin className="w-4 h-4 text-muted-foreground shrink-0" />
-          <div><div className="text-xs text-muted-foreground">Delivery to</div><div className="font-semibold text-foreground">{order.delivery_address?.line1 || msg('FE_ORDER_ADDRESS_UNAVAILABLE', 'Delivery details unavailable')}</div></div>
+          <div><div className="text-xs text-muted-foreground">{order.delivery_type === 'store_pickup' ? msg('FE_STORE_PICKUP', 'Store pickup') : 'Delivery to'}</div><div className="font-semibold text-foreground">{order.delivery_type === 'store_pickup' ? <DeliveryAddress order={order} /> : order.delivery_address?.line1 || msg('FE_ORDER_ADDRESS_UNAVAILABLE', 'Delivery details unavailable')}</div></div>
         </div>
         <div className="flex items-center gap-3 text-sm">
           <Package className="w-4 h-4 text-muted-foreground shrink-0" />
-          <div><div className="text-xs text-muted-foreground">Window</div><div className="font-semibold text-foreground">{order.delivery_window?.label || msg('FE_ORDER_WINDOW_PENDING', 'Delivery window will be assigned')}</div></div>
+          <div><div className="text-xs text-muted-foreground">Window</div><div className="font-semibold text-foreground">{order.delivery_type === 'store_pickup' ? msg('FE_STORE_PICKUP_WHEN_READY', 'We’ll notify you when your order is ready for collection.') : order.delivery_window?.label || msg('FE_ORDER_WINDOW_PENDING', 'Delivery window will be assigned')}</div></div>
         </div>
         <div className="flex items-center gap-3 text-sm">
           <CreditCard className="w-4 h-4 text-muted-foreground shrink-0" />

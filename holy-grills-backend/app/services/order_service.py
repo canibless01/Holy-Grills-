@@ -115,6 +115,7 @@ def _effective_rider_id(order: dict):
 
 
 def _map_db_error(exc):
+    if 'store_pickup_no_rider' in str(exc):return OrderConflictError(MSG.STORE_PICKUP_NO_RIDER)
     """Errors raised by the orders triggers (state machine / rider scoping) -> typed errors."""
     text = str(exc)
     if "order_preparation_day_not_due" in text:
@@ -460,6 +461,10 @@ _RPC_ERROR_MAP = (
 
 
 def _normalize_rpc_error(message: str) -> str:
+    if any(code in str(message) for code in ('store_pickup_unavailable','store_pickup_location_changed')):
+        return MSG.STORE_PICKUP_UNAVAILABLE
+    if 'store_pickup_no_rider' in str(message):
+        return MSG.STORE_PICKUP_NO_RIDER
     """Map a raw RPC refusal to the customer-facing wording, else pass it through."""
     text = str(message or "")
     low = text.lower()
@@ -857,7 +862,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
 
     # ── Delivery location fee resolution ──────────────────────────────────────
     delivery_type = payload.get("delivery_type")  # "on_campus" | "off_campus" | None
-    if delivery_type not in ("on_campus", "off_campus"):
+    if delivery_type not in ("on_campus", "off_campus", "store_pickup"):
         raise ValueError(MSG.DELIVERY_TYPE_VALUE_INVALID)
 
     delivery_location_id = payload.get("delivery_location_id")
@@ -867,7 +872,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
     saved_delivery_address = None
     # If delivery_address_id is provided, verify ownership and retrieve coordinates
     delivery_address_id = payload.get("delivery_address_id")
-    if delivery_address_id and user_id:
+    if delivery_address_id and user_id and delivery_type != 'store_pickup':
         try:
             addr = db.table("user_addresses").eq("id", delivery_address_id).single().execute()
             if not addr:
@@ -891,8 +896,15 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
             logger.warning('create_order: saved-address lookup failed: %s', exc)
             raise ValueError(MSG.ORDER_PRICE_UNVERIFIED) from exc
 
-    if delivery_type not in ('on_campus', 'off_campus'):
+    if delivery_type not in ('on_campus', 'off_campus', 'store_pickup'):
         raise ValueError(MSG.DELIVERY_TYPE_VALUE_INVALID)
+
+    pickup = None
+    if delivery_type == 'store_pickup':
+        from app.services.store_pickup import require_pickup
+        pickup = require_pickup(campus_id)
+        delivery_location_id = delivery_location_lat = delivery_location_lon = None
+        gate = {'name': pickup['name']}
 
     from app.routes.delivery import validate_coordinates, is_within_delivery_area, find_nearest_gate
     if delivery_location_lat is not None or delivery_location_lon is not None:
@@ -1052,6 +1064,8 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
     address_input = ({'line1': saved_delivery_address.get('line1') or '',
                       'landmark': saved_delivery_address.get('landmark') or ''}
                      if saved_delivery_address else payload.get('delivery_address') or {})
+    if pickup:
+        address_input = {'line1': pickup['address'], 'landmark': ''}
     if isinstance(address_input, str):
         address_input = {'line1': address_input}
     if not isinstance(address_input, dict):
@@ -1076,6 +1090,9 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         'location_id': delivery_location_id,
         'latitude': delivery_location_lat, 'longitude': delivery_location_lon,
     }
+
+    if pickup:
+        delivery_address_snapshot['instructions'] = pickup['instructions']
 
     # Pre-calculate hp_preview. The food-earn rate is read live from system_settings (same source
     # hp_service._get_food_earn_rate() uses for the actual payout at delivery, key "hp_per_naira_food",
@@ -1524,7 +1541,13 @@ def walk_order_to_status(
             if order.get("campus_id") != caller_campus:
                 raise ValueError("Unauthorized: Admin is scoped to a different campus")
 
-    path = _find_status_path(order["status"], target_status)
+    if order.get('delivery_type') == 'store_pickup':
+        flow = ['received', 'preparing', 'ready', 'delivered']
+        current = 'received' if order['status'] == 'paid' else order['status']
+        path = (flow[flow.index(current)+1:flow.index(target_status)+1]
+                if current in flow and target_status in flow and flow.index(target_status) >= flow.index(current) else None)
+    else:
+        path = _find_status_path(order["status"], target_status)
     if path is None:
         raise ValueError(
             f"No valid path from '{order['status']}' to '{target_status}' "
@@ -1790,7 +1813,8 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
             if _effective_rider_id(order) != changed_by:
                 raise OrderForbiddenError(MSG.RIDER_NOT_ASSIGNED_TO_ORDER)
         elif caller_role == "kitchen":
-            if new_status not in ("preparing", "ready"):
+            collecting = order.get('delivery_type') == 'store_pickup' and new_status == 'delivered' and order.get('status') in ('ready','delivered')
+            if new_status not in ("preparing", "ready") and not collecting:
                 raise OrderForbiddenError(MSG.ORDER_KITCHEN_PREPARATION_ONLY)
             if order.get("campus_id") != caller_campus:
                 raise OrderForbiddenError(MSG.ORDER_KITCHEN_CAMPUS_MISMATCH)
@@ -1823,6 +1847,8 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
                 return {**order, "unchanged": True, "rewards_pending": True}
         return {**order, "unchanged": True}
     allowed = VALID_TRANSITIONS.get(current_status, [])
+    if order.get('delivery_type') == 'store_pickup' and current_status == 'ready':
+        allowed = ['delivered','cancelled','refunded']
     if new_status not in allowed:
         raise OrderConflictError(MSG.ORDER_INVALID_TRANSITION.format(current=current_status, new=new_status))
 
@@ -2204,6 +2230,9 @@ _GUEST_STATUS_EMAILS = {
 def _send_guest_status_email(order: dict, new_status: str):
     """Guest orders have no app account, so no push/in-app: email them the three delivery milestones."""
     template = _GUEST_STATUS_EMAILS.get(new_status)
+    if order.get('delivery_type') == 'store_pickup':
+        if new_status == 'ready':template=(MSG.STORE_PICKUP_READY_TITLE,MSG.STORE_PICKUP_READY_BODY)
+        elif new_status == 'delivered':template=(MSG.STORE_PICKUP_COLLECTED_TITLE,MSG.STORE_PICKUP_COLLECTED_BODY)
     email = order.get("guest_email")
     if not template or not email:
         return
@@ -2215,7 +2244,7 @@ def _send_guest_status_email(order: dict, new_status: str):
         
         # Build CTA buttons based on status
         cta_buttons = []
-        if new_status == "out_for_delivery":
+        if new_status == "out_for_delivery" or (new_status == "ready" and order.get("delivery_type") == "store_pickup"):
             cta_buttons = [{"label": "Track Your Order", "url": f"https://holygrills.online/track-orders?order_number={number}&claim_token={order.get('claim_token', '')}", "primary": True}]
         elif new_status == "delivered" and not order.get("is_test"):
             cta_buttons = [{"label": "Order Again", "url": "https://holygrills.online/menu", "primary": True}]
@@ -2239,6 +2268,10 @@ def _send_guest_status_email(order: dict, new_status: str):
 
 def _send_status_notification(order: dict, new_status: str):
     user_id = order.get("user_id")
+    pickup_copy = None
+    if order.get('delivery_type') == 'store_pickup':
+        if new_status == 'ready':pickup_copy=(MSG.STORE_PICKUP_READY_TITLE,MSG.STORE_PICKUP_READY_BODY)
+        elif new_status == 'delivered':pickup_copy=(MSG.STORE_PICKUP_COLLECTED_TITLE,MSG.STORE_PICKUP_COLLECTED_BODY)
     if not user_id:
         _send_guest_status_email(order, new_status)
         return
@@ -2250,6 +2283,8 @@ def _send_status_notification(order: dict, new_status: str):
         send_notification(
             user_id=user_id,
             notif_type=f"order_{new_status}",
+            title=pickup_copy[0] if pickup_copy else None,
+            body=pickup_copy[1] if pickup_copy else None,
             template_data={},  # all order status bodies have no dynamic placeholders
             reference_id=order["id"],
             reference_type="order",

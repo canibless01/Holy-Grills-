@@ -222,7 +222,7 @@ export default function AdminOrders() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">{timeAgo(o.created_at)}</span>
-                      {o.status === 'ready' && !o.batch_id && ['paid', 'partially_refunded'].includes(o.payment_status) && (
+                      {o.delivery_type !== 'store_pickup' && o.status === 'ready' && !o.batch_id && ['paid', 'partially_refunded'].includes(o.payment_status) && (
                         <button
                           onClick={(e) => { e.stopPropagation(); openAssign(o.id); }}
                           title="Assign to a rider"
@@ -266,12 +266,12 @@ export default function AdminOrders() {
                       {o.status === 'delivered' && o.user_id && <button onClick={() => recoverDeliveryRewards(o)} disabled={busy === o.id} className="rounded-full bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary disabled:opacity-50">{msg('FE_DELIVERY_RETRY_REWARDS', 'Recover delivery rewards')}</button>}
 
                       {!isTerminal && (
-                        <button onClick={() => setWalkOrder({ id: o.id, current_status: o.status, target_status: WALK_TARGETS[WALK_TARGETS.indexOf(o.status) + 1] || 'delivered', reason: '' })}
+                        <button onClick={() => setWalkOrder({ id: o.id, current_status: o.status, delivery_type: o.delivery_type, target_status: o.delivery_type === 'store_pickup' && o.status === 'ready' ? 'delivered' : WALK_TARGETS[WALK_TARGETS.indexOf(o.status) + 1] || 'delivered', reason: '' })}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-full tone-success border border-success/30 text-xs font-bold">
                           <ChevronDown className="w-3.5 h-3.5" /> Walk Status
                         </button>
                       )}
-                      {['ready', 'scheduled', 'received'].includes(o.status) && (
+                      {o.delivery_type !== 'store_pickup' && ['ready', 'scheduled', 'received'].includes(o.status) && (
                         <button onClick={() => openAssign(o.id)}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary text-white text-xs font-bold">
                           <Bike className="w-3.5 h-3.5" /> Assign to Rider
@@ -360,7 +360,7 @@ export default function AdminOrders() {
             <Field label="Advance to">
               <select value={walkOrder.target_status} onChange={(e) => setWalkOrder({ ...walkOrder, target_status: e.target.value })}
                 className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">
-                {WALK_TARGETS.filter((s) => WALK_TARGETS.indexOf(s) > WALK_TARGETS.indexOf(walkOrder.current_status)).map((s) => <option key={s} value={s}>{ORDER_STATUS_LABELS[s]}</option>)}
+                {WALK_TARGETS.filter((s) => (walkOrder.delivery_type !== 'store_pickup' || !['assigned','out_for_delivery'].includes(s)) && WALK_TARGETS.indexOf(s) > WALK_TARGETS.indexOf(walkOrder.current_status)).map((s) => <option key={s} value={s}>{ORDER_STATUS_LABELS[s]}</option>)}
               </select>
             </Field>
             <Field label="Notes (optional)"><TextInput value={walkOrder.reason} onChange={(e) => setWalkOrder({ ...walkOrder, reason: e.target.value })} placeholder="Reason for manual advancement" /></Field>

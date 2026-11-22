@@ -1219,7 +1219,7 @@ def dashboard_summary():
 
     q = (
         db.table("orders")
-        .select("id,status,total_amount,payment_status,delivery_window_id,batch_id,created_at,wallet_amount_used,card_amount_used,card_refund_total,wallet_refund_total")
+        .select("id,status,total_amount,payment_status,delivery_type,delivery_window_id,batch_id,created_at,wallet_amount_used,card_amount_used,card_refund_total,wallet_refund_total")
         .in_("payment_status", ["paid", "partially_refunded", "refunded"])
         .gte("created_at", today_start)
         .lt("created_at", today_end)
@@ -1290,7 +1290,7 @@ def dashboard_summary():
         "delivery_pipeline": {
             "open_windows": windows_with_counts,
             "active_batches": batches_with_counts,
-            "unassigned_orders": len([o for o in active_orders if not o.get("batch_id")]),
+            "unassigned_orders": len([o for o in active_orders if not o.get("batch_id") and o.get("delivery_type") != "store_pickup"]),
         },
     }), 200
 

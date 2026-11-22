@@ -1,3 +1,4 @@
+import { confirmAction } from '@/lib/confirmAction';
 import DeliveryAddress from '@/components/DeliveryAddress';
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
 import { Check, Users, Trophy, MapPin, Ban, RotateCcw } from 'lucide-react';
@@ -57,7 +58,7 @@ export default function KitchenOrderCard({ order, onStatusUpdate, onMarkUnavaila
         </span>
         <span className="flex items-center gap-1 text-muted-foreground ml-auto shrink-0">
           <MapPin className="w-3 h-3" />
-          {order.delivery_type === 'off_campus' ? 'Off-campus' : 'On-campus'}
+          {order.delivery_type === 'store_pickup' ? msg('FE_STORE_PICKUP', 'Store pickup') : order.delivery_type === 'off_campus' ? 'Off-campus' : 'On-campus'}
         </span>
       </div>
 
@@ -144,7 +145,8 @@ export default function KitchenOrderCard({ order, onStatusUpdate, onMarkUnavaila
             {isLoading ? 'Updating…' : 'Mark Ready'}
           </button>
         )}
-        {order.status === 'ready' && (
+        {order.status === 'ready' && order.delivery_type === 'store_pickup' && <button disabled={isLoading} onClick={async()=>{if(await confirmAction({title:msg('FE_STORE_PICKUP_CONFIRM','Has this customer collected their order? This completes the order and awards any earned HP.')}))onStatusUpdate(order.id,'delivered');}} className="flex-1 py-2.5 rounded-xl bg-success text-white text-xs font-bold disabled:opacity-50">{msg('FE_STORE_PICKUP_COLLECT','Confirm collection')}</button>}
+        {order.status === 'ready' && order.delivery_type !== 'store_pickup' && (
           <div className="flex-1 py-2.5 rounded-xl tone-success text-xs font-bold text-center flex items-center justify-center gap-1 border border-success/30">
             <Check className="w-3.5 h-3.5" /> Ready — awaiting rider
           </div>

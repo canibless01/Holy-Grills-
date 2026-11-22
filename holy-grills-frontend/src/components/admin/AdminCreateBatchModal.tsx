@@ -39,7 +39,7 @@ export default function CreateBatchModal({ windows = [], presetOrderIds = [], on
   const preset = presetOrderIds.length > 0;
   const intent = useRef<{ fingerprint: string; key: string } | null>(null);
   const selectedWindow = windows.find(window => String(window.id) === String(windowId));
-  const readyOrders = (orders || []).filter(order => order.status === 'ready' && !order.batch_id && ['paid', 'partially_refunded'].includes(order.payment_status)
+  const readyOrders = (orders || []).filter(order => order.delivery_type !== 'store_pickup' && order.status === 'ready' && !order.batch_id && ['paid', 'partially_refunded'].includes(order.payment_status)
     && (!adminCampusId || order.campus_id === adminCampusId));
   const availableWindows = windows.filter(window => (!adminCampusId || window.campus_id === adminCampusId)
     && readyOrders.some(order => (!order.delivery_window_id || String(order.delivery_window_id) === String(window.id)) && (!window.campus_id || order.campus_id === window.campus_id)));
@@ -49,7 +49,7 @@ export default function CreateBatchModal({ windows = [], presetOrderIds = [], on
     const date = stamp && Number.isFinite(new Date(stamp).getTime()) ? new Date(stamp).toLocaleDateString('en-NG', { timeZone: 'Africa/Lagos', day: 'numeric', month: 'short' }) : '';
     return [window.label || 'Delivery window', date, campusName, `#${String(window.id).slice(0, 6).toUpperCase()}`].filter(Boolean).join(' · ');
   };
-  const eligibleOrders = (orders || []).filter(order => order.status === 'ready' && !order.batch_id
+  const eligibleOrders = (orders || []).filter(order => order.delivery_type !== 'store_pickup' && order.status === 'ready' && !order.batch_id
     && ['paid', 'partially_refunded'].includes(order.payment_status)
     && (!selectedWindow?.campus_id || order.campus_id === selectedWindow.campus_id)
     && (!order.delivery_window_id || String(order.delivery_window_id) === String(windowId)));

@@ -1,3 +1,4 @@
+import AdminStorePickup from './AdminStorePickup';
 import CapacityGuide from './CapacityGuide';
 import { confirmAction } from '@/lib/confirmAction';
 import { useState, useEffect, useRef } from 'react';
@@ -108,6 +109,7 @@ export default function AdminDelivery() {
     { id: 'batches', label: 'Batches', icon: Truck },
     { id: 'zones', label: 'Zones & Fees', icon: MapPin },
     { id: 'area', label: 'Delivery area', icon: MapPin },
+    { id: 'pickup', label: msg('FE_STORE_PICKUP','Store pickup'), icon: Home },
     { id: 'riders', label: 'Riders', icon: Bike },
     { id: 'carts', label: 'Abandoned', icon: ShoppingCart },
   ];
@@ -233,6 +235,7 @@ export default function AdminDelivery() {
       )}
 
       {tab === 'area' && <AdminDeliveryArea />}
+      {tab === 'pickup' && <AdminStorePickup />}
       {tab === 'riders' && <AdminRiders />}
 
       {tab === 'carts' && (

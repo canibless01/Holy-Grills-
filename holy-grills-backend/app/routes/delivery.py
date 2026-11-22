@@ -279,6 +279,17 @@ def calculate_fee():
         return jsonify({"error": MSG.REQUEST_BODY_INVALID}), 400
     delivery_type = data.get("delivery_type")
 
+    if delivery_type == 'store_pickup':
+        from app.services.store_pickup import require_pickup
+        from app.routes.events import _get_campus_id
+        try:
+            option = require_pickup(_get_campus_id())
+            return jsonify({'delivery_type': delivery_type, 'delivery_fee': 0, 'location_name': option['name']}), 200
+        except ValueError:
+            return jsonify({'error': MSG.STORE_PICKUP_UNAVAILABLE}), 400
+        except (SupabaseError, requests.RequestException) as exc:
+            return db_error_response(exc, 'store_pickup.fee')
+
     if delivery_type not in ("on_campus", "off_campus"):
         return jsonify({"error": MSG.DELIVERY_TYPE_INVALID}), 400
 
@@ -730,3 +741,52 @@ def admin_delete_gate(gate_id):
         return jsonify({"message": MSG.DELIVERY_GATE_HIDDEN, "gate_id": gate_id}), 200
     except (SupabaseError, requests.RequestException) as exc:
         return db_error_response(exc, "delivery_location_write", MSG.DELIVERY_LOCATION_EXISTS)
+
+
+@delivery_bp.route('/store-pickup', methods=['GET'])
+@optional_auth
+def store_pickup_option():
+    from app.services.store_pickup import pickup_option
+    from app.middleware.auth import header_campus_id
+    campus=resolve_scoped_campus_id() or (header_campus_id() if not getattr(g,'user_id',None) else None)
+    try:return jsonify(pickup_option(campus)),200
+    except (SupabaseError,requests.RequestException) as exc:return db_error_response(exc,'store_pickup.option')
+
+
+@delivery_bp.route('/admin/store-pickup', methods=['GET','PATCH'])
+@require_role('admin')
+def store_pickup_configuration():
+    from app.services.store_pickup import KEY,location_row,normalize_location
+    from app.services.feature_flags import is_feature_enabled
+    from app.utils.admin_helpers import as_instant
+    campus=resolve_scoped_campus_id()
+    if not campus:return jsonify({'error':MSG.STORE_PICKUP_CAMPUS_REQUIRED}),400
+    try:
+        existing=location_row(campus)
+        if request.method=='GET':
+            return jsonify({'location':(existing or {}).get('value') or {'name':'','address':'','instructions':''},'updated_at':(existing or {}).get('updated_at'),'enabled':is_feature_enabled('store_pickup',campus)}),200
+        data=request.get_json(silent=True)
+        if not isinstance(data,dict):raise ValueError(MSG.STORE_PICKUP_CONFIG_INVALID)
+        value=normalize_location(data.get('location'))
+        stamp=data.get('expected_updated_at')
+        try:expected=as_instant(stamp) if stamp is not None else None
+        except ValueError:raise ValueError(MSG.STORE_PICKUP_CONFIG_INVALID)
+        actual=as_instant(existing['updated_at']) if existing and existing.get('updated_at') else None
+        if actual!=expected:
+            if existing and existing.get('value')==value:return jsonify(existing),200
+            return jsonify({'error':MSG.STORE_PICKUP_CONFIG_CONFLICT}),409
+        db=get_db()
+        row={'key':KEY,'campus_id':campus,'value':value,'is_public':False,'updated_at':datetime.now(timezone.utc).isoformat()}
+        if existing:
+            result=db.table('system_settings').eq('key',KEY).eq('campus_id',campus).eq('updated_at',actual).update({'value':value,'updated_at':row['updated_at']}).execute()
+            if not result:return jsonify({'error':MSG.STORE_PICKUP_CONFIG_CONFLICT}),409
+        else:
+            try:result=db.table('system_settings').insert(row).execute()
+            except SupabaseError as exc:
+                if str((exc.details or {}).get('code'))!='23505':raise
+                current=location_row(campus)
+                if not current or current.get('value')!=value:return jsonify({'error':MSG.STORE_PICKUP_CONFIG_CONFLICT}),409
+                return jsonify(current),200
+        return jsonify(result[0] if isinstance(result,list) else result),200
+    except ValueError as exc:return jsonify({'error':str(exc)}),400
+    except (SupabaseError,requests.RequestException) as exc:return db_error_response(exc,'store_pickup.config')
