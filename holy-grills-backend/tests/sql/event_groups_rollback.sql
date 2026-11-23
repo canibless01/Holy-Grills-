@@ -28,10 +28,13 @@ BEGIN
  contact:=jsonb_build_object('name','Buyer','email','group-buyer-'||buyer||'@example.invalid','phone','08012345678');
  roster:=jsonb_build_array(jsonb_build_object('name','First attendee','email','audit-group-a-'||e||'@example.invalid','phone','08012345678','tier_id',tier1,'answers',jsonb_build_object('department','Computing')),
  jsonb_build_object('name','Second attendee','email','audit-group-b-'||e||'@example.invalid','phone','08012345678','tier_id',tier2,'answers',jsonb_build_object('department','Engineering')));
+ roster:=jsonb_set(roster,'{0,registration_context}',jsonb_build_object('scope','group','answered_by','Buyer','notes',E'2 vegetarian\n3 regular'));
  g:=public.hg_create_event_group(e,buyer,contact,roster,'wallet',0,NULL,'wallet-group-'||e,repeat('a',64));grp:=(g->>'id')::uuid;
  IF g->>'payment_status'<>'paid' OR (g->>'total')::numeric<>300 OR (SELECT balance FROM wallets WHERE user_id=buyer)<>700
  OR (SELECT count(*) FROM event_tickets WHERE group_id=grp AND status='confirmed' AND user_id IS NULL)<>2
  OR (SELECT count(DISTINCT qr_code) FROM event_tickets WHERE group_id=grp)<>2 THEN RAISE EXCEPTION 'wallet group admission/conservation failed: %',g;END IF;
+ IF NOT EXISTS(SELECT 1 FROM event_tickets WHERE group_id=grp AND metadata->'registration_context'->>'scope'='group'
+ AND metadata->'registration_context'->>'notes'=E'2 vegetarian\n3 regular') THEN RAISE EXCEPTION 'shared group notes/scope not preserved';END IF;
  IF (hg_organizer_event_balance(organizer,e)->>'earned')::numeric<>210 THEN RAISE EXCEPTION 'group settlement used buyer/aggregate listing rather than each tier payout';END IF;
  again:=public.hg_create_event_group(e,buyer,contact,roster,'wallet',0,NULL,'wallet-group-'||e,repeat('a',64));
  IF again->>'id'<>g->>'id' OR (SELECT balance FROM wallets WHERE user_id=buyer)<>700 THEN RAISE EXCEPTION 'replayed group charged again';END IF;

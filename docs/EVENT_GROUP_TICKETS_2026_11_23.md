@@ -1,10 +1,10 @@
 # Group event tickets — 23 November 2026
 
-Implemented on the event detail page: **Book for a group**, including a single friend or 2–10 attendees. The purchaser supplies their contact information, each attendee's contact details, ticket tier and required answers, then reviews one booking. Members can use wallet/card/split; guests use card. Free bookings confirm immediately. Card bookings issue entry credentials only after payment verification. The purchaser receives a private recovery link; every confirmed attendee receives their own ticket email/QR and checks in independently.
+Implemented on the event detail page: **Book for a group**, including a single friend or 2–10 attendees. The purchaser supplies their contact information, each recipient's email and ticket tier, then answers the organizer questions once for the booking and can add quantity/preference notes. Each ticket is sent to its recipient, then reviews one booking. Members can use wallet/card/split; guests use card. Free bookings confirm immediately. Card bookings issue entry credentials only after payment verification. The purchaser receives a private recovery link; every confirmed attendee receives their own ticket email/QR and checks in independently.
 
 ## Registration questions
 
-Admin and organizer editors use the existing event question schema. Individual and group registration share the same input renderer. Supported responses: short text, long text, dropdown, radio, multiple choice, checkbox, date, email and number. Required answers and response types are validated in the browser and backend. Group answers are independent per attendee, including radio-button selection. A changed question schema returns actionable errors and refreshes the form without discarding existing answers. Existing organizer attendance/details/export consume the same ticket answers; no second questionnaire storage was introduced.
+Admin and organizer editors use the existing event question schema. Individual and group registration share the same input renderer. Supported responses: short text, long text, dropdown, radio, multiple choice, checkbox, date, email and number. Required answers and response types are validated in the browser and backend. The current group form collects one shared answer map. Organizer rows and CSV identify it as group answers from the purchaser and preserve the group notes; individual registration still collects individual answers. Older in-flight group requests with separate answers remain recoverable. A changed question schema returns actionable errors and refreshes the form without discarding existing answers. Existing organizer attendance/details/export consume the same ticket answers; no second questionnaire storage was introduced.
 
 ## Money, identity and recovery
 
@@ -30,3 +30,13 @@ Applied once to Supabase Test Two: `20261123025332_event_group_bookings.sql`. On
 - Fresh migration application from original reviewed financial functions and absent group schema passed before applying live. Live grants/RLS/signatures checked after application.
 
 Browser API/payment responses were controlled; no real gateway charge or customer email was sent. A real group payment and receipt-inbox observation remain operational acceptance, using the deployed code and configured providers. Passing these tests does not certify every provider/network condition.
+
+## Follow-up: simplified purchaser registration
+
+At the owner's request, purchaser name/email/phone are entered once. Each recipient needs only their email and ticket tier. Their email identifies an unclaimed ticket; the system does not invent their name or copy the buyer's name onto a friend's ticket. Purchaser phone remains the booking contact. Organizer questions are answered once for the group, with optional notes such as “2 vegetarian and 3 regular meals.” These notes are recorded, displayed and exported as booking-level information; they do not automatically create meal quantities or individual dietary declarations. Required organizer question types remain validated.
+
+Applied `20261123145439_event_group_shared_registration.sql` once, preserving the existing group helper signature and service-only grants. No extra table or duplicate helper was created. Updated SQL lifecycle including shared scope/notes passed on Test Two in a rollback transaction. Recovery fingerprints bind both shared answers and notes and retain compatibility with previous saved requests.
+
+Follow-up verification: all 2,009 backend tests passed (including 48 targeted backend/question tests); frontend typecheck/lint and both client/server production builds passed. Native Chromium rerun was blocked before launch by the current environment's socket restrictions. The complete build command reached the canonical-origin browser check and stopped with an environment `esbuild EPERM`; the previous complete build/native passes above belong to the initial group implementation, not this follow-up. No actual payment or email was triggered by this work.
+
+Multi-store discovery and the implementation plan are recorded separately in `MULTI_STORE_FULFILMENT_DESIGN_2026_11_23.md`. Multi-store fulfilment has not been deployed.
