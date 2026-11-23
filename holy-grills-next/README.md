@@ -49,7 +49,7 @@ The browser check requires Python 3 with Playwright and Chromium at `/usr/bin/ch
 
 All routes always emit `noindex` metadata and an `X-Robots-Tag`; `robots.txt` disallows crawling. Do not disable these or attach the production domain yet. Private role/account routes are intentionally absent.
 
-No production Vercel configuration, API implementation or database objects are changed. Do not merge this branch into main as a production cutover.
+No production Vercel configuration, API implementation or database objects are changed. The user approved merging this isolated folder into main on 23 November 2026. That source merge does not switch the production frontend or its deployment root; a production cutover still requires the remaining parity work and a separate deployment change.
 
 `lib/config.ts` is a small, pilot-only adapter of the existing frontend's central brand configuration. Extracting a framework-neutral shared brand package is pending; it should happen before the second frontend grows further.
 

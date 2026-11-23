@@ -1,6 +1,6 @@
 # Next.js public pilot — 23 November 2026
 
-Branch: `migration/nextjs-public-pilot`. Based on `main` at `ac76567`; no production cutover.
+Developed on `migration/nextjs-public-pilot`, based on `main` at `ac76567`. The user approved merging the isolated pilot source into main on 23 November 2026. No production frontend cutover or deployment-root change is included.
 
 ## Implemented scope
 
