@@ -26,14 +26,21 @@ def clean_contact(value):
     return result
 
 
-def clean_attendees(rows, fields):
+def clean_attendees(rows, fields, booking_contact=None):
     if not isinstance(rows,list) or not 1<=len(rows)<=10:
         raise ValueError(MSG.EVENT_GROUP_SIZE_INVALID)
     result=[]
     emails=set()
     for index,row in enumerate(rows,1):
         try:
-            contact=clean_contact(row)
+            # Email identifies the recipient. The purchaser remains the booking
+            # contact; never invent a friend's name or claim their phone number.
+            value=row
+            if booking_contact is not None and isinstance(row,dict):
+                value={**row,'name':row.get('name') or row.get('email'),'phone':row.get('phone') or booking_contact['phone']}
+                if str(row.get('email') or '').strip().lower()==booking_contact['email']:
+                    value['name']=row.get('name') or booking_contact['name']
+            contact=clean_contact(value)
             if contact['email'] in emails:
                 raise ValueError(MSG.EVENT_GROUP_DUPLICATE)
             emails.add(contact['email'])
@@ -108,10 +115,18 @@ def _plan(event_id,body,contact):
     if not actor and method!='card':raise ValueError(MSG.EVENT_GROUP_PAYMENT_INVALID)
     raw_rows=body.get('attendees')
     if not isinstance(raw_rows,list) or not 1<=len(raw_rows)<=10:raise ValueError(MSG.EVENT_GROUP_SIZE_INVALID)
-    fingerprint=hashlib.sha256(json.dumps({'attendees':raw_rows,'contact':contact,'method':method,'wallet':str(wallet),'promo':promo_text,'expected':str(expected) if expected is not None else None},sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    shared='registration_answers' in body
+    notes=body.get('booking_notes','')
+    if not isinstance(notes,str) or len(notes)>5000 or (shared and not isinstance(body['registration_answers'],dict)):
+        raise ValueError(MSG.EVENT_REQUEST_INVALID)
+    bound={'attendees':raw_rows,'contact':contact,'method':method,'wallet':str(wallet),'promo':promo_text,'expected':str(expected) if expected is not None else None}
+    # Preserve the exact fingerprint of old in-flight requests on deployment.
+    if shared:bound.update(registration_answers=body['registration_answers'],booking_notes=notes)
+    elif 'booking_notes' in body:raise ValueError(MSG.EVENT_REQUEST_INVALID)
+    fingerprint=hashlib.sha256(json.dumps(bound,sort_keys=True,separators=(',',':')).encode()).hexdigest()
     scoped_key=hashlib.sha256(f'{actor or contact["email"]}:{event_id}:{key}'.encode()).hexdigest()
     return {'method':method,'wallet':wallet,'promo_text':promo_text,'actor':actor,'raw_rows':raw_rows,
-            'fingerprint':fingerprint,'scoped_key':scoped_key,'expected':expected}
+            'fingerprint':fingerprint,'scoped_key':scoped_key,'expected':expected,'shared':shared,'shared_answers':body.get('registration_answers'),'notes':notes}
 
 
 def _recover(event_id,contact,plan):
@@ -131,7 +146,15 @@ def create(event,body,contact,*,lookup=True):
     if lookup:
         previous=_recover(event['id'],contact,plan)
         if previous:return previous
-    rows=clean_attendees(plan['raw_rows'],event.get('registration_fields') or [])
+    fields=event.get('registration_fields') or []
+    rows=clean_attendees(plan['raw_rows'],[] if plan['shared'] else fields,booking_contact=contact)
+    if plan['shared']:
+        try:answers=validate_answers(fields,plan['shared_answers'])
+        except (ValueError,KeyError,TypeError) as exc:
+            raise GroupAnswersError(str(exc),fields) from exc
+        for row in rows:
+            row['answers']=answers
+            row['registration_context']={'scope':'group','answered_by':contact['name'],'notes':plan['notes'].strip()}
     promo=None
     if plan['promo_text']:
         promo=(get_db().table('promo_codes').select('id').eq('code',plan['promo_text']).eq('is_active',True).single().execute() or {}).get('id')

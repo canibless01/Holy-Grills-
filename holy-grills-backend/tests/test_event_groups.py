@@ -191,3 +191,37 @@ def test_buyer_receipt_uses_shared_durable_email_dispatch_without_marketing_opt_
   assert outbox.dispatch_notification(G)['state']=='accepted'
  send.assert_called_once_with(prepared);prefs.assert_not_called()
  assert any(call.args[0]=='hg_begin_notification_dispatch' for call in db.rpc.call_args_list)
+
+
+def test_email_only_recipients_use_purchaser_contact_without_inventing_friends_names():
+ rows=[{'email':'friend@example.invalid','answers':{}},{'email':CONTACT['email'],'answers':{}}]
+ result=groups.clean_attendees(rows,[],booking_contact=CONTACT)
+ assert result[0]['email']=='friend@example.invalid' and result[0]['name']=='friend@example.invalid'
+ assert result[0]['phone']==CONTACT['phone']
+ assert result[1]['name']==CONTACT['name']
+ with pytest.raises(ValueError):groups.clean_attendees([{'email':'invalid'}],[],booking_contact=CONTACT)
+
+
+def test_shared_answers_validated_once_and_booking_contact_annotated_on_each_ticket():
+ body={'attendees':[{'email':'friend@example.invalid','tier_id':E},{'email':'second@example.invalid','tier_id':E}],
+       'registration_answers':{'department':'Computing','permission':True},'booking_notes':'2 vegetarian\n3 regular',
+       'payment_method':'card','idempotency_key':str(uuid4())}
+ db=MagicMock()
+ with app().test_request_context(),patch.object(groups,'get_db',return_value=db):
+  g.user_id=None
+  groups.create({'id':E,'registration_fields':FIELDS},body,CONTACT,lookup=False)
+  rows=db.rpc.call_args.args[1]['p_attendees']
+  assert len(rows)==2 and all(row['answers']==body['registration_answers'] for row in rows)
+  assert all(row['registration_context']=={'scope':'group','answered_by':'Buyer','notes':body['booking_notes']} for row in rows)
+  body['registration_answers']={}
+  with pytest.raises(groups.GroupAnswersError):groups.create({'id':E,'registration_fields':FIELDS},body,CONTACT,lookup=False)
+
+
+def test_group_shared_answers_and_quantities_are_bound_to_recovery_intent():
+ body={'attendees':[{'email':'friend@example.invalid'}],'registration_answers':{'meal':'regular'},'booking_notes':'2 meals','payment_method':'card','idempotency_key':str(uuid4())}
+ with app().test_request_context():
+  g.user_id=None
+  first=groups._plan(E,body,CONTACT)['fingerprint']
+  assert first!=groups._plan(E,{**body,'booking_notes':'3 meals'},CONTACT)['fingerprint']
+  assert first!=groups._plan(E,{**body,'registration_answers':{'meal':'vegetarian'}},CONTACT)['fingerprint']
+  with pytest.raises(ValueError):groups._plan(E,{**body,'booking_notes':'x'*5001},CONTACT)

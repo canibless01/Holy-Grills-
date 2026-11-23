@@ -1888,6 +1888,7 @@ def list_event_registrants(event_id):
             "hp_paid": int(t.get("hp_amount_paid") or 0),
             "is_guest": not bool(t.get("user_id")),
             "registration_answers": (t.get("metadata") or {}).get("registration_answers", {}),
+            "registration_context": (t.get("metadata") or {}).get("registration_context", {}),
         })
 
     fmt = request.args.get("format", "json").lower()
@@ -1896,7 +1897,7 @@ def list_event_registrants(event_id):
         si = io.StringIO()
         writer = csv.DictWriter(si, fieldnames=[
             "ticket_id", "full_name", "phone", "email", "tier_name",
-            "status", "payment_status", "registered_at", "checked_in", "checked_in_at", "registration_answers",
+            "status", "payment_status", "registered_at", "checked_in", "checked_in_at", "registration_answers", "registration_context",
         ])
         writer.writeheader()
         # Spreadsheet cells from attendee input must not execute formulas.

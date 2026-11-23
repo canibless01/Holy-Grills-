@@ -29,17 +29,18 @@ with sync_playwright() as pw:
     elif path.endswith('/events/'+E+'/groups') and method=='POST':
      body=request.post_data_json;calls.append(('register',body))
      assert len(body['attendees'])==count and body['expected_subtotal']==(0 if case=='free_friend' else 300)
-     assert body['attendees'][0]['answers']['radio']=='A'
-     if count==2:assert body['attendees'][1]['answers']['radio']=='B'
-     assert body['attendees'][0]['answers']['textarea']=='First paragraph\n\nSecond paragraph'
-     assert body['attendees'][0]['answers']['multiselect']==['A','B'] and body['attendees'][-1]['answers']['checkbox'] is True
+     assert body['registration_answers']['radio']=='A'
+     assert body['registration_answers']['textarea']=='First paragraph\n\nSecond paragraph'
+     assert body['registration_answers']['multiselect']==['A','B'] and body['registration_answers']['checkbox'] is True
+     assert body['booking_notes']=='2 vegetarian and 3 regular'
+     assert all('answers' not in row and 'name' not in row and 'phone' not in row for row in body['attendees'])
      assert body.get('use_hp') in (None,False)
      if case=='questions_changed' and len([entry for entry in calls if entry[0]=='register'])==1:
       route.fulfill(status=400,json={'error':'Attendee 1: New question','registration_fields':fields+[{'name':'new_question','label':'New question','type':'text','required':True}]});return
-     if case=='questions_changed':assert body['attendees'][0]['answers']['new_question']=='Kept first answers' and body['attendees'][1]['answers']['new_question']=='Kept second answers'
+     if case=='questions_changed':assert body['registration_answers']['new_question']=='Kept shared answers'
      pending=case in ('guest_card','split','settled_race')
      if state['group'] is None:
-      state['group']={'id':G,'event_id':E,'payment_status':'pending' if pending else 'not_required' if case=='free_friend' else 'paid','total':0 if case=='free_friend' else 300,'wallet_amount':150 if case=='split' else 0 if pending or case=='free_friend' else 300,'card_amount':150 if case=='split' else 300 if pending else 0,'expires_at':'2027-12-01T09:00:00Z','access_token':'private-buyer-proof','tickets':[{'id':T if index==0 else T2,'name':row['name'],'email':row['email'],'tier_name':'Standard' if index==0 else 'Support','status':'pending_payment' if pending else 'confirmed','payment_status':'pending' if pending else 'not_required' if case=='free_friend' else 'paid','price':0 if case=='free_friend' else 100 if index==0 else 200,**({} if pending else {'access_token':'attendee-'+str(index)})} for index,row in enumerate(body['attendees'])]}
+      state['group']={'id':G,'event_id':E,'payment_status':'pending' if pending else 'not_required' if case=='free_friend' else 'paid','total':0 if case=='free_friend' else 300,'wallet_amount':150 if case=='split' else 0 if pending or case=='free_friend' else 300,'card_amount':150 if case=='split' else 300 if pending else 0,'expires_at':'2027-12-01T09:00:00Z','access_token':'private-buyer-proof','tickets':[{'id':T if index==0 else T2,'name':row['email'],'email':row['email'],'tier_name':'Standard' if index==0 else 'Support','status':'pending_payment' if pending else 'confirmed','payment_status':'pending' if pending else 'not_required' if case=='free_friend' else 'paid','price':0 if case=='free_friend' else 100 if index==0 else 200,**({} if pending else {'access_token':'attendee-'+str(index)})} for index,row in enumerate(body['attendees'])]}
      if state['lost']:state['lost']=False;route.fulfill(status=504,json={'error':'Controlled response lost after booking committed'});return
      data=state['group']
     elif path.endswith('/groups/'+G):data=state['group']
@@ -67,22 +68,23 @@ with sync_playwright() as pw:
    if count==1:dialog.locator('details').nth(1).get_by_role('button',name='Remove attendee',exact=True).click()
    for index in range(count):
     attendee=dialog.locator('details').nth(index)
-    attendee.get_by_label('Name',exact=True).fill('Attendee '+str(index+1));attendee.get_by_label('Email',exact=True).fill('attendee-'+str(index+1)+'@example.invalid');attendee.get_by_label('Phone',exact=True).fill('08012345678')
+    assert attendee.get_by_label('Name',exact=True).count()==0 and attendee.get_by_label('Phone',exact=True).count()==0
+    attendee.get_by_label('Email',exact=True).fill('attendee-'+str(index+1)+'@example.invalid')
     attendee.get_by_label('Ticket tier',exact=True).select_option(T if index==0 else T2)
-    attendee.get_by_label('Short answer *',exact=True).fill('Distinct answer '+str(index));attendee.get_by_label('Long answer *',exact=True).fill('First paragraph\n\nSecond paragraph')
-    attendee.get_by_role('combobox',name='Choice',exact=True).select_option('A' if index==0 else 'B')
-    attendee.get_by_role('group',name='Preference *',exact=True).get_by_label('A' if index==0 else 'B',exact=True).check()
-    interests=attendee.get_by_role('group',name='Interests *',exact=True);interests.get_by_label('A',exact=True).check();interests.get_by_label('B',exact=True).check()
-    attendee.get_by_label('Date *',exact=True).fill('2026-11-23');attendee.get_by_label('Contact email *',exact=True).fill('contact@example.invalid');attendee.get_by_label('Number *',exact=True).fill('2.5')
-    if index==0 and count==2:attendee.get_by_label('Consent *',exact=True).check()
-   dialog.get_by_role('button',name='Continue to group booking',exact=True).click();expect(dialog.get_by_role('alert')).to_contain_text('Complete the required questions');assert not calls
-   dialog.locator('details').nth(count-1).get_by_label('Consent *',exact=True).check()
+   dialog.get_by_label('Short answer *',exact=True).fill('Shared booking answer');dialog.get_by_label('Long answer *',exact=True).fill('First paragraph\n\nSecond paragraph')
+   dialog.get_by_role('combobox',name='Choice',exact=True).select_option('A')
+   dialog.get_by_role('group',name='Preference *',exact=True).get_by_label('A',exact=True).check()
+   interests=dialog.get_by_role('group',name='Interests *',exact=True);interests.get_by_label('A',exact=True).check();interests.get_by_label('B',exact=True).check()
+   dialog.get_by_label('Date *',exact=True).fill('2026-11-23');dialog.get_by_label('Contact email *',exact=True).fill('contact@example.invalid');dialog.get_by_label('Number *',exact=True).fill('2.5')
+   dialog.get_by_label('Group notes (optional)',exact=True).fill('2 vegetarian and 3 regular')
+   dialog.get_by_role('button',name='Continue to group booking',exact=True).click();assert not calls
+   dialog.get_by_label('Consent *',exact=True).check()
    if case=='settled_race':dialog.get_by_label('Payment method',exact=True).select_option('card')
    if case=='split':dialog.get_by_label('Payment method',exact=True).select_option('split');dialog.get_by_label('Wallet contribution',exact=True).fill('150')
    dialog.get_by_role('button',name='Continue to group booking',exact=True).click()
    if case=='questions_changed':
     expect(dialog.get_by_role('alert')).to_contain_text('New question')
-    dialog.locator('details').nth(0).get_by_label('New question *',exact=True).fill('Kept first answers');dialog.locator('details').nth(1).get_by_label('New question *',exact=True).fill('Kept second answers')
+    dialog.get_by_label('New question *',exact=True).fill('Kept shared answers')
     dialog.get_by_role('button',name='Continue to group booking',exact=True).click()
    if case=='timeout':
     expect(dialog.get_by_role('alert')).to_contain_text('Controlled response lost');expect(dialog.get_by_role('button',name='Recover group booking',exact=True)).to_be_visible();page.reload();page.get_by_role('button',name='Book for a group',exact=True).click();page.get_by_role('button',name='Recover group booking',exact=True).click()
