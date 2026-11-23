@@ -25,9 +25,9 @@ class StorePickupTests(unittest.TestCase):
         read.assert_not_called()
 
     def test_campus_location_is_required_and_never_invented(self):
-        with patch.object(pickup,'is_feature_enabled',return_value=True), patch.object(pickup,'location_row',return_value=None):
+        with patch.object(pickup,'is_feature_enabled',side_effect=lambda name,*args:name=='store_pickup'), patch.object(pickup,'location_row',return_value=None):
             with self.assertRaisesRegex(ValueError,'not available'):pickup.require_pickup(CAMPUS)
-        with patch.object(pickup,'is_feature_enabled',return_value=True), patch.object(pickup,'location_row',return_value={'value':LOCATION}):
+        with patch.object(pickup,'is_feature_enabled',side_effect=lambda name,*args:name=='store_pickup'), patch.object(pickup,'location_row',return_value={'value':LOCATION}):
             self.assertEqual(pickup.require_pickup(CAMPUS), {'enabled':True, **LOCATION,'fee':0})
 
     def test_super_admin_student_checkout_uses_profile_not_admin_all_campuses(self):
@@ -36,17 +36,17 @@ class StorePickupTests(unittest.TestCase):
             g.user_id='staff';g.user_role='super_admin';g.campus_id=CAMPUS
             response,code=inspect.unwrap(delivery.store_pickup_option)()
         assert code==200
-        option.assert_called_once_with(CAMPUS)
+        option.assert_called_once_with(CAMPUS,None)
 
     def test_read_failure_is_not_silently_an_enabled_or_free_delivery(self):
-        with patch.object(pickup,'is_feature_enabled',return_value=True), patch.object(pickup,'location_row',side_effect=RuntimeError('read failed')):
+        with patch.object(pickup,'is_feature_enabled',side_effect=lambda name,*args:name=='store_pickup'), patch.object(pickup,'location_row',side_effect=RuntimeError('read failed')):
             with self.assertRaises(RuntimeError):pickup.require_pickup(CAMPUS)
 
     def test_fee_preview_requires_authoritative_capability(self):
         app=Flask(__name__)
         with app.test_request_context(json={'delivery_type':'store_pickup','delivery_fee':-100,'campus_id':'foreign'}), patch.object(delivery,'get_user_client'), patch('app.routes.events._get_campus_id',return_value=CAMPUS), patch.object(pickup,'require_pickup',return_value={'enabled':True,**LOCATION}) as check:
             response,code=inspect.unwrap(delivery.calculate_fee)()
-            self.assertEqual((code,response.json['delivery_fee']),(200,0));check.assert_called_once_with(CAMPUS)
+            self.assertEqual((code,response.json['delivery_fee']),(200,0));check.assert_called_once_with(CAMPUS,None)
 
     def test_quote_preserves_food_pricing_and_unused_delivery_credit(self):
         harness=quote_fixture.CheckoutQuoteTests();harness.setUp();harness.db.rows['profiles'][0]['next_order_free_delivery_cap']=100

@@ -1,3 +1,4 @@
+import { useCheckoutStore } from '@/hooks/useCheckoutStore';
 import { useStorePickup } from '@/hooks/useStorePickup';
 import { rememberPaymentCart, settlePaidCart } from '@/lib/paidCart';
 import ScheduleOrderPanel from '@/components/ScheduleOrderPanel';
@@ -202,7 +203,9 @@ export default function Checkout() {
     finally { setFreeSideLoading(false); }
   };
   const pickupRelease = isFeatureEnabled('store_pickup');
-  const storePickup = useStorePickup(campus?.id,pickupRelease);
+  const storeRelease = isFeatureEnabled('multi_store_ordering');
+  const checkoutStore = useCheckoutStore(campus?.id,deliveryType,deliveryPin,storeRelease);
+  const storePickup = useStorePickup(campus?.id,pickupRelease,checkoutStore.selectedId || undefined);
   useEffect(()=>{if(deliveryType==='store_pickup' && !pickupRelease){setDeliveryType(null);setDeliveryFee(0);}},[pickupRelease,deliveryType]);
   const gatePickup = deliveryType === 'off_campus' && !!gateId && deliveryPin?.lat == null;
   const pickupGate = gates.find(gate => gate.id === gateId);
@@ -309,7 +312,7 @@ export default function Checkout() {
 
   const [quoteState, setQuoteState] = useState<{ key: string; data?: any; error?: string } | null>(null);
   const [quoteRetry, setQuoteRetry] = useState(0);
-  const quoteKey = JSON.stringify({ user: user?.id, campus: campus?.id, items: cart?.items, redemptionId, deliveryType, hostelId, gateId, deliveryPin, selectedAddressId, promo: promoResult?.code, squadSelection, selectedGlobalAddonIds, freeSideSelections, freeSidesReleased, hpRewardId, deliveryRewardId, rewardChoicesReady, mealDiscount: selectedMealDiscountId });
+  const quoteKey = JSON.stringify({ store: checkoutStore.selectedId, user: user?.id, campus: campus?.id, items: cart?.items, redemptionId, deliveryType, hostelId, gateId, deliveryPin, selectedAddressId, promo: promoResult?.code, squadSelection, selectedGlobalAddonIds, freeSideSelections, freeSidesReleased, hpRewardId, deliveryRewardId, rewardChoicesReady, mealDiscount: selectedMealDiscountId });
   const quote = quoteState?.key === quoteKey ? quoteState.data : null;
   const rewardPreviewKey = `${user?.id || ''}:${campus?.id || ''}:${!!squadSelection?.squad_id}`;
   const ownedRewards = rewardPreview?.key === rewardPreviewKey ? rewardPreview : null;
@@ -517,6 +520,7 @@ export default function Checkout() {
         expected_food_hp_plan: quote?.food_hp_plan,
         order_source: (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('hg_order_source')) || 'website',
         delivery_type: deliveryType,
+        ...(storeRelease && checkoutStore.selectedId ? { store_id: checkoutStore.selectedId } : {}),
         promo_code: promoResult?.code,
         ...(!rewardOnly && selectedMealDiscountId ? { meal_discount_id: selectedMealDiscountId } : {}),
         ...(!rewardOnly && squadSelection?.squad_id ? {
@@ -547,6 +551,7 @@ export default function Checkout() {
   useEffect(() => {
     let active = true;
     const hasLocation = deliveryType === 'store_pickup' ? !!storePickup.option : deliveryType === 'on_campus' ? !!hostelId : deliveryType === 'off_campus' && (!!gateId || deliveryPin?.lat != null);
+    if (storeRelease && !checkoutStore.selected) return;
     if (!campus?.id || (!cart?.items?.length && !redemptionId) || !hasLocation || addressNeedsReselect || !rewardChoicesReady || pendingCheckout) return;
     const controller = new AbortController();
     const timer = setTimeout(async () => {
@@ -569,6 +574,8 @@ export default function Checkout() {
     // never hard-block on the frontend's read of kitchen status. If the
     // kitchen is closed but the user scheduled a window, send it through; if
     // no window was picked, still attempt and surface the backend's own error.
+    if (storeRelease && !checkoutStore.loading && !checkoutStore.error && !checkoutStore.stores.length) { setError(msg('STORE_NO_STORES','No stores are currently accepting this order. Please try again later.')); return false; }
+    if (storeRelease && (checkoutStore.loading || checkoutStore.error || !checkoutStore.selected)) { setError(msg('STORE_SELECT_REQUIRED', 'Choose a store to fulfil your order.')); return false; }
     if (deliveryType === 'store_pickup' && !storePickup.option) { setError(msg('STORE_PICKUP_UNAVAILABLE','Store pickup is not available for this campus. Choose delivery instead.')); return false; }
     if (!deliveryType) { setError(msg('FE_CHECKOUT_CHOOSE_DELIVERY', 'Please choose delivery or store pickup')); return false; }
     if (deliveryType === 'on_campus' && !hostelId) { setError(msg('FE_CHECKOUT_SELECT_HOSTEL', 'Please select your hostel')); return false; }
@@ -1095,9 +1102,10 @@ export default function Checkout() {
           </button>
         </div>
 
+        {storeRelease && deliveryType && !pendingCheckout && <div className="mt-4 rounded-2xl border border-border bg-secondary/30 p-4 space-y-3"><label className="block text-sm font-bold">{msg('FE_CHECKOUT_STORE', 'Fulfilling store')}<select className="mt-2 w-full min-h-12 rounded-xl border border-border bg-background px-3 text-sm" value={checkoutStore.selectedId} disabled={checkoutStore.loading || placing} onChange={event=>checkoutStore.choose(event.target.value)}><option value="">{msg('STORE_SELECT_REQUIRED','Choose a store to fulfil your order.')}</option>{checkoutStore.stores.map(store=><option key={store.id} value={store.id}>{store.name}</option>)}</select></label>{checkoutStore.loading && <p role="status" className="text-xs">{msg('FE_CHECKOUT_STORES_LOADING','Finding available stores…')}</p>}{checkoutStore.error && <div role="alert" className="text-sm"><p>{checkoutStore.error}</p><button type="button" className="min-h-10 font-bold underline" onClick={checkoutStore.retry}>{msg('FE_PLATFORM_RETRY','Retry')}</button></div>}{!checkoutStore.loading && !checkoutStore.error && !checkoutStore.stores.length && <p role="status" className="text-sm">{msg('STORE_NO_STORES','No stores are currently accepting this order. Please try again later.')}</p>}{checkoutStore.selected && <div className="text-sm"><p className="whitespace-pre-wrap">{checkoutStore.selected.address}</p><p className="mt-2 text-xs text-muted-foreground">{msg('FE_CHECKOUT_STORE_SHARED','Menu, prices and ordering windows are shared across this campus.')}</p></div>}</div>}
         {storePickup.error && <p role="alert" className="mt-3 text-sm">{msg('FE_STORE_PICKUP_LOCATION_FAILED','The pickup point could not be loaded. Retry to choose store pickup.')} <button type="button" className="font-bold underline" onClick={storePickup.retry}>{msg('FE_PLATFORM_RETRY','Retry')}</button></p>}
         {storePickup.option && <button type="button" aria-pressed={deliveryType==='store_pickup'} onClick={()=>{setSelectedAddressId(null);setAddressNeedsReselect(null);setDeliveryType('store_pickup');setHostelId(null);setGateId(null);setDeliveryPin(null);setDeliveryFee(0);setDeliveryAddress('');setLandmark('');setFeePreview(null);}} className={`w-full mt-3 p-3 rounded-xl border text-left ${deliveryType==='store_pickup'?'border-primary bg-primary/10':'border-border'}`}><strong className="text-sm">{msg('FE_STORE_PICKUP','Store pickup')}</strong><p className="text-xs text-muted-foreground mt-1">{msg('FE_STORE_PICKUP_ZERO_FEE','Collect at our store · ₦0 delivery fee')}</p></button>}
-        {deliveryType==='store_pickup' && storePickup.option && <div className="mt-3 rounded-xl bg-secondary p-3 text-sm space-y-2"><strong>{storePickup.option.name}</strong><p>{storePickup.option.address}</p>{storePickup.option.instructions&&<p>{storePickup.option.instructions}</p>}<a target="_blank" rel="noopener noreferrer" className="font-bold text-primary underline" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(storePickup.option.address)}`}>{msg('FE_STORE_PICKUP_MAP','View pickup location on Maps')}</a></div>}
+        {deliveryType==='store_pickup' && storePickup.option && !storePickup.option.requires_store_selection && <div className="mt-3 rounded-xl bg-secondary p-3 text-sm space-y-2"><strong>{storePickup.option.name}</strong><p>{storePickup.option.address}</p>{storePickup.option.instructions&&<p>{storePickup.option.instructions}</p>}<a target="_blank" rel="noopener noreferrer" className="font-bold text-primary underline" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(storePickup.option.address)}`}>{msg('FE_STORE_PICKUP_MAP','View pickup location on Maps')}</a></div>}
 
         {deliveryType === 'on_campus' && (
           <div className="mt-3 animate-fade-in">

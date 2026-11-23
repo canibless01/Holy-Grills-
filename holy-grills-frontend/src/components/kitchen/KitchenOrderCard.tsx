@@ -62,6 +62,7 @@ export default function KitchenOrderCard({ order, onStatusUpdate, onMarkUnavaila
         </span>
       </div>
 
+      {order.fulfilment_store_snapshot?.name && <p className="mb-2 text-xs"><strong>{msg('FE_CHECKOUT_STORE','Fulfilling store')}: </strong>{order.fulfilment_store_snapshot.name}</p>}
       <DeliveryAddress order={order} />
       {/* Badges — free side, squad */}
       {(order.has_free_side || order.is_squad || order.squad_name) && (

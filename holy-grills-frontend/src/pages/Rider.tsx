@@ -106,6 +106,7 @@ export default function Rider() {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Batch #{(batch.batch.id || '').slice(0, 8).toUpperCase() || '—'}</div>
+                  {batch.batch.fulfilment_store && <div className="mt-2 text-xs"><strong>{batch.batch.fulfilment_store.name}</strong><p>{batch.batch.fulfilment_store.address}</p><a className="inline-flex min-h-10 items-center font-bold text-primary underline" target="_blank" rel="noopener noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(batch.batch.fulfilment_store.lat != null && batch.batch.fulfilment_store.lon != null ? `${batch.batch.fulfilment_store.lat},${batch.batch.fulfilment_store.lon}` : batch.batch.fulfilment_store.address)}`}>{msg('FE_STORE_PICKUP_MAP','View pickup location on Maps')}</a></div>}
                   <div className="font-heading font-bold text-sm text-foreground mt-0.5">Zone: {batch.batch.zone || '—'}</div>
                 </div>
                 <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-primary/10 text-primary capitalize">{batch.batch.status || 'active'}</span>

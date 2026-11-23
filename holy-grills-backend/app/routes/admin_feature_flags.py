@@ -100,6 +100,12 @@ def _upsert_feature_flag(flag_name, data, create_status=200):
 
     if not _FLAG_NAME_RE.fullmatch(flag_name):
         return jsonify({'error': MSG.FEATURE_FLAG_NAME_INVALID}), 400
+    if flag_name=='multi_store_ordering' and data.get('is_active') is True:
+        try:ready=get_db().rpc('hg_store_dispatch_ready',{'p_actor':g.user_id})
+        except SupabaseError:
+            logger.info('Store dispatch readiness could not be verified')
+            return jsonify({'error':MSG.STORE_RELEASE_NOT_READY}),409
+        if ready is not True:return jsonify({'error':MSG.STORE_RELEASE_NOT_READY}),409
     db = get_user_client()
     existing = db.table("feature_flags").select("*").eq("feature_name", flag_name).is_("campus_id", "null").single().execute()
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -118,6 +124,7 @@ def _upsert_feature_flag(flag_name, data, create_status=200):
         try:
             result = db.table("feature_flags").eq("feature_name", flag_name).is_("campus_id", "null").update(safe)
         except SupabaseError as e:
+            if 'HG_STORE_CUTOVER_NOT_READY' in str(e):return jsonify({'error': MSG.STORE_RELEASE_NOT_READY}),409
             logger.info("update_feature_flag: rejected %s: %s", flag_name, e)
             return jsonify({"error": MSG.UPDATE_NOT_PERMITTED}), 403
         if not result:
@@ -145,6 +152,7 @@ def _upsert_feature_flag(flag_name, data, create_status=200):
     try:
         result = db.table("feature_flags").insert(payload)
     except SupabaseError as e:
+        if 'HG_STORE_CUTOVER_NOT_READY' in str(e):return jsonify({'error': MSG.STORE_RELEASE_NOT_READY}),409
         code = str((e.details or {}).get("code", "")) if isinstance(e.details, dict) else ""
         if code == "23505":   # concurrent creates replay matching data, otherwise conflict
             again = db.table("feature_flags").select("*").eq("feature_name", flag_name).is_("campus_id", "null").single().execute()

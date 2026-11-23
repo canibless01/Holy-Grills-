@@ -203,7 +203,7 @@ def my_batch():
     """
     db = get_user_client()
     q = (db.table("delivery_batches")
-         .select("id,window_id,delivery_window_id,zone,gate_id,status,created_at,campus_id,rider_pay_total,rider_paid_at")
+         .select("id,window_id,delivery_window_id,zone,gate_id,status,created_at,campus_id,store_id,rider_pay_total,rider_paid_at")
          .eq("rider_id", g.user_id).in_("status", list(_ACTIVE_BATCH_STATUSES)))
     campus_id = resolve_scoped_campus_id(request.args.get("campus_id"))
     if campus_id:
@@ -241,7 +241,7 @@ def my_batch():
     # the database trigger has already closed the batch if nothing else in it is open).
     all_orders = _select_in(
         db, "orders",
-        "id,order_number,status,notes,delivery_address_snapshot,user_id,guest_name,delivery_location_lat,delivery_location_lon,batch_id",
+        "id,order_number,status,notes,store_id,fulfilment_store_snapshot,delivery_address_snapshot,user_id,guest_name,delivery_location_lat,delivery_location_lon,batch_id",
         "batch_id", batch_ids)
     all_orders = [o for o in all_orders if o.get("status") not in ("cancelled", "refunded")]
 
@@ -265,11 +265,13 @@ def my_batch():
         orders = [o for o in all_orders if o.get("batch_id") == batch["id"]]
         pending = [o for o in orders if o.get("status") in _PENDING_ORDER_STATUSES]
         finished = [o for o in orders if o.get("status") not in _PENDING_ORDER_STATUSES]
-        gate = gates.get(batch.get("gate_id"))
+        store=next((order.get('fulfilment_store_snapshot') for order in orders if order.get('store_id')==batch.get('store_id') and order.get('fulfilment_store_snapshot')),None)
+        gate = store if store and store.get('lat') is not None and store.get('lon') is not None else gates.get(batch.get("gate_id"))
         if pending and gate and gate.get("lat") is not None and gate.get("lon") is not None:
             sequence = _sequence_nearest_neighbour if sequencing_mode == "nearest_neighbour" else _sequence_distance_from_gate
             pending = sequence(pending, gate["lat"], gate["lon"])
         view = {k: v for k, v in batch.items() if k != "delivery_window_id"}
+        view["fulfilment_store"] = store
         view["delivery_window"] = windows.get(batch.get("window_id") or batch.get("delivery_window_id"))
         view["orders"] = [{
             "id": order["id"],

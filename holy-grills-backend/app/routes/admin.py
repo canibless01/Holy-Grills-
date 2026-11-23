@@ -1121,14 +1121,17 @@ def list_batches():
         # still set on every batch, and a batch with no orders still reports 0.
         batch_ids = [b["id"] for b in batches if b.get("id")]
         counts: dict = {}
+        stores: dict = {}
         if batch_ids:
-            rows = (db.table("orders").select("batch_id")
+            rows = (db.table("orders").select("batch_id,fulfilment_store_snapshot")
                     .in_("batch_id", batch_ids).limit(10000).execute()) or []
             for r in rows:
                 bid = r.get("batch_id")
                 counts[bid] = counts.get(bid, 0) + 1
+                if r.get('fulfilment_store_snapshot'):stores[bid]=r['fulfilment_store_snapshot']
         for b in batches:
             b["order_count"] = counts.get(b.get("id"), 0)
+            b["fulfilment_store"] = stores.get(b.get("id"))
     except (SupabaseError, requests.RequestException) as e:
         return db_error_response(e, "list_batches")
     return jsonify({"batches": batches, "count": len(batches), "limit": limit, "offset": offset}), 200
@@ -1147,12 +1150,19 @@ def get_batch(batch_id):
             return jsonify({"error": MSG.ADMIN_BATCH_NOT_FOUND}), 404
         assert_can_modify(batch.get("campus_id"))  # RLS already scopes this; app-level backup
         orders = db.table("orders").select(
-            "id,status,delivery_address_snapshot,total_amount,created_at,"
+            "id,status,delivery_address_snapshot,total_amount,created_at,store_id,fulfilment_store_snapshot,"
             "delivery_location_lat,delivery_location_lon,"
             "order_items(name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))"
         ).eq("batch_id", batch_id).execute() or []
+        batch["fulfilment_store"] = next((order.get("fulfilment_store_snapshot") for order in orders if order.get("fulfilment_store_snapshot")), None)
+        if batch.get("store_id"):
+            riders = get_db().rpc('hg_store_riders', {'p_actor': g.user_id, 'p_campus': batch['campus_id']}) or []
+            batch["eligible_riders"] = [rider for rider in riders if batch['store_id'] in (rider.get('store_ids') or [])]
         gate = None
-        if batch.get("gate_id"):
+        origin = batch.get("fulfilment_store") or {}
+        if origin.get("lat") is not None and origin.get("lon") is not None:
+            gate = {"lat": origin["lat"], "lon": origin["lon"]}
+        elif batch.get("gate_id"):
             gate = db.table("gates").select("lat,lon").eq("id", batch["gate_id"]).single().execute()
     except (SupabaseError, requests.RequestException) as e:
         return db_error_response(e, "get_batch")

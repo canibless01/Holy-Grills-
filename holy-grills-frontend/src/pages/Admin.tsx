@@ -28,6 +28,7 @@ const AdminLeaderboard = lazy(() => import('@/components/admin/AdminLeaderboard'
 const AdminDepartments = lazy(() => import('@/components/admin/AdminDepartments'));
 const AdminStorefront = lazy(() => import('@/components/admin/AdminStorefront'));
 const AdminOnboarding = lazy(() => import('@/components/admin/AdminOnboarding'));
+const AdminStores = lazy(() => import('@/components/admin/AdminStores'));
 const AdminCampuses = lazy(() => import('@/components/admin/AdminCampuses'));
 const AdminHpMultipliers = lazy(() => import('@/components/admin/AdminHpMultipliers'));
 const AdminChallenges = lazy(() => import('@/components/admin/AdminChallenges'));
@@ -81,6 +82,7 @@ const TITLES = {
   flags: 'Feature Flags',
   settings: 'System Settings',
   academiccalendar: 'Academic Calendar',
+  stores: msg('FE_STORE_SETUP', 'Stores & teams'),
   campuses: msg('FE_CAMPUSES', 'Campuses'),
   webhooks: 'Webhook Events',
   system: 'System — Cron & Audit',
@@ -184,6 +186,7 @@ export default function Admin({ communityWorkspace = false }: { communityWorkspa
       case 'settings': return <AdminSystemSettings />;
       case 'academiccalendar': return <AdminAcademicCalendar />;
       case 'campuses': return <AdminCampuses />;
+      case 'stores': return <AdminStores />;
       case 'webhooks': return <AdminWebhooks />;
       case 'system': return <AdminSystem />;
       case 'ambassadors': return <AdminAmbassadors />;
