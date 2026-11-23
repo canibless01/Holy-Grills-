@@ -4,6 +4,10 @@ An isolated, read-only migration experiment. **This is not the replacement front
 
 Only `/` and `/menu` are implemented. They server-render the existing public Python API's campus-scoped menu and CMS hero slides. Product selection, accounts, cart, payments and staff tools remain on the existing live frontend. No database migration or provider change is required.
 
+## Open a test website
+
+See [TESTING.md](TESTING.md) for phone/browser preview setup, local run commands and a short acceptance checklist. No separate hosted pilot URL has been deployed by this work.
+
 ## Run
 
 Use Node 24 and npm:
