@@ -69,7 +69,7 @@ No outstanding newly reproduced launch-blocking code defect is recorded in the c
 ## Deferred product work — not part of launch completion
 
 - Marketplace/peer-trade and subscription/code expansion beyond the existing released/gated features; automatic wallet funding is already implemented and is not this deferred category.
-- Group/buy-for-friend event tickets and shared HP.
+- Shared HP pooling/spending for group event tickets. Group/buy-for-friend purchases are implemented and verified; see `EVENT_GROUP_TICKETS_2026_11_23.md`.
 - Official ticket ownership transfer.
 - Delegated event door-staff assignments.
 - Broad UI redesign, including further spin/leaderboard/presentation polish beyond functional fixes.

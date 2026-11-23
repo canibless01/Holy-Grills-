@@ -1,3 +1,4 @@
+import EventAnswers from './EventAnswers';
 import { useState } from 'react';
 import { ChevronLeft, Wallet, CreditCard, Flame, Check, Loader2, Tag, Info } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
@@ -39,7 +40,6 @@ export default function RegisterModal({ event, tiers, user, wallet, hpBalance, i
   const isFree = price === 0 && hpPrice === 0;
 
   const setGuestField = (k) => (e) => setGuest({ ...guest, [k]: e.target.value });
-  const setAnswer = (name, value) => setAnswers((a) => ({ ...a, [name]: value }));
 
   // Dynamic registration-field validation + guest field validation.
   const guestValid = isGuest
@@ -108,42 +108,6 @@ export default function RegisterModal({ event, tiers, user, wallet, hpBalance, i
         { key: 'card', icon: CreditCard, color: 'text-muted-foreground', label: 'Card', sub: `${formatNaira(price)} · Paystack` },
       ];
 
-  const renderField = (f) => {
-    const name = f.name || f.key;
-    const label = f.label || f.name;
-    const val = answers[name] ?? '';
-    const base = "w-full p-3 rounded-xl border border-border text-sm focus:outline-none focus:border-primary/40";
-    if (f.type === 'radio' || f.type === 'multiselect') return <fieldset key={name} className="rounded-xl border border-border p-3 space-y-2"><legend className="px-1 text-sm font-semibold">{label}{f.required ? ' *' : ''}</legend>{(f.options||[]).map(option=><label key={option} className="flex items-center gap-2 text-sm"><input type={f.type==='radio'?'radio':'checkbox'} name={name} checked={f.type==='radio'?val===option:Array.isArray(val)&&val.includes(option)} onChange={e=>setAnswer(name,f.type==='radio'?option:e.target.checked?[...(Array.isArray(val)?val:[]),option]:(Array.isArray(val)?val:[]).filter(v=>v!==option))}/>{option}</label>)}</fieldset>;
-    if (f.type === 'select') {
-      return (
-        <select key={name} value={val} onChange={(e) => setAnswer(name, e.target.value)} className={base}>
-          <option value="">{f.placeholder || `Select ${label}`}</option>
-          {(f.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
-        </select>
-      );
-    }
-    if (f.type === 'checkbox') {
-      return (
-        <label key={name} className="flex items-center gap-2 p-3 rounded-xl border border-border text-sm">
-          <input type="checkbox" checked={!!val} onChange={(e) => setAnswer(name, e.target.checked)} className="w-4 h-4 accent-[var(--primary)]" />
-          <span className="text-foreground">{label}{f.required ? ' *' : ''}</span>
-        </label>
-      );
-    }
-    if (f.type === 'textarea') {
-      return <textarea key={name} value={val} onChange={(e) => setAnswer(name, e.target.value)} placeholder={`${label}${f.required ? ' *' : ''}`} rows={2} className={base} />;
-    }
-    return (
-      <input
-        key={name}
-        type={f.type === 'number' ? 'number' : f.type === 'email' ? 'email' : f.type === 'date' ? 'date' : 'text'}
-        value={val}
-        onChange={(e) => setAnswer(name, e.target.value)}
-        placeholder={`${label}${f.required ? ' *' : ''}`}
-        className={base}
-      />
-    );
-  };
 
   return (
     <ModalPortal>
@@ -217,7 +181,7 @@ export default function RegisterModal({ event, tiers, user, wallet, hpBalance, i
               <div>
                 <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-2">Additional info</div>
                 <div className="space-y-2">
-                  {regFields.map(renderField)}
+                  <EventAnswers fields={regFields} value={answers} onChange={setAnswers} />
                 </div>
               </div>
             )}

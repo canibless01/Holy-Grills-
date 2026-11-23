@@ -49,6 +49,7 @@ const Wallet = lazy(() => import('@/pages/Wallet'));
 const Marketplace = lazy(() => import('@/pages/Marketplace'));
 const MarketplaceDetail = lazy(() => import('@/pages/MarketplaceDetail'));
 const Events = lazy(() => import('@/pages/Events'));
+const EventGroupBooking = lazy(() => import('@/pages/EventGroupBooking'));
 const EventDetail = lazy(() => import('@/pages/EventDetail'));
 const TierDetail = lazy(() => import('@/pages/TierDetail'));
 const Profile = lazy(() => import('@/pages/Profile'));
@@ -93,6 +94,7 @@ const AppRoutes = () => {
           <Route element={<EventReleaseGate />}>
           <Route path="/events" element={<Events />} />
           <Route path="/events/tiers/:tierId" element={<TierDetail />} />
+          <Route path="/events/:id/group/:groupId" element={<EventGroupBooking />} />
           <Route path="/events/:id" element={<EventDetail />} />
           </Route>
           <Route path="/catering/:requestId" element={<CateringStatus />} />

@@ -1,3 +1,5 @@
+import GroupRegisterModal from '@/components/events/GroupRegisterModal';
+import { apiClient } from '@/lib/apiClient';
 import { EventAdmissionOpening } from '@/components/events/EventAdmissionWindow';
 import TicketResendButton from '@/components/events/TicketResendButton';
 import { useState, useEffect } from 'react';
@@ -14,6 +16,11 @@ import RegisterModal from '@/components/events/RegisterModal';
 import { msg } from '@/lib/messages';
 
 export default function EventDetail() {
+  const [groupOpen, setGroupOpen] = useState(false);
+  const [groupBookings, setGroupBookings] = useState([]);
+  const [groupHistoryError, setGroupHistoryError] = useState(false);
+  const [groupHistoryRetry, setGroupHistoryRetry] = useState(0);
+
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, refreshHp, hpBalance, wallet, isAuthenticated } = useHolyGrill();
@@ -34,6 +41,13 @@ export default function EventDetail() {
   const [checkinResult, setCheckinResult] = useState(null);
   const [checkinError, setCheckinError] = useState(null);
   const [paystackProcessing, setPaystackProcessing] = useState(false);
+
+  useEffect(() => {
+    let active = true; setGroupBookings([]); setGroupHistoryError(false);
+    if (isAuthenticated && event?.id) apiClient.get(`/events/${event.id}/groups`).then(result => { if (active) setGroupBookings(result.groups || []); }).catch(() => { if (active) setGroupHistoryError(true); });
+    return () => { active = false; };
+  }, [event?.id, isAuthenticated, user?.id, groupHistoryRetry]);
+  useEffect(() => { setGroupOpen(false); }, [event?.id, user?.id]);
 
   const unwrap = (res) => res?.data || res;
 
@@ -124,7 +138,8 @@ export default function EventDetail() {
     };
     poll(0);
     return () => { cancelled = true; };
-  }, [event?.id, isAuthenticated]);
+  }, [event?.id, isAuthenticated, user?.id, groupHistoryRetry]);
+  useEffect(() => { setGroupOpen(false); }, [event?.id, user?.id]);
 
   const price = event?.ticket_price ?? (tiers.length ? Number(tiers[0].price_naira) || 0 : 0);
   const hpReward = event?.hp_per_attendee ?? event?.hp_reward ?? 0;
@@ -346,6 +361,9 @@ export default function EventDetail() {
           {ticketLookup==='loading' ? msg('FE_EVENT_OWNED_TICKETS_LOADING','Checking your tickets…') : tiersLoading ? msg('FE_EVENT_OPTIONS_LOADING', 'Loading ticket options…') : tiers.length > 0 ? 'Get Your Ticket' : `I'm In`}
         </button>
       )}
+
+      {event.metadata?.lifecycle_status !== 'cancelled' && <section className="space-y-3 rounded-2xl border border-border bg-card p-4"><button disabled={tiersLoading || tiersError} onClick={() => setGroupOpen(true)} className="min-h-12 w-full rounded-full border border-primary/30 bg-primary/5 px-5 py-3 text-sm font-bold text-primary disabled:opacity-50">{msg('FE_EVENT_GROUP_TITLE', 'Book for a group')}</button>{groupHistoryError && <div role="alert" className="text-sm"><p>{msg('FE_EVENT_GROUP_HISTORY_FAILED', 'Your previous group bookings could not be loaded. Retry before starting another booking.')}</p><button type="button" onClick={() => setGroupHistoryRetry(value => value + 1)} className="min-h-10 font-bold text-primary underline">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>}{groupBookings.map(booking => <Link key={booking.id} to={`/events/${event.id}/group/${booking.id}`} className="block rounded-xl bg-secondary p-3 text-sm font-semibold">{msg('FE_EVENT_GROUP_RESUME', 'Open group booking')} · {formatNaira(booking.total)}</Link>)}</section>}
+      {groupOpen && <GroupRegisterModal event={event} tiers={tiers} user={isAuthenticated ? user : null} onClose={() => setGroupOpen(false)} />}
 
       {showRegister && event.metadata?.lifecycle_status !== 'cancelled' && (
         <RegisterModal

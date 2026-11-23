@@ -150,10 +150,11 @@ def _confirm_event_ticket_charge(db, metadata, reference, data, provider):
     if not ticket_id:
         raise ValueError("Missing ticket_id in metadata")
     ticket = (db.table("event_tickets")
-              .select("id,event_id,user_id,card_amount_used,status,payment_status,payment_reference,campus_id,metadata")
+              .select("id,event_id,user_id,card_amount_used,status,payment_status,payment_reference,campus_id,metadata,group_id")
               .eq("id", ticket_id).single().execute())
     if not ticket:
         raise ValueError(f"Ticket {ticket_id} not found")
+    if ticket.get('group_id'):raise ValueError(MSG.EVENT_GROUP_PAYMENT_INVALID)
     meta_user_id = metadata.get("user_id")
     if meta_user_id and ticket.get("user_id") and str(ticket.get("user_id")) != str(meta_user_id):
         raise ValueError("Ticket user mismatch")
@@ -424,6 +425,9 @@ def _handle_flutterwave_charge_success(data: dict):
         confirm_order_payment(order_id, reference, provider_response=data, provider="flutterwave")
         return order.get("campus_id")
 
+    elif payment_type == "event_group_payment":
+        raise ValueError(MSG.EVENT_GROUP_PAYMENT_INVALID)
+
     elif payment_type == "event_ticket_payment":
         return _confirm_event_ticket_charge(db, meta, reference, data, "flutterwave")
 
@@ -480,6 +484,16 @@ def _handle_charge_success(data: dict):
     if str(data.get("reference") or "").startswith("HG-AUTO-"):
         from app.services.auto_funding import confirm_payment
         return confirm_payment(data).get("campus_id")
+    if str(data.get("reference") or "").startswith("HG-EVGRP-"):
+        from uuid import UUID
+        from app.services import event_groups
+        try:group_id=str(UUID(data["reference"][len("HG-EVGRP-"):]))
+        except (ValueError,TypeError):raise ValueError(MSG.EVENT_GROUP_PAYMENT_INVALID)
+        group=event_groups.read(group_id)
+        if not group:raise ValueError(MSG.EVENT_GROUP_DENIED)
+        event_groups.confirm(group,data["reference"],data)
+        event=get_db().table('events').select('campus_id').eq('id',group['event_id']).single().execute() or {}
+        return event.get('campus_id')
     currency = data.get("currency")
     if currency and str(currency).upper() != "NGN":
         raise ValueError(f"Invalid currency: {currency}")
@@ -557,6 +571,14 @@ def _handle_charge_success(data: dict):
         # remainder (not the full basket when a wallet contribution exists).
         confirm_order_payment(order_id, reference, provider_response=data, provider="paystack")
         return order.get("campus_id")
+
+    elif payment_type == "event_group_payment":
+        from app.services import event_groups
+        group=event_groups.read(metadata.get('group_id'))
+        if not group:raise ValueError(MSG.EVENT_GROUP_DENIED)
+        event_groups.confirm(group,reference,data)
+        event=db.table('events').select('campus_id').eq('id',group['event_id']).single().execute() or {}
+        return event.get('campus_id')
 
     elif payment_type == "event_ticket_payment":
         return _confirm_event_ticket_charge(db, metadata, reference, data, "paystack")

@@ -19,6 +19,7 @@ def dispatch_notification(notification_id):
         def finish(outcome):
             saved=db.rpc('hg_finish_notification_dispatch',{'p_id':notification_id,'p_token':claim['token'],'p_outcome':outcome})
             return outcome if saved is True else {'state':'lease_lost'}
+        group_email=claim['payload'].get('kind')=='event_group_email'
         refund_email=claim['payload'].get('kind')=='event_refund_email'
         status_email=claim['payload'].get('kind')=='event_status_email'
         ticket_email=status_email or refund_email or claim['payload'].get('kind')=='event_ticket_email'
@@ -37,6 +38,12 @@ def dispatch_notification(notification_id):
             if channel != 'email' or snapshot.get('user_id') is not None or not guest_cart_email.eligible(db, claim['payload']):
                 return finish({'state':'cancelled','error':'guest_checkout_no_longer_eligible'})
             profile={'email':snapshot.get('email')}
+        elif group_email:
+            from app.services import event_groups
+            group=event_groups.read(claim['payload'].get('group_id')) or {}
+            if channel!='email' or group.get('event_id')!=claim['payload'].get('event_id') or group.get('payment_status') not in ('paid','not_required'):
+                return finish({'state':'cancelled','error':'group_booking_not_settled'})
+            profile={'email':group.get('buyer_email')}
         elif ticket_email:
             ticket=db.table('event_tickets').select('event_id,user_id,guest_email,status,payment_status').eq('id',claim['payload']['ticket_id']).single().execute() or {}
             valid_ticket_state=status_email or ((ticket.get('status')=='cancelled' and ticket.get('payment_status')=='refunded') if refund_email else (ticket.get('status') in ('confirmed','checked_in') and ticket.get('payment_status') in ('paid','not_required')))
@@ -95,6 +102,8 @@ def dispatch_notification(notification_id):
                     prepared=scheduled_order_reminders.prepare(db,snapshot)
                 elif guest_cart:
                     prepared=guest_cart_email.prepare(db,notification_id,claim['payload'])
+                elif group_email:
+                    prepared=event_groups.prepare_receipt(group)
                 elif ticket_email and not refund_email and not status_email:
                     event=db.table('events').select('title,starts_at,location,metadata').eq('id',claim['payload']['event_id']).single().execute() or {}
                     if (event.get('metadata') or {}).get('lifecycle_status')=='cancelled':

@@ -779,6 +779,7 @@ def _initiate_event_card_payment(db, ticket_id, event_id, amount_naira, email, c
         if (ticket.get("event_id") != event_id or ticket.get("status") in TICKET_EXCLUDED_STATUSES
                 or ticket.get("payment_status") in ("paid", "not_required", "expired", "refunded")):
             return {"error": MSG.EVENT_CARD_NOT_PENDING}
+        if ticket.get('group_id'):return {'error':MSG.EVENT_GROUP_NOT_PENDING}
         expiry = ticket.get("payment_expires_at")
         if expiry and datetime.fromisoformat(as_instant(expiry)) <= datetime.now(timezone.utc):
             return {"error": MSG.EVENT_CARD_NOT_PENDING}
@@ -2380,3 +2381,106 @@ def set_event_admission_window(event_id):
         if 'HG_ADMISSION_WINDOW_LOCKED' in str(exc):return jsonify({'error':MSG.EVENT_ADMISSION_WINDOW_LOCKED}),409
         if 'HG_ADMISSION_WINDOW_INVALID' in str(exc):return jsonify({'error':MSG.EVENT_ADMISSION_WINDOW_INVALID}),400
         raise
+
+
+@events_bp.route('/<event_id>/groups', methods=['POST'])
+@optional_auth
+@rate_limit(max_requests=15, window_seconds=60)
+def create_group_booking(event_id):
+    if request.content_length and request.content_length>1500000:return jsonify({'error':MSG.EVENT_REQUEST_INVALID}),413
+    from app.services import event_groups as groups
+    data=request.get_json(silent=True)
+    if not validate_uuid(event_id) or not isinstance(data,dict):return jsonify({'error':MSG.EVENT_REQUEST_INVALID}),400
+    try:
+        contact_data=data.get('buyer')
+        if getattr(g,'user_id',None):
+            profile=get_user_client().table('profiles').select('full_name,email,phone').eq('id',g.user_id).single().execute() or {}
+            contact_data={**(contact_data if isinstance(contact_data,dict) else {}),'email':(getattr(g,'jwt_payload',None) or {}).get('email') or profile.get('email')}
+        contact=groups.clean_contact(contact_data)
+        previous=groups.recover(event_id,data,contact)
+        if previous:return jsonify(groups.snapshot(previous)),200
+        campus=_get_campus_id()
+        if not is_feature_enabled('events',campus):return jsonify({'error':MSG.EVENT_RELEASE_CLOSED}),403
+        event=get_user_client().table('events').select('*').eq('id',event_id).single().execute()
+        if not event or not event.get('is_published') or (event.get('campus_id') and event['campus_id']!=campus):return jsonify({'error':MSG.EVENT_NOT_FOUND}),404
+        result=groups.create(event,data,contact,lookup=False)
+        response=groups.snapshot(result)
+        if result['payment_status'] in ('paid','not_required'):
+            start_ticket_email_dispatch(result['id'])
+            for row in result.get('tickets') or []:start_ticket_email_dispatch(row['id'])
+        return jsonify(response),201
+    except groups.GroupAnswersError as exc:return jsonify({'error':str(exc),'registration_fields':exc.fields}),400
+    except ValueError as exc:return jsonify({'error':str(exc)}),400
+    except SupabaseError as exc:
+        message=str(exc)
+        if 'HG_GROUP_EVENT_UNAVAILABLE' in message:return jsonify({'error':MSG.EVENT_GROUP_EVENT_UNAVAILABLE}),409
+        if 'HG_GROUP_BUYER_UNAVAILABLE' in message:return jsonify({'error':MSG.EVENT_GROUP_DENIED}),403
+        if 'HG_GROUP_SPLIT_INVALID' in message:return jsonify({'error':MSG.EVENT_GROUP_PAYMENT_INVALID}),400
+        if 'insufficient' in message.lower():return jsonify({'error':MSG.PURCHASE_INSUFFICIENT_WALLET}),400
+        if 'HG_GROUP_PRICE_CHANGED' in message:return jsonify({'error':MSG.EVENT_GROUP_PRICE_CHANGED,'pricing_changed':True}),409
+        if 'HG_GROUP_ATTENDEE_REGISTERED' in message:return jsonify({'error':MSG.EVENT_GROUP_ALREADY_REGISTERED}),409
+        if 'HG_GROUP_DUPLICATE' in message:return jsonify({'error':MSG.EVENT_GROUP_DUPLICATE}),400
+        if 'capacity' in message.lower():return jsonify({'error':MSG.EVENT_GROUP_FULL}),409
+        if 'promo' in message.lower():return jsonify({'error':MSG.EVENT_GROUP_PROMO_INVALID}),400
+        if 'tier' in message.lower():return jsonify({'error':MSG.EVENT_GROUP_TIER_CHANGED}),409
+        if 'HG_GROUP_INVALID' in message:return jsonify({'error':MSG.EVENT_REQUEST_INVALID}),400
+        if 'HG_GROUP_INTENT_CONFLICT' in message:return jsonify({'error':MSG.EVENT_GROUP_CONFLICT}),409
+        logger.exception('Group registration failed')
+        return jsonify({'error':MSG.EVENT_GROUP_FAILED}),503
+
+
+@events_bp.route('/<event_id>/groups', methods=['GET'])
+@require_auth
+def list_group_bookings(event_id):
+    if not validate_uuid(event_id):return jsonify({'error':MSG.EVENT_REQUEST_INVALID}),400
+    return jsonify({'groups':get_db().rpc('hg_event_groups_for_buyer',{'p_event':event_id,'p_actor':g.user_id}) or []}),200
+
+
+def _owned_event_group(event_id,group_id):
+    from app.services import event_groups as groups
+    if not validate_uuid(event_id) or not validate_uuid(group_id):abort(404,description=MSG.EVENT_GROUP_DENIED)
+    group=groups.read(group_id)
+    data=request.get_json(silent=True) or {}
+    token=data.get('access_token') if isinstance(data,dict) else None
+    token=token or request.args.get('access_token')
+    if not group or group['event_id']!=event_id or not groups.may_read(group,token):abort(403,description=MSG.EVENT_GROUP_DENIED)
+    return group
+
+
+@events_bp.route('/<event_id>/groups/<group_id>', methods=['GET'])
+@optional_auth
+def get_group_booking(event_id,group_id):
+    from app.services.event_groups import snapshot
+    return jsonify(snapshot(_owned_event_group(event_id,group_id))),200
+
+
+@events_bp.route('/<event_id>/groups/<group_id>/payment', methods=['POST'])
+@optional_auth
+@rate_limit(max_requests=20, window_seconds=60)
+def pay_group_booking(event_id,group_id):
+    from app.services import event_groups as groups
+    group=_owned_event_group(event_id,group_id)
+    if group['payment_status'] in ('paid','not_required'):return jsonify(groups.snapshot(group)),200
+    try:return jsonify(groups.initialize(group,None)),200
+    except ValueError as exc:return jsonify({'error':str(exc)}),409
+    except Exception:
+        logger.exception('Group payment setup failed')
+        return jsonify({'error':MSG.EVENT_CARD_SETUP_FAILED}),502
+
+
+@events_bp.route('/<event_id>/groups/<group_id>/verify', methods=['POST'])
+@optional_auth
+@rate_limit(max_requests=30, window_seconds=60)
+def verify_group_booking(event_id,group_id):
+    from app.services import event_groups as groups
+    group=_owned_event_group(event_id,group_id)
+    if group['payment_status']!='pending':return jsonify(groups.snapshot(group)),200
+    from app.services.payment_service import verify_payment
+    try:
+        charge=verify_payment(group['payment_reference'])
+        if charge.get('status')=='success':group=groups.confirm(group,group['payment_reference'],charge)
+        return jsonify(groups.snapshot(group)),200
+    except ValueError:return jsonify({'error':MSG.EVENT_GROUP_PAYMENT_INVALID}),409
+    except Exception:
+        logger.exception('Group payment verification deferred')
+        return jsonify({'error':MSG.EVENT_CARD_SETUP_FAILED}),502

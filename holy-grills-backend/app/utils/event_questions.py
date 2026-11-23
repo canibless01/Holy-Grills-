@@ -39,20 +39,20 @@ def validate_answers(fields, answers):
             if field.get('required'): raise ValueError(field.get('label') or name)
             continue
         if kind == 'checkbox':
-            if not isinstance(value, bool): raise ValueError(name)
+            if not isinstance(value, bool): raise ValueError(field.get('label') or name)
         elif kind == 'multiselect':
-            if not isinstance(value, list) or len(value) > 30 or any(not isinstance(v,str) or v not in field.get('options',[]) for v in value) or len(value) != len(set(value)): raise ValueError(name)
+            if not isinstance(value, list) or len(value) > 30 or any(not isinstance(v,str) or v not in field.get('options',[]) for v in value) or len(value) != len(set(value)): raise ValueError(field.get('label') or name)
         else:
-            if not isinstance(value, str) or len(value)>5000: raise ValueError(name)
-            if kind in ('radio','select') and value not in field.get('options',[]): raise ValueError(name)
+            if not isinstance(value, str) or len(value)>5000: raise ValueError(field.get('label') or name)
+            if kind in ('radio','select') and value not in field.get('options',[]): raise ValueError(field.get('label') or name)
             if kind == 'date':
                 try: date.fromisoformat(value)
-                except ValueError: raise ValueError(name)
-            if kind == 'email' and not validate_email(value): raise ValueError(name)
+                except ValueError: raise ValueError(field.get('label') or name)
+            if kind == 'email' and not validate_email(value): raise ValueError(field.get('label') or name)
             if kind == 'number':
                 import math
                 try:
-                    if not math.isfinite(float(value)): raise ValueError(name)
-                except (ValueError, OverflowError): raise ValueError(name)
+                    if not math.isfinite(float(value)): raise ValueError(field.get('label') or name)
+                except (ValueError, OverflowError): raise ValueError(field.get('label') or name)
         result[name]=value
     return result
