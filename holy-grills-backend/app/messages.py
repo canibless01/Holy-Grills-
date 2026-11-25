@@ -4375,6 +4375,23 @@ class MSG:
     CYCLE_14_AFTERNOON_TITLE = "We bring the fire"
     CYCLE_14_AFTERNOON_BODY = "Your next Holy Grills moment is yours to make, {{nickname}}. Orders close at {{order_cutoff}}."
 
+    # Ambassador progress emails: personal results and safe team aggregates.
+    AMBASSADOR_MAIL_WEEKLY_SUBJECT = "Your people, your impact · weekly ambassador progress"
+    AMBASSADOR_MAIL_MONTHLY_SUBJECT = "Look what we built together · monthly ambassador progress"
+    AMBASSADOR_MAIL_HELLO = "Hey {name}, your energy is helping our campus grow closer. Here’s what we built together."
+    AMBASSADOR_MAIL_PERIOD = "{campus} · {start} to {end} (WAT)"
+    AMBASSADOR_MAIL_YOURS = "Your contribution: {signups} sign-ups, {orders} qualifying delivered orders and {shared_count} confirmed shares from {assigned_count} assigned messages."
+    AMBASSADOR_MAIL_MONTH = "Your {month} progress as of this report: {signups} sign-ups, {orders} qualifying delivered orders and {shared_count} confirmed shares toward a monthly target of {monthly_share_target}."
+    AMBASSADOR_MAIL_TIER = "Your current student tier: {tier}."
+    AMBASSADOR_MAIL_TEAM = "Together, our {ambassadors} campus ambassadors brought in {signups} sign-ups, helped generate {orders} qualifying delivered orders and confirmed {shared_count} message shares during this period."
+    AMBASSADOR_MAIL_TEAM_TIERS = "Our team’s current student tiers:"
+    AMBASSADOR_MAIL_TIER_COUNT = "{tier}: {members} ambassadors"
+    AMBASSADOR_MAIL_STARTING = "Getting started"
+    AMBASSADOR_MAIL_BASIS = "Sign-ups use verified referral attribution. Orders count when delivered and paid, excluding fully refunded and test orders. Shares are confirmed manually; opening WhatsApp is not proof of a share. Counts are a snapshot when this report was prepared; tier membership is current, not a historical month-end tier."
+    AMBASSADOR_MAIL_CLOSING = "Every connection matters. Keep bringing your people. We bring the fire."
+    AMBASSADOR_MAIL_LINK = "Your ambassador space: {url}"
+    AMBASSADOR_MAIL_PREFERENCES = "Manage report emails with your email and promotions preferences in Profile → Notifications."
+
 M = MSG
 
 

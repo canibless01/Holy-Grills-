@@ -124,3 +124,11 @@ def test_campus_targeted_tick_does_not_queue_another_campus():
         assert s.enqueue_due(db,campus_id=C)=={'campaigns':0,'queued':0,'skipped':0}
         availability.assert_not_called()
     assert db.rpc.call_count==1
+
+
+def test_owner_preview_uses_campaign_campus_not_admin_profile_campus():
+    db=MagicMock();db.rpc.return_value=True
+    snapshot={'user_id':U,'campus_id':U,'metadata':{'campaign_id':U,'campaign_revision':1,'campaign_campus_id':C,'expires_at':(NOW+timedelta(minutes=20)).isoformat()}}
+    with patch.object(s,'ordering_cutoff',return_value=NOW+timedelta(minutes=2)) as cutoff:
+        assert s.dispatch_ttl(db,snapshot,NOW)==120
+        assert cutoff.call_args.args[1]==C

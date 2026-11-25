@@ -88,3 +88,21 @@ Automated verification: 267 targeted ambassador/engagement/reporting/notificatio
 Actual provider/device verification: no real campaign was enabled or sent. A production provider acceptance receipt and physical-device display/deep-link tap for this new campaign remain external acceptance, not automated-test claims. Existing user-confirmed push receipt does not prove this new campaign on a physical device. API, worker and frontend deployments must pick up the main commits before the editor and scheduled path are available.
 
 Assigned implementation status: batches 1–4 complete. This track does not include the other chat’s fulfilment, checkout or shared commerce work. Operator action: review the 28 steps and selected campus, then explicitly enable the campaign when ready for real recipients.
+
+
+## Activated campaign and ambassador report mail — 25 November follow-up
+
+The owner explicitly requested activation and receiving the campaign from 26 November. The FUTA campaign is now enabled with all 28 message steps, a 26 November start, and 09:00 / 15:00 WAT slots. Saved preferences and operating/capacity rules remain in force. No immediate or customer-wide test was sent. The owner’s subscribed super-admin account is explicitly enrolled as an owner preview; other staff remain excluded, and its test-account analytics exclusion is unchanged. Observer membership is private, service-managed, role/campus guarded and revocable. It never overrides an opt-out.
+
+Production evidence before this follow-up push: API health reported commit 1775a1e with Redis, Supabase and Auth connected. Recent successful scheduled-blast and cart-scan worker receipts reported the same commit. The public frontend’s deployed AdminNotifications chunk contains the new campaign editor and endpoint. This confirms the existing campaign implementation reached production; future device receipt is still an observation to make at the scheduled time. Vercel management metadata was unavailable because team authorization was required; public asset verification was used instead.
+
+Added automatic ambassador email reports:
+- Mondays, 09:00 WAT: the completed previous week and a clearly labelled monthly progress snapshot. First upcoming report: 30 November.
+- First of each month, 09:00 WAT: completed-month aggregate. First upcoming report: 1 December for November.
+- Each active ambassador receives personal verified sign-ups, qualifying delivered orders, manually confirmed sharing progress, monthly target and current student tier. The team section contains only their campus’s aggregate ambassador count, sign-ups, delivered orders, confirmed shares and current tier distribution. No other member’s contact details, revenue, order values, profit or wallet figures appear.
+- Tier counts are current at report generation, not reconstructed historical month-end tiers. Reports state that explicitly. Preferences are honoured, and recipients who leave the programme or campus before dispatch are rejected.
+- The existing scheduled-blast tick captures the report intent and uses the existing durable email outbox. Per-member/kind/period receipts prevent duplicate capture. A two-day recovery window handles brief outages without a burst of old reports; uncertain provider outcomes keep the outbox’s existing no-blind-retry rule. Campuses with no outstanding eligible report recipient skip the expensive insights read.
+
+Migrations 20261125150729_ambassador_scheduled_reports.sql and 20261125204618_engagement_campaign_owner_observer.sql are applied to Test Two. Live checks verify active FUTA settings, owner eligibility, working count-only report aggregation and denied ordinary authenticated access to private receipts/report RPCs. No past reports were sent on rollout, and no production cleanup was performed.
+
+Automated proof: 280 focused backend tests; local PostgreSQL rollback tests for campus boundaries, current tiers, opt-outs, removal, private grants and safe aggregate output; six concurrent report captures create one receipt/email/outbox. Existing campaign race/retry tests still pass with observer support. Observer tests reject foreign-campus admins, preserve opt-outs, revoke removed observers and prevent self-enrolment. Full frontend build passes. Email transport and physical device receipt for future reports are not claimed from fixture tests.

@@ -917,11 +917,18 @@ def send_scheduled_blasts(self, campus_id=None):
         return {"skipped": "Lock not acquired", "notification_recovery": recovery, "refund_recovery": refund_recovery, "wallet_transfer_recovery": wallet_transfer_recovery}
 
     try:
+        # Ambassador digests share this tick and the existing email outbox.
+        ambassador_reports = {"queued": 0}
+        try:
+            from app.services.ambassador_report_mail import capture_due
+            ambassador_reports = capture_due(db)
+        except Exception as exc:
+            logger.warning("Ambassador report recovery unavailable: %s", type(exc).__name__)
         # Same beat tick and durable outbox; no additional scheduler/service.
         try:
             from app.services.engagement_campaigns import enqueue_due
             cycle = enqueue_due(db, campus_id=campus_id)
-            if cycle.get("queued"):
+            if cycle.get("queued") or ambassador_reports.get("queued"):
                 recover_due_notifications(limit=100)
         except Exception as exc:
             logger.warning("Engagement campaign recovery unavailable: %s", type(exc).__name__)

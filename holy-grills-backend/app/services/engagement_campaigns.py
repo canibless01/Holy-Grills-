@@ -136,5 +136,5 @@ def dispatch_ttl(db, snapshot, now=None):
         return 0
     if db.rpc('hg_engagement_campaign_notice_valid', {'p_campaign': meta['campaign_id'], 'p_revision': meta['campaign_revision'], 'p_user': snapshot['user_id']}) is not True:
         return 0
-    cutoff = ordering_cutoff(db, snapshot.get('campus_id') or db.table('profiles').select('campus_id').eq('id', snapshot['user_id']).single().execute()['campus_id'], now)
+    cutoff = ordering_cutoff(db, meta.get('campaign_campus_id') or snapshot.get('campus_id') or db.table('profiles').select('campus_id').eq('id', snapshot['user_id']).single().execute()['campus_id'], now)
     return max(0, int((min(expires, cutoff) - now).total_seconds())) if cutoff else 0

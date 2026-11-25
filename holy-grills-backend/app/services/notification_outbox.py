@@ -82,6 +82,10 @@ def dispatch_notification(notification_id):
                 'id', meta.get('reference_id')).single().execute() or {}
             if grant.get('ambassador_id') != snapshot['user_id'] or grant.get('status') != 'issued':
                 return finish({'state':'cancelled','error':'ambassador_grant_not_issued_or_owner_changed'})
+        if snapshot.get('type') == 'ambassador_progress_report':
+            if channel != 'email' or db.rpc('hg_ambassador_report_notice_valid', {
+                'p_user': snapshot['user_id'], 'p_campus': (snapshot.get('metadata') or {}).get('report_campus_id')}) is not True:
+                return finish({'state':'cancelled','error':'ambassador_report_no_longer_eligible'})
         campaign_ttl = None
         if snapshot.get('type') == 'engagement_cycle':
             from app.services.engagement_campaigns import dispatch_ttl
