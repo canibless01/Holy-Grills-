@@ -425,7 +425,7 @@ def get_streak(user_id: str, campus_id: str = None) -> dict:
 def _touch_last_activity(db, user_id: str, now: datetime) -> None:
     """Update profiles.last_activity_at for decay-onset tracking."""
     try:
-        db.table("profiles").eq("id", user_id).update({"last_activity_at": now.isoformat()})
+        db.table("profiles").eq("id", user_id).update({"last_activity_at": now.isoformat(), "last_seen_at": now.isoformat()})
     except Exception as exc:
         logger.warning("streak: could not touch last_activity_at for %s — the activity is not recorded: %s",
                         user_id, exc)

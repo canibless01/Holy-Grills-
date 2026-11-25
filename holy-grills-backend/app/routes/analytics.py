@@ -1619,84 +1619,19 @@ def users_analytics():
       200:
         description: User activity metrics with tier segmentation
     """
-    db = get_user_client(paginate=True)
-    now = datetime.now(timezone.utc)
+    from app.services.engagement_reporting import report
     try:
-        from_date, to_date, start_utc, end_utc = _date_range(30)
+        first, last, start, end = _date_range(30)
+        scope = _scoped_campus()
     except ValueError:
         return jsonify({"error": MSG.ANALYTICS_INVALID_DATE}), 400
-
-    today_str = today_wat().isoformat()
-    day_start, day_end = _wat_window(today_str, today_str)
-    try:
-        campus_id = _scoped_campus()
-    except ValueError:
-        return jsonify({"error": MSG.ANALYTICS_INVALID_CAMPUS}), 400
-
-    q_daily = (
-        db.table("orders")
-        .select("user_id")
-        .gte("created_at", day_start)
-        .lt("created_at", day_end)
-        .not_.is_("user_id", "null")
-    )
-    if campus_id:
-        q_daily = q_daily.eq("campus_id", campus_id)
-    daily_orders = q_daily.execute() or []
-    dau = len({o["user_id"] for o in daily_orders})
-
-    mau_cutoff = (now - timedelta(days=30)).isoformat()
-    q_monthly = (
-        db.table("orders")
-        .select("user_id")
-        .gte("created_at", mau_cutoff)
-        .not_.is_("user_id", "null")
-    )
-    if campus_id:
-        q_monthly = q_monthly.eq("campus_id", campus_id)
-    monthly_orders = q_monthly.execute() or []
-    mau = len({o["user_id"] for o in monthly_orders})
-
-    q_users = (
-        db.table("profiles")
-        .select("id")
-        .gte("created_at", start_utc)
-        .lt("created_at", end_utc)
-        .eq("role", "student")
-    )
-    if campus_id:
-        q_users = q_users.eq("campus_id", campus_id)
-    new_users = q_users.execute() or []
-
-    tiers = db.table("hp_tiers").select("id,name,slug").execute() or []
-    tier_map = {t["id"]: t.get("name", t.get("slug", "unknown")) for t in tiers}
-
-    q_prof = (
-        db.table("profiles")
-        .select("current_tier_id")
-        .eq("is_active", "true")
-        .eq("role", "student")
-    )
-    if campus_id:
-        q_prof = q_prof.eq("campus_id", campus_id)
-    all_profiles = q_prof.execute() or []
-
-    from collections import defaultdict
-    tier_counts = defaultdict(int)
-    for p in all_profiles:
-        tid = p.get("current_tier_id")
-        tier_name = tier_map.get(tid, "untiered") if tid else "untiered"
-        tier_counts[tier_name] += 1
-
-    return jsonify({
-        "from_date": from_date,
-        "to_date": to_date,
-        "daily_ordering_users": dau,
-        "monthly_ordering_users": mau,
-        "new_signups": len(new_users),
-        "total_active_users": len(all_profiles),
-        "tier_breakdown": dict(tier_counts),
-    }), 200
+    data = report(get_db(), g.user_id, scope, start, end)
+    if not isinstance(data, dict):
+        return jsonify({'error': MSG.SERVICE_UNAVAILABLE}), 503
+    if data.get('error'):
+        denied = isinstance(data, dict) and data.get('error') == 'forbidden'
+        return jsonify({"error": MSG.RESOURCE_ACCESS_DENIED if denied else MSG.ANALYTICS_INVALID_DATE}), 403 if denied else 400
+    return jsonify({**data, "from_date": first, "to_date": last, "engagement": data}), 200
 
 
 @analytics_bp.route("/retention", methods=["GET"])
