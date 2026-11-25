@@ -1630,6 +1630,7 @@ _NUDGE_COOLDOWN_HOURS = 24
 
 # job name -> (expected run interval in minutes, description). Keep in step with celery_app.conf.beat_schedule.
 _CRON_INTERVAL_MINUTES = {
+    "delivery-pass-renewals":         (60, "every 60 minutes"),
     "auto-prepare-closed-windows":    (60, "every 60 minutes"),
     "birthday-hp":                   (1440, "daily @ 08:00 WAT"),
     "monthly-birthday-report":       (44640, "1st of month @ 07:00 WAT"),
@@ -1865,6 +1866,7 @@ def run_cron_job(job_name):
         send_scheduled_notifications,
         send_scheduled_blasts,
         automatic_wallet_funding,
+        delivery_pass_renewals,
         process_scheduled_orders,
         auto_prepare_closed_windows,
     )
@@ -1886,6 +1888,7 @@ def run_cron_job(job_name):
         "send-scheduled-notifications":  send_scheduled_notifications,
         "send-scheduled-blasts":         send_scheduled_blasts,
         "automatic-wallet-funding":      automatic_wallet_funding,
+        "delivery-pass-renewals":         delivery_pass_renewals,
         "process-scheduled-orders":      process_scheduled_orders,
         "auto-prepare-closed-windows":    auto_prepare_closed_windows,
         "check-post-delivery-nudges":    check_post_delivery_nudges,

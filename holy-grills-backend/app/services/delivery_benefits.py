@@ -25,6 +25,13 @@ def quote_delivery_benefit(user_id, campus_id, delivery_fee, is_squad_order, *, 
     profile = db.table('profiles').select('id,is_active,campus_id,current_tier_id,next_order_free_delivery_cap').eq('id', user_id).single().execute()
     if not profile or not profile.get('is_active') or profile.get('campus_id') != campus_id:
         raise ValueError(MSG.ORDER_PRICE_UNVERIFIED)
+    if fee > 0:
+        from app.services.delivery_pass import benefit
+        subscription = benefit(user_id, campus_id, db=db)
+        if subscription:
+            return {**plan, 'source': 'delivery_pass', 'subscription_id': subscription['id'],
+                    'paid_until': subscription['paid_until'], 'discount': float(fee),
+                    'choices': [], 'selected_id': 'delivery_pass'}
     choices=[]
     month = today_wat().strftime('%Y-%m')
     # A fully free monthly delivery preserves the customer's separate spin credit.

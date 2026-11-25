@@ -38,7 +38,9 @@ class Db:
                    'hostels':[{'id':HOSTEL,'campus_id':CAMPUS,'delivery_fee':250,'is_active':'true'}],
                    'order_locks':[{'id':'lock','user_id':'student','campus_id':CAMPUS,'status':'active','locked_date':today_wat().isoformat(),'reward_type':'discount','discount_pct':10}]}
     def table(self,name):return Query(self,name)
-    def rpc(self,*a):raise AssertionError('Quote called a mutating RPC')
+    def rpc(self,name,params):
+        if name=='hg_delivery_pass' and params.get('p_action')=='benefit': return {}
+        raise AssertionError('Quote called a mutating RPC')
 
 class CheckoutQuoteTests(unittest.TestCase):
     def test_campaign_percentage_delivery_is_quoted_read_only(self):
@@ -120,13 +122,14 @@ class CheckoutQuoteTests(unittest.TestCase):
         self.assertEqual(raised.exception.quote['total_amount'],2095)
     def test_lock_claim_race_returns_fresh_price_without_another_charge(self):
         self.db.rows['wallets']=[{'user_id':'student','balance':5000}]
-        def lost_lock(*args):
+        def lost_lock(name, params):
+            if name == 'hg_delivery_pass': return {}
             self.db.rows['order_locks'][0]['status']='cancelled'
             return {'error':'ORDER_LOCK_UNAVAILABLE'}
         with patch.object(service,'_order_for_intent',return_value=None),patch.object(service,'resolve_ordering_window',return_value={}),patch.object(service,'_check_kitchen_capacity'),patch.object(self.db,'rpc',side_effect=lost_lock) as rpc:
             with self.assertRaises(service.OrderPriceChanged) as raised:
                 self.calculate(quote_only=False,payload={**self.payload,'payment_method':'wallet','expected_total':2095})
-        self.assertEqual(raised.exception.quote['total_amount'],2300);self.assertEqual(rpc.call_count,1);self.assertEqual(self.db.rows['wallets'][0]['balance'],5000)
+        self.assertEqual(raised.exception.quote['total_amount'],2300);self.assertEqual(sum(call.args[0] != 'hg_delivery_pass' for call in rpc.call_args_list),1);self.assertEqual(self.db.rows['wallets'][0]['balance'],5000)
     def test_changed_free_side_requests_review_before_order_or_debit(self):
         plan={'enabled':True,'items':[{'selection_id':'new','free_side_item_id':'side','name':'Slaw'}]}
         with patch('app.services.free_side_checkout.quote_free_sides',return_value=plan),patch.object(service,'_order_for_intent',return_value=None),patch.object(service,'resolve_ordering_window',return_value={}),patch.object(service,'_check_kitchen_capacity'):

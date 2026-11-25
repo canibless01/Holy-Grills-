@@ -51,7 +51,7 @@ class OrderContactAdmissionTests(unittest.TestCase):
         from tests.test_checkout_quote import CAMPUS, HOSTEL
         h=self.harness;h.db.rows['user_addresses']=[{'id':'saved','user_id':'student','campus_id':CAMPUS,'delivery_type':'on_campus','delivery_location_id':HOSTEL,'line1':'Saved door 12','landmark':'Blue stair'}]
         payload={**h.payload,'delivery_address_id':'saved','delivery_address':'Forged text','contact_phone':'09012345678'}
-        with self.guards(),patch.object(h.db,'rpc',side_effect=RuntimeError('captured before write')) as rpc:
+        with self.guards(),patch.object(h.db,'rpc',side_effect=lambda name,params: {} if name=='hg_delivery_pass' else (_ for _ in ()).throw(RuntimeError('captured before write'))) as rpc:
             with self.assertRaisesRegex(ValueError,'captured before write'):h.calculate(quote_only=False,payload=payload)
         snapshot=rpc.call_args.args[1]['p_delivery_address_snapshot'];self.assertEqual(snapshot['contact_phone'],'+2349012345678');self.assertEqual(snapshot['line1'],'Saved door 12, Blue stair');self.assertEqual(snapshot['landmark'],'Blue stair');self.assertEqual(h.db.rows['profiles'][0]['phone'],'08012345678')
 
@@ -59,6 +59,6 @@ class OrderContactAdmissionTests(unittest.TestCase):
         from tests.test_checkout_quote import CAMPUS
         h=self.harness;gate='55555555-5555-4555-8555-555555555555';h.db.rows['gates']=[{'id':gate,'name':'Gate','campus_id':CAMPUS,'is_active':'true','base_fee':250,'rate_per_km':0,'min_fee':0}]
         payload={**h.payload,'delivery_type':'off_campus','delivery_location_id':gate,'contact_phone':'09012345678','delivery_address':{'line1':'','landmark':'A landmark alone'}}
-        with self.guards(),patch.object(h.db,'rpc') as rpc:
+        with self.guards(),patch.object(h.db,'rpc',return_value={}) as rpc:
             with self.assertRaisesRegex(ValueError,'street, junction'):h.calculate(quote_only=False,payload=payload)
-        rpc.assert_not_called()
+        self.assertFalse(any(call.args[0] != 'hg_delivery_pass' for call in rpc.call_args_list))

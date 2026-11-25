@@ -55,6 +55,7 @@ export const ADMIN_GROUPS: Array<{ label: string | null; items: AdminSection[] }
   ]},
   { label: 'Commerce', items: [
     { id: 'orders', label: 'Orders', icon: Package, desc: 'All orders', keywords: ['order', 'fulfillment', 'status', 'refund', 'history'] },
+    { id: 'deliverypass', label: msg('FE_PASS_TITLE', 'Delivery pass'), icon: Truck, desc: msg('FE_PASS_CONFIG_TITLE', 'Delivery subscriptions'), keywords: ['subscription', 'delivery pass', 'renewal', 'membership'] },
     { id: 'wallet', label: 'Wallet', icon: Wallet, desc: 'Transactions', keywords: ['wallet', 'transaction', 'funding', 'top up', 'topup', 'credit', 'debit', 'balance', 'payment', 'ledger'] },
     { id: 'events', label: 'Events', icon: Calendar, desc: 'Campus events', keywords: ['event', 'ticket', 'tier', 'registrant', 'qr'] },
     { id: 'catering', label: 'Catering', icon: UtensilsCrossed, desc: 'Bulk requests', keywords: ['catering', 'bulk', 'request'] },

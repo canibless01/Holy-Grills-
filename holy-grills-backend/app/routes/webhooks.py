@@ -481,6 +481,9 @@ def _handle_charge_success(data: dict):
     """
     # Reference-owned routing also works if Paystack omits metadata. Keep these
     # payments isolated from ordinary top-ups and order-payment fallthrough.
+    if str(data.get("reference") or "").startswith("HG-PASS-"):
+        from app.services.delivery_pass import confirm
+        return confirm(data).get('campus_id')
     if str(data.get("reference") or "").startswith("HG-AUTO-"):
         from app.services.auto_funding import confirm_payment
         return confirm_payment(data).get("campus_id")

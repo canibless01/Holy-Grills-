@@ -84,6 +84,13 @@ def automatic_wallet_funding():
     return sweep()
 
 
+@celery_app.task(name="app.tasks.scheduled.delivery_pass_renewals", ignore_result=True)
+@with_cron_logging("delivery-pass-renewals")
+def delivery_pass_renewals():
+    from app.services.delivery_pass import sweep
+    return sweep()
+
+
 def _completed_period(now, kind):
     """UTC query bounds and the completed period's WAT label."""
     from app.services.delivery_window_schedule import WAT

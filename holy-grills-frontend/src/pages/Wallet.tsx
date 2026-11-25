@@ -19,6 +19,7 @@ import { ChevronDown, Repeat2 } from 'lucide-react';
 
 const WalletTransferModal = lazy(() => import('@/components/wallet/WalletTransferModal'));
 const HpGiftReceipt = lazy(() => import('@/components/wallet/HpGiftReceipt'));
+const DeliveryPassPanel = lazy(() => import('@/components/wallet/DeliveryPassPanel'));
 const AutoFundingPanel = lazy(() => import('@/components/wallet/AutoFundingPanel'));
 
 export default function Wallet() {
@@ -28,7 +29,7 @@ export default function Wallet() {
   const [walletTxns, setWalletTxns] = useState([]);
   const [hpTxns, setHpTxns] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [verifying, setVerifying] = useState(() => !!searchParams.get('reference') && !searchParams.has('auto_funding'));
+  const [verifying, setVerifying] = useState(() => !!searchParams.get('reference') && !searchParams.has('auto_funding') && !searchParams.has('delivery_pass'));
   const [showAutoFunding, setShowAutoFunding] = useState(() => searchParams.has('auto_funding'));
   const [historyError, setHistoryError] = useState(false);
   const [historyRetry, setHistoryRetry] = useState(0);
@@ -84,7 +85,7 @@ export default function Wallet() {
     const load = async () => {
       setLoading(true); setHistoryError(false);
       const reference = searchParams.get('reference');
-      if (reference && !searchParams.has('auto_funding') && historyRetry === 0) {
+      if (reference && !searchParams.has('auto_funding') && !searchParams.has('delivery_pass') && historyRetry === 0) {
         await checkFunding(reference, false);
       }
       try {
@@ -148,6 +149,12 @@ export default function Wallet() {
       </div>
 
       <WalletVirtualAccount account={virtualAccount} />
+      <Suspense fallback={null}><DeliveryPassPanel key={user?.id} callbackId={searchParams.get('delivery_pass')} onPaid={async () => {
+        await refreshWallet(); setHistoryRetry(value => value + 1);
+        const params = new URLSearchParams(searchParams);
+        for (const key of ['reference', 'trxref', 'status']) params.delete(key);
+        params.set('delivery_pass', 'manage'); setSearchParams(params, { replace: true });
+      }} /></Suspense>
 
       <section id="automatic-funding" className="overflow-hidden rounded-3xl border border-border bg-card p-4 sm:p-5 space-y-5">
         <div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Repeat2 className="h-5 w-5" aria-hidden="true" /></div><div className="min-w-0"><h2 className="font-heading font-bold">Automatic funding</h2><p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">Small top-ups. Ready whenever you are.</p></div></div>

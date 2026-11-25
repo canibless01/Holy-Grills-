@@ -1,0 +1,36 @@
+# Monthly delivery pass — 25 November 2026
+
+Implemented a campus-wide delivery subscription, across its stores, behind the disabled `delivery_pass` feature flag. No live price, offer, customer purchase or renewal consent was invented. Admins configure a campus monthly price, pause new sales, inspect membership/payment totals and issue support-approved full refunds into the app wallet. Super admins can view the combined overview and select a campus to configure it. Community managers, kitchen staff and riders cannot administer the plan.
+
+## Customer and payment behavior
+
+The Wallet page has a compact delivery-pass entry and a focused purchase/manage dialog. Customers can buy one month from their wallet or through Paystack checkout. Card initialization and browser returns never grant coverage: the original saved receipt must be verified against the provider or its signature-checked webhook. Purchase UUIDs bind the owner, amount, method and consent; a retry returns the same receipt. An uncertain initialization keeps the original pending purchase with check/cancel controls. No uncertain payment POST is automatically repeated. Canceled, expired or overlapping successful card payments recover their original contribution once into the app wallet, without funding HP.
+
+Optional automatic renewal debits the **app wallet**, with explicit consent to the shown price. It does not authorize recurring bank/card charges. Existing automatic wallet funding is a separate feature. New plan prices affect new purchases; an existing consented renewal retains its agreed price. A real, recent hourly worker heartbeat is required before accepting renewal consent. Without it, one-month purchases remain possible and the UI explains that renewal is manual. Insufficient wallet funds stop auto-renewal, with a durable attention notice; a later top-up cannot trigger a surprise retry. Consent more than 48 hours overdue requires fresh manual action. Paused campuses cannot monopolize the bounded shared renewal queue.
+
+Coverage expires on read without depending on the worker. The paid period is one Postgres calendar month, and customer timestamps display in Africa/Lagos. Pausing the offer or flag does not remove already-paid coverage. Normal campus delivery boundaries, store selection, operating windows, capacity, food prices and food HP remain authoritative. The checkout quote prioritizes the pass and leaves separate monthly/spin delivery rewards untouched. Order admission rechecks and locks the entitlement after its existing wallet/profile locks. Existing orders retain their agreed pricing after pass expiry or a subscription refund. Canceling an order does not itself refund the monthly subscription.
+
+Support refunds require an admin-entered reason and acknowledgment. The original receipt is locked and credited once to the app wallet. Refunding the latest paid period stops future coverage/renewal, while refunding an older receipt does not revoke a newer paid period. There is no customer refund button. Buying a pass grants no HP. Delivery costs and rider compensation are not changed to zero merely because the customer has free delivery.
+
+## Database and worker
+
+Applied to Test Two exactly once:
+
+- `20261125205946_monthly_delivery_pass.sql`: three private `hg_internal` tables (offers, memberships, receipts), service-only invoker RPC, disabled flag and guarded integration into the existing order function. No duplicate wallet ledger or order-function overload.
+- `20261125210222_delivery_pass_renewal_fairness.sql`: a guarded scan correction so paused campuses do not block active renewal work.
+
+All three tables have RLS and no anonymous/authenticated table access. The public RPC and its private helpers grant execution only to `service_role`; authorization uses fresh profile roles/campus and receipt ownership. Checked the live catalog and migration history. The existing order-function signature/grants are preserved. Supabase advisors retain existing warnings about unrelated helpers/extensions/Auth configuration; they are not newly introduced delivery-pass vulnerabilities. Private RLS tables intentionally have no browser policies.
+
+The shared hourly task is `app.tasks.scheduled.delivery_pass_renewals`, cron key `delivery-pass-renewals`. It reconciles original card references, attempts consented wallet renewals, and inserts deterministic transactional receipt/attention notifications into the existing durable notification system. The ordinary dispatch worker must also run. A successful heartbeat must come from an actual scheduled execution, not a fabricated production test. Notification links open Wallet pass management; browser payment returns are isolated from generic wallet top-up callbacks.
+
+## Verification and remaining acceptance
+
+Fresh local migration installation passed, followed by standalone Postgres rollback fixtures. Both `tests/sql/delivery_pass_lifecycle_rollback.sql` and `delivery_pass_order_rollback.sql` also passed on the actual Supabase database. They cover wallet/card receipt state, replay, stale prices/configuration, worker consent, renewal price locking, insufficient funds, refunds, late payment recovery, scope/grants, paused sales, queue fairness, order admission/expiry refusal without debit, persisted order benefits, kitchen/rider lifecycle and refund conservation. All synthetic records were rolled back.
+
+Backend tests cover malformed amounts/consent/IDs, immutable original provider references, unknown initialization recovery, provider replay avoidance, wrong-owner checks before provider reads, webhook isolation, preserving other rewards and refund validation. Native Chromium at 393px and 1280px passed wallet/admin controls, reload/payment-return recovery, failed-report retry, plan editing and support refund gating; screenshots were inspected. Production build, frontend message validation, ESLint and typecheck are checked with this batch; integrated suite results are recorded in the final push update.
+
+**Operational acceptance before enabling sales:** set an actual campus price and policy; run a genuine Paystack test payment including cancellation/return/webhook recovery; verify the public deployment uses this build, and observe the hourly job plus real notification delivery. The controlled provider/browser tests are not evidence of an actual gateway charge. The feature stays disabled until those checks. No customer blast, real charge or live cleanup was performed.
+
+## Wider track status
+
+Multi-store database/fulfilment, central-kitchen consumable allocation, targeted admin commerce loading and this delivery-pass implementation are completed source/database slices. Ingredients remain central; store-level packaging supplies are transferred/used manually. Automatic recipe consumption, stock reservation and stock-driven menu availability were outside the requested limited extension. Real store coordinates/team assignments remain owner configuration. A separate customer ordering-campus switch independent of their academic profile, and university-first registration, have not been built; current store selection stays within the customer's campus. Engagement, ambassador reports and push campaigns belong to the other chat and are preserved on merge. These distinctions must not be reported as an ecosystem-wide 100% audit.

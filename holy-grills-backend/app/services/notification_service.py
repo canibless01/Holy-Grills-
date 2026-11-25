@@ -37,6 +37,7 @@ _ONESIGNAL_BASE = os.environ.get("ONESIGNAL_BASE_URL", "https://api.onesignal.co
 # Critical notification types — operational / transactional: never throttled.
 # Everything else is subject to the 6-hour same-type gap and daily cap.
 _CRITICAL_NOTIF_TYPES = frozenset({
+    'delivery_pass_paid', 'delivery_pass_credited', 'delivery_pass_refunded', 'delivery_pass_attention',
     # Order
     "order_placed", "order_confirmed", "order_preparing", "order_ready", "order_assigned",
     "order_out_for_delivery", "order_delivered", "order_delivery_attempted",
@@ -190,6 +191,7 @@ def get_notification_channels(notif_type: str, extra: list = None) -> list:
       - Renamed: tier_dropped → tier_downgrade
     """
     EMAIL_TYPES = {
+        'delivery_pass_paid', 'delivery_pass_credited', 'delivery_pass_refunded', 'delivery_pass_attention',
         "abandoned_cart",
         # Order (7)
         "order_confirmed", "order_delivered", "order_refunded",
@@ -243,6 +245,7 @@ def _fetch_user_name(user_id: str) -> str:
 # (an order) is listed before `squad_` (the squad page), and `order_streak` /
 # `order_lock*` before `order_`.
 _ACTION_URL_PREFIXES = (
+    ("delivery_pass_", "/wallet?delivery_pass=manage"),
     ("admin_hof_induction", "/admin?section=leaderboard"),
     ("low_inventory", "/admin?section=store"),
     ("low_stock_ingredient", "/admin?section=store"),
@@ -509,7 +512,8 @@ def send_notification(
         }
         if channel in ("email", "push"):
             record["metadata"] = {**merged_meta, "_dispatch_version": 1, "email_provider": email_provider}
-        if ((notif_type in REQUEST_TYPES and reference_id)
+        if ((reference_type == 'delivery_pass' and reference_id)
+                or (notif_type in REQUEST_TYPES and reference_id)
                 or (notif_type == "ambassador_grant_issued" and reference_type == "ambassador_grant" and reference_id)
                 or (notif_type == "event_ticket_refunded" and reference_type == "event_ticket_refund" and reference_id)
                 or (notif_type in ("wallet_funded_card", "wallet_auto_funding_attention") and reference_type == "wallet_auto_funding" and reference_id)

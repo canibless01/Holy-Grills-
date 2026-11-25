@@ -63,6 +63,10 @@ def _scan_schedule(variable, default_minutes):
 
 
 celery_app.conf.beat_schedule = {
+    "delivery-pass-renewals": {
+        "task": "app.tasks.scheduled.delivery_pass_renewals",
+        "schedule": crontab(minute=0),
+    },
     "auto-prepare-closed-windows": {
         "task": "app.tasks.scheduled.auto_prepare_closed_windows",
         "schedule": _scan_schedule("CELERY_AUTO_PREPARE_SCAN_MINUTES", 60),

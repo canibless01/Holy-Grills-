@@ -12,6 +12,7 @@ import { loadFeatureFlags } from '@/lib/featureConfig';
 // Flag metadata — admin guidance only. On/off values come from the backend's
 // feature_flags table (is_active column), never from this map.
 const flagMetadata = () => ({
+  delivery_pass: { label: msg('FE_PASS_TITLE', 'Delivery pass'), flipWhen: msg('FE_PASS_FLAG_WHEN', 'After plan setup and payment checks'), impact: msg('FE_PASS_FLAG_IMPACT', 'Sell a monthly campus delivery pass, with optional wallet renewal when the hourly worker is healthy.') },
   multi_store_ordering: { label: msg('FE_STORE_FLAG_LABEL','Multi-store ordering'), flipWhen: msg('FE_STORE_FLAG_WHEN','After store setup and dispatch verification'), impact: msg('FE_STORE_FLAG_IMPACT','Choose a fulfilling store while keeping the menu and ordering rules shared across each campus.') },
   wallet_transfer: { label: 'Wallet transfers', flipWhen: 'After transfer acceptance checks', impact: 'Allows active members to send wallet money within their campus; no transfer fee or top-up HP.' },
   events: { label: msg('FE_EVENT_FLAG_LABEL', 'Events'), flipWhen: msg('FE_EVENT_FLAG_WHEN', 'When event admission and rewards are ready'), impact: msg('FE_EVENT_FLAG_IMPACT', 'Shows Coming Soon and blocks new event registrations while disabled') },
