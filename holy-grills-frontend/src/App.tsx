@@ -1,3 +1,4 @@
+import EngagementTracker from '@/components/engagement/EngagementTracker';
 import PushSoftPrompt from '@/components/notifications/PushSoftPrompt';
 import EventReleaseGate from '@/components/EventReleaseGate';
 import { lazy, Suspense } from 'react';
@@ -170,6 +171,7 @@ export function AppShell() {
         <CampusProvider>
           <ScrollToTop />
           <AmbassadorClickTracker />
+          <EngagementTracker />
           <AppRoutes />
           <PushSoftPrompt />
         </CampusProvider>

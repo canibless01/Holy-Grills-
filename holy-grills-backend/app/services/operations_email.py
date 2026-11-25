@@ -67,6 +67,8 @@ def render(db, row):
         else:
             lines = [f"Period: {payload['from']} to {payload['to']} (Nigeria time)"]
         lines += [f"{label}: {_amount(payload[key]) if key in money else payload[key]}" for key, label in labels]
+        from app.services.engagement_reporting import operations_lines
+        lines += operations_lines(db, row)
         subject = prefix + (' · Daily report' if kind == 'daily_report' else ' · Weekly report')
     elif kind == 'birthday_report':
         subject = prefix + ' · Birthdays in ' + str(payload.get('month') or 'this month')

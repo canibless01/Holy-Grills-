@@ -1,3 +1,4 @@
+import EngagementInsights from './EngagementInsights';
 import HpSourceReconciliation from './HpSourceReconciliation';
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
@@ -427,6 +428,7 @@ export default function AdminAnalytics() {
 
       <DemographicsDashboard range={range} />
       <EngagementDashboard />
+      <EngagementInsights data={users} />
       <SquadOrdersDashboard range={range} />
       <HpEcosystemDashboard range={range} />
       <HpSourceReconciliation range={range} />

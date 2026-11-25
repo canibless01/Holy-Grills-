@@ -4240,6 +4240,33 @@ class MSG:
     FE_AMBASSADOR_REPORT_SHARE = "Share report on WhatsApp"
     FE_AMBASSADOR_REPORT_HELP = "Delivered, paid orders after completed refunds. Sharing is confirmed manually; opening WhatsApp is not proof of a share."
 
+    # First-party engagement analytics and daily report copy.
+    ENGAGEMENT_EVENT_INVALID = "The page-view data is invalid."
+    OPERATIONS_ENGAGEMENT_TITLE = "Engagement and HP"
+    OPERATIONS_ENGAGEMENT_TOTAL = "Observed active students: {active} · opt-in visitors: {visitors} · page visits: {views}."
+    OPERATIONS_ENGAGEMENT_FUNNEL = "Observed funnel: {menu_visitors} menu visitors → {checkout_after_menu} checkout visitors → {paid_linked_accounts} paid linked accounts."
+    OPERATIONS_STREAK_TOTAL = "Recorded weekly streak outcomes: {qualified} qualified · {failed} missed the requirement."
+    OPERATIONS_HP_TOTAL = "Current HP: {active} active · {pending} pending · reconciliation difference {difference}."
+    OPERATIONS_HP_SOURCE = "HP source — {source}: {active} active, {pending} pending."
+    OPERATIONS_HP_MORE_SOURCES = "Further HP sources are listed in the admin analytics report."
+    OPERATIONS_ENGAGEMENT_BASIS = "Visits measure analytics opt-ins, not every visitor. The funnel counts ordered menu → checkout observations and linked-account payments; guest payments without an account are not linked. HP balances are current at report preparation."
+    OPERATIONS_ENGAGEMENT_UNAVAILABLE = "The engagement summary is temporarily unavailable. The operational figures above are unchanged."
+    FE_ENGAGEMENT_INSIGHTS = "Student activity and visits"
+    FE_ENGAGEMENT_BASIS = "Page visits are measured only after analytics consent. Active users are observed student accounts, independent of purchases. Historical traffic before tracking began is unavailable."
+    FE_ENGAGEMENT_FUNNEL_HELP = "Observed visitor funnel: menu → checkout → paid linked account, in order. Guest payments without a linked account are not included in the final step."
+    FE_ENGAGEMENT_DATE = "Date"
+    FE_ENGAGEMENT_ACTIVE = "Active students"
+    FE_ENGAGEMENT_VISITORS = "Opt-in visitors"
+    FE_ENGAGEMENT_VIEWS = "Page visits"
+    FE_ENGAGEMENT_CHECKINS = "Daily check-ins"
+    FE_ENGAGEMENT_MENU = "Menu visitors"
+    FE_ENGAGEMENT_CHECKOUT = "Checkout after menu"
+    FE_ENGAGEMENT_PAID = "Paid linked accounts"
+    FE_ENGAGEMENT_STREAKS = "Recorded weekly streak outcomes"
+    FE_ENGAGEMENT_QUALIFIED = "Qualified weeks"
+    FE_ENGAGEMENT_FAILED = "Weeks below the requirement"
+    FE_ENGAGEMENT_EMPTY = "No activity observations are available for this period yet."
+
 M = MSG
 
 

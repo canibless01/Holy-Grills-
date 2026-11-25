@@ -6,6 +6,7 @@ import { useCampus } from '@/lib/campusContext';
 import { localStore } from '@/lib/storage';
 import { getConsent } from '@/lib/cookieConsent';
 import { ensurePushReady, isPushRegistered, isPushSupported } from '@/lib/onesignal';
+import { canAdoptGuestPushConsent } from '@/lib/pushGuestConsent';
 import { subscribeToWebPush } from '@/lib/webPush';
 import { msg } from '@/lib/messages';
 import APP_CONFIG from '@/config/app.config';
@@ -34,7 +35,7 @@ export default function PushSoftPrompt() {
   useEffect(() => {
     if (isLoading || !userId || !isPushSupported() || Notification.permission !== 'granted' || adopting.current === userId) return;
     const consentAt = Number(localStore.getItem(GUEST_CONSENT) || 0);
-    if (!consentAt || Date.now() - consentAt >= COOLDOWN) return;
+    if (!canAdoptGuestPushConsent(user?.created_at || user?.profile?.created_at, consentAt)) return;
     adopting.current = userId;
     // Carry the guest's explicit device opt-in into the newly signed-in
     // account once. Existing account opt-outs are untouched without that tap.
@@ -43,7 +44,7 @@ export default function PushSoftPrompt() {
       if (ok) { localStore.removeItem(GUEST_CONSENT); localStore.setItem(seenKey, String(Date.now())); }
       else { setError(msg('FE_PUSH_NOT_REGISTERED', 'Notifications are not enabled yet. Please retry.')); setShow(true); }
     }).catch(failure => { if (currentKey.current === seenKey) { setError(failure.message); setShow(true); } });
-  }, [userId, isLoading, seenKey]);
+  }, [userId, user?.created_at, user?.profile?.created_at, isLoading, seenKey]);
 
   useEffect(() => {
     if (isLoading || gateOpen || AUTH_PAGES.has(pathname) || !APP_CONFIG.onesignal.appId || !isPushSupported()

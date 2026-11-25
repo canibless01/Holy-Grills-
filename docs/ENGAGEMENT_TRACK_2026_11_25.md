@@ -48,3 +48,22 @@ Database: `20261125091139_ambassador_verified_reports.sql` applied successfully 
 Automated verification: 97 ambassador tests, 8 new report tests, 16 existing report-contract/separation tests; local PostgreSQL rollback tests cover first-click uniqueness, refunded/test orders, scoped reads, self-only reads, configured share targets and HP reconciliation. Native weekly copy/share and HP source-table browser flows pass at 393px and 1280px. TypeScript, ESLint and full frontend production build pass.
 
 Actual verification limits: live database aggregate/read boundaries are verified; real recipient WhatsApp sharing and deployed staff-device acceptance are not claimed. No external report or campaign was sent.
+
+
+## Batch 3 — activity/funnel/streak analytics, daily email and guest consent
+
+Implemented:
+- Deferred, consent-gated first-party page measurement. Only normalized route buckets are stored; URL queries, order IDs/claim tokens, IPs and contact details are not included. Event UUID receipts make retries duplicate-safe. Guest page events never invent an account, and verified account identity comes from the JWT rather than the event body.
+- Private, RLS-protected activity and weekly-streak history. Activity observes the existing login attendance profile write, adding last-seen in that same write; no extra login HTTP call or beat service is added. Existing actual last-seen observations/latest settlement receipts initialize only known facts, not fabricated historical visits.
+- Daily observed student counts, opt-in visitors/page visits, page breakdown and ordered menu → checkout → paid linked-account funnel. Unlinked guest payments are explicitly not claimed as tracked conversions. Daily check-ins and saved qualified/failed weekly outcomes are reported separately.
+- The existing users analytics endpoint now supplies real observed DAU/MAU keys instead of leaving the UI to default missing keys to zero. One scoped aggregate RPC replaces the old multi-read user report.
+- Existing daily/weekly operations emails append engagement, funnel, streak and current active/pending HP source summaries. An unavailable sidecar does not block the core operational email. No additional recipients, test campaign or mail dispatch is introduced.
+- Guest push opt-in may be adopted by an account created after that opt-in. The seven-day prompt-dismissal cooldown no longer expires valid adoption consent; older accounts' saved opt-outs are not silently changed.
+
+Database: `20261125092930_engagement_activity_reporting.sql` applied successfully. Live aggregate execution succeeds; public/ordinary authenticated users cannot read the private activity tables or execute report RPCs.
+
+Automated verification: 46 targeted activity/report/streak-recovery/operations-access tests pass. Local rollback proof covers duplicate event IDs, rejected raw URL tokens, guest/verified identity, ignored staff, campus/admin report boundaries, ordered funnel and persisted weekly outcomes. Native consent cases pass for opted-in guest/student, declined guest and super admin. Frontend typecheck, lint, production build, the v16 SDK contract suite and the new guest-consent cases pass.
+
+Actual verification limits: database read boundaries are verified. Actual new-device guest opt-in, native OS permission, device display and real provider delivery for these changes are not claimed. No customer-wide tests or new messages were sent. The new metrics do not reconstruct historical traffic before collection existed.
+
+Remaining implementation: the editable repeating fourteen-day morning/15:00 push campaign, its queue/receipt recovery, configured operating-day/cutoff awareness, nickname/deep-link previews and provider TTL checks. It will remain a draft until a campus admin explicitly enables it.
