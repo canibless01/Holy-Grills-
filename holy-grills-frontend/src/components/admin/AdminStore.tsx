@@ -19,6 +19,7 @@ import {
 } from './ui/AdminKit';
 
 const AdminStockReport = lazy(() => import('./AdminStockReport'));
+const AdminStoreStock = lazy(() => import('./AdminStoreStock'));
 
 const USAGE_TYPES = [
   { id: 'usage', label: msg('FE_STOCK_USAGE', "Usage") },
@@ -36,6 +37,7 @@ export default function AdminStore() {
 }
 
 function StockWorkspace({ campusId }) {
+  const [allocationView, setAllocationView] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [items, setItems] = useState([]);
   const [units, setUnits] = useState([]);
@@ -71,11 +73,12 @@ function StockWorkspace({ campusId }) {
     setLoading(false);
   }, [campusId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (!allocationView) void load(); }, [load, allocationView]);
 
   const activeItems = items.filter(item => !item.archived_at);
   const visibleItems = items.filter(item => view === 'archived' ? !!item.archived_at : !item.archived_at);
   const lowCount = activeItems.filter((i) => i.is_low_stock).length;
+  if (allocationView) return <div className="space-y-4"><button type="button" className="min-h-11 rounded-full border border-border px-4 text-sm font-bold" onClick={() => setAllocationView(false)}>{msg('FE_STOCK_TITLE', 'Ingredient Stock')}</button><Suspense fallback={<p role="status">{msg('FE_LOOKUP_LOADING', 'Loading…')}</p>}><AdminStoreStock key={campusId} campusId={campusId} /></Suspense></div>;
   if (loadError) return <div className="text-center py-10 space-y-3"><p>{msg('FE_PLATFORM_LOAD_FAILED', "We couldn't load this page. Please try again.")}</p><button onClick={load} className="font-bold text-primary">{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div>;
 
   if (loading) {
@@ -92,6 +95,7 @@ function StockWorkspace({ campusId }) {
 
   return (
     <div className="space-y-4">
+      <button type="button" className="min-h-11 rounded-full border border-border px-4 text-sm font-bold" aria-expanded={allocationView} onClick={() => setAllocationView(value => !value)}>{msg('FE_STORE_STOCK_TITLE', 'Central kitchen & store supplies')}</button>
       <button onClick={() => setShowReport(value => !value)} className="rounded-full border border-border px-4 py-2 text-sm font-bold">{showReport ? msg('FE_STOCK_REPORT_HIDE', 'Hide stock report') : msg('FE_STOCK_REPORT_SHOW', 'Stock report & CSV')}</button>
       {showReport && <Suspense fallback={<p role="status">Loading stock report…</p>}><AdminStockReport campusId={campusId} /></Suspense>}
       {/* Summary */}

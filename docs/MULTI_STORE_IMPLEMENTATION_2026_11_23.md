@@ -5,7 +5,7 @@ Updated 25 November 2026. **Implemented in source; store ordering remains disabl
 ## Implemented scope
 
 - University → campus → store hierarchy, with super-admin university/campus linkage and campus-admin store/team management. Stores have validated addresses, paired coordinates, capabilities and active state. Writes use replay keys or optimistic versions; team changes validate fresh role, activity and campus and record audit entries atomically.
-- All stores in a campus use the same menu, prices, promotions, inventory, capacity, opening/closing rules and ordering/delivery windows. No store-specific menus, schedules or stock ledgers were added.
+- All stores in a campus use the same menu, prices, promotions, capacity, opening/closing rules and ordering/delivery windows. Ingredients remain central. The subsequent limited supplies-allocation extension reuses the existing stock ledger for per-store consumables/prepared quantities; see CENTRAL_KITCHEN_STORE_STOCK_2026_11_25.md.
 - Checkout offers eligible stores, suggests the closest serving store for a destination pin, and validates the shared campus delivery radius from the store origin. Existing hostel/gate tariffs remain authoritative. Pickup uses the selected store's address/instructions and the existing pickup flag. Stale selections revalidate before checkout.
 - Orders retain immutable store identity/address snapshots; legacy orders stay unassigned rather than receiving invented attribution. Existing wallet/card/split, payment recovery, rewards and refunds continue through the original financial helpers.
 - Separate batches per store/date/window/gate, with shared campus admission capacity. Kitchen views can filter assigned stores; RLS and server checks independently reject unauthorized store work. Rider assignment/splitting verifies store membership. Paid due-day preparation still follows the shared campus cutoff.
@@ -46,7 +46,7 @@ New configuration tables have RLS enabled and no browser table grants. Public RP
 
 1. Completed 25 November: SQL connectivity recovered, both migrations applied once with their actual history versions, and all three rollback fixtures passed on Test Two. The earlier timeout was an execution limitation, not evidence of application. Source filenames now match applied versions.
 2. Completed 25 November: live catalogue review and rollback tests check actual RLS/grants, disjoint legacy/store batch indexes and helper identities. New configuration tables remain private to the backend. No second store schema or duplicate helper signature was added.
-3. Configure real store addresses/coordinates and active kitchen/rider memberships, then exercise the checkout → kitchen → rider and pickup interfaces in a browser. Native Chromium is blocked before launch by this execution environment's socket restrictions; API/SQL tests do not replace visual acceptance.
+3. Configure real store addresses/coordinates and active kitchen/rider memberships, then exercise the checkout → kitchen → rider and pickup interfaces in a browser. Network permission was granted on 25 November and native Chromium now works. Controlled mobile/member and desktop/guest two-store pickup checkout and the admin/kitchen supplies interfaces passed. Actual store setup and live provider acceptance still remain; controlled browser responses do not certify real charges.
 4. Verify deployed provider payment/receipt behavior using the established operational acceptance process before activating the flag. Provider execution was not exercised here.
 
 ## Explicit remaining hierarchy scope

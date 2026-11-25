@@ -94,6 +94,7 @@ def create_app(config_class=Config, *, background=False):
     from app.routes.graduation import graduation_bp
     from app.routes.campuses import campuses_bp
     from app.routes.stores import stores_bp
+    from app.routes.store_stock import store_stock_bp
     from app.routes.departments import departments_bp, admin_departments_bp
     from app.routes.academic_levels import academic_levels_bp, admin_academic_levels_bp
     from app.routes.academic_calendar import academic_calendar_bp, admin_academic_calendar_bp
@@ -234,6 +235,7 @@ def create_app(config_class=Config, *, background=False):
     app.register_blueprint(graduation_bp, url_prefix="/api/graduation")
     app.register_blueprint(campuses_bp, url_prefix="/api/campuses")
     app.register_blueprint(stores_bp, url_prefix="/api/admin")
+    app.register_blueprint(store_stock_bp, url_prefix="/api/admin/store-stock")
     app.register_blueprint(departments_bp, url_prefix="/api/departments")
     app.register_blueprint(admin_departments_bp, url_prefix="/api/admin")
     app.register_blueprint(academic_levels_bp, url_prefix="/api/academic-levels")

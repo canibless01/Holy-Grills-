@@ -1,7 +1,7 @@
 import { apiClient } from '@/lib/apiClient';
 import { isFeatureEnabled, useFeatureFlags } from '@/lib/featureConfig';
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Calendar, Package, Zap, Check, ChefHat } from 'lucide-react';
 import { useKitchenData } from '@/hooks/useKitchenData';
@@ -17,12 +17,15 @@ import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { useCampus } from '@/lib/campusContext';
 import AdminCampusSelector from '@/components/admin/AdminCampusSelector';
 
+const StoreSupplies = lazy(() => import('@/components/admin/AdminStoreStock'));
+
 const TABS = [
   { id: 'queue', label: 'Live Queue' },
   { id: 'handoff', label: msg('FE_KITCHEN_HANDOFF', 'Handoff') },
   { id: 'scheduled', label: 'Scheduled' },
   { id: 'batch', label: 'Prep List' },
   { id: 'settings', label: 'Settings' },
+  { id: 'supplies', label: msg('FE_STORE_STOCK_TITLE', 'Central kitchen & store supplies') },
   { id: 'catering', label: msg('FE_CATERING_KITCHEN', 'Catering') },
 ];
 
@@ -157,6 +160,7 @@ function KitchenWorkspace({ campusId, canManageSettings, storeId = '' }) {
           </div>
           <p className="text-sm font-semibold">{firstDay} to {lastDay} · {visibleQueue.length} paid orders. Historical tickets are read-only; preparation and handoff use today’s orders.</p>
         </section>}
+        {tab === 'supplies' && <Suspense fallback={<p role="status">{msg('FE_LOOKUP_LOADING', 'Loading…')}</p>}><StoreSupplies key={`${campusId}:${storeId}`} campusId={campusId} storeId={storeId} /></Suspense>}
         {tab === 'catering' && <KitchenCatering />}
         {tab === 'handoff' && <KitchenHandoff campusId={campusId} storeId={storeId} />}
         {tab === 'queue' && (
