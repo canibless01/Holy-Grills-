@@ -86,6 +86,7 @@ export const ADMIN_GROUPS: Array<{ label: string | null; items: AdminSection[] }
       roles: AMBASSADOR_STAFF_ROLES },
   ]},
   { label: 'Config', items: [
+    { id: 'stores', label: msg('FE_STORE_SETUP', 'Stores & teams'), icon: Store, desc: msg('FE_STORE_OPERATIONS', 'Store operations'), keywords: ['branch', 'store', 'university', 'pickup', 'team', 'store analytics', 'store sales', 'store revenue'] },
     { id: 'campuses', label: msg('FE_CAMPUSES', 'Campuses'), icon: School, desc: msg('FE_CAMPUS_SETUP', 'Campus setup'), keywords: ['campus', 'setup', 'availability'] },
     { id: 'departments', label: 'Departments', icon: School, desc: 'Academic', keywords: ['department', 'faculty', 'academic', 'level'] },
     { id: 'storefront', label: 'Storefront', icon: Store, desc: 'Banners', keywords: ['storefront', 'banner', 'hero', 'promo section', 'early supporter', 'newsletter'] },

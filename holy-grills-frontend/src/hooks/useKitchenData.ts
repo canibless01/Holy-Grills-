@@ -19,7 +19,7 @@ import { msg } from '@/lib/messages';
  * Polls the live order queue, detects newly-arrived orders (sound + flash),
  * and exposes the handlers the KDS board needs.
  */
-export function useKitchenData(campusId?: string, fromDate = '', toDate = '') {
+export function useKitchenData(campusId?: string, fromDate = '', toDate = '', storeId = '') {
   const [queue, setQueue] = useState([]);
   const [scheduled, setScheduled] = useState(null);
   const [scheduledDate, setScheduledDate] = useState(new Date(Date.now() + 3600000).toISOString().slice(0, 10));
@@ -94,7 +94,7 @@ export function useKitchenData(campusId?: string, fromDate = '', toDate = '') {
     summaryPending.current = true;
     setBatchSummaryLoading(true); setBatchSummaryError(false);
     try {
-      const value = await liveApi.kitchen.getBatchSummary(winId, campusId);
+      const value = await liveApi.kitchen.getBatchSummary(winId, campusId, storeId);
       if (generation !== summaryGeneration.current || winId !== selectedWindowRef.current) return;
       summaryWindowRef.current = winId;
       setBatchSummary(value);
@@ -121,12 +121,12 @@ export function useKitchenData(campusId?: string, fromDate = '', toDate = '') {
     const generation = scheduleGeneration.current;
     try {
       const details = initial || Date.now() - lastDetails.current > 30000 ? Promise.allSettled([
-        liveApi.kitchen.getMetrics(campusId),
-        liveApi.kitchen.getScheduled({ date: scheduledDate, ...(campusId ? { campus_id: campusId } : {}) }),
-        liveApi.kitchen.getWindows(campusId), liveApi.menu.getKitchenCapacity(campusId),
+        liveApi.kitchen.getMetrics(campusId, storeId),
+        liveApi.kitchen.getScheduled({ ...(storeId ? { store_id: storeId } : {}), date: scheduledDate, ...(campusId ? { campus_id: campusId } : {}) }),
+        liveApi.kitchen.getWindows(campusId, storeId), liveApi.menu.getKitchenCapacity(campusId),
         liveApi.kitchen.getSettings(campusId), liveApi.orders.getDeliveryWindowStatus(campusId),
       ]) : null;
-      const q = await liveApi.kitchen.getQueue({ ...(campusId ? { campus_id: campusId } : {}), ...(fromDate ? { from_date: fromDate, to_date: toDate || fromDate } : {}) });
+      const q = await liveApi.kitchen.getQueue({ ...(storeId ? { store_id: storeId } : {}), ...(campusId ? { campus_id: campusId } : {}), ...(fromDate ? { from_date: fromDate, to_date: toDate || fromDate } : {}) });
       if (queueRequest !== queueGeneration.current) return;
       applyQueue(q, stockRevision); setError(null); setLoading(false);
       if (details) {
@@ -183,7 +183,7 @@ export function useKitchenData(campusId?: string, fromDate = '', toDate = '') {
     const generation = ++scheduleGeneration.current;
     setScheduledDate(date); setScheduledLoading(true); setScheduled(null);
     try {
-      const value = await liveApi.kitchen.getScheduled({ date, ...(campusId ? { campus_id: campusId } : {}) });
+      const value = await liveApi.kitchen.getScheduled({ ...(storeId ? { store_id: storeId } : {}), date, ...(campusId ? { campus_id: campusId } : {}) });
       if (generation === scheduleGeneration.current) setScheduled(value);
     } catch (exception) {
       if (generation === scheduleGeneration.current) setScheduled({ date, scheduled_orders: [], count: 0, error: true });
@@ -235,7 +235,7 @@ export function useKitchenData(campusId?: string, fromDate = '', toDate = '') {
     batchWritePending.current = true; setBatchBusy(true);
     summaryWindowRef.current = null;
     try {
-      const res = await liveApi.kitchen.batchAdvanceStatus(winId, body, campusId);
+      const res = await liveApi.kitchen.batchAdvanceStatus(winId, { ...body, ...(storeId ? { store_id: storeId } : {}) }, campusId);
       const advanced = res?.advanced_count ?? res?.advanced?.length ?? 0;
       const skipped = res?.skipped_count ?? 0;
       const skippedReasons: Record<string, number> = {};

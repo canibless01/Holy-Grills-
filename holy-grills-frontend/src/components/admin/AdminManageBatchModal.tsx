@@ -21,7 +21,7 @@ export default function AdminManageBatchModal({ batch, onClose, onSaved }) {
       .then(([detail, people]) => {
         if (!active) return;
         setOrders(detail?.orders || []);
-        setRiders((people || []).filter(person => person.is_active !== false && person.campus_id === batch.campus_id));
+        setRiders(detail?.store_id ? (detail.eligible_riders || []) : (people || []).filter(person => person.is_active !== false && person.campus_id === batch.campus_id));
       })
       .catch(failure => { if (active) { setError(failure.message); setOrders([]); } });
     return () => { active = false; };
@@ -50,6 +50,7 @@ export default function AdminManageBatchModal({ batch, onClose, onSaved }) {
   };
   return <Modal open onClose={() => { if (!busy) onClose(); }} title={msg('FE_BATCH_MANAGE_TITLE', 'Manage delivery batch')}>
     {orders === null ? <LoadingSpinner /> : <div className="space-y-3">
+      {batch.fulfilment_store && <p className="rounded-xl bg-secondary p-3 text-sm font-bold">{batch.fulfilment_store.name}<span className="block text-xs font-normal text-muted-foreground">{batch.fulfilment_store.address}</span></p>}
       <p className="text-xs text-muted-foreground">{batch.status === 'open' ? msg('FE_BATCH_STAGED_MANAGE_HELP', 'These paid, ready orders share a gate and delivery window. Choose a rider to assign the entire staged group. Orders stay ready until you assign them.') : msg('FE_BATCH_MANAGE_HELP', 'Reassign a waiting batch, or select some waiting orders to give another rider a new batch. Orders already on the road stay with their current rider.')}</p>
       <Field label={msg('FE_BATCH_RIDER', 'Rider')}>
         <select value={riderId} onChange={event => setRiderId(event.target.value)} disabled={busy} className="w-full mt-1 p-2.5 rounded-xl border border-border text-sm">

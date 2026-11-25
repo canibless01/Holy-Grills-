@@ -5,7 +5,7 @@ import { msg } from '@/lib/messages';
 import { toast } from '@/components/ui/use-toast';
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
 
-export default function KitchenHandoff({ campusId = undefined }: { campusId?: string } = {}) {
+export default function KitchenHandoff({ campusId = undefined, storeId = '' }: { campusId?: string; storeId?: string } = {}) {
   const scope = useRef(campusId); scope.current = campusId;
   const guard = useRef(false);
   const [data, setData] = useState(null);
@@ -18,14 +18,14 @@ export default function KitchenHandoff({ campusId = undefined }: { campusId?: st
   const [busy, setBusy] = useState(null);
   const load = async () => {
     const requestedCampus = campusId;
-    try { const value = await liveApi.kitchen.getHandoff(campusId); if (scope.current === requestedCampus) { setData(value); setError(false); } }
+    try { const value = await liveApi.kitchen.getHandoff(campusId,storeId); if (scope.current === requestedCampus) { setData(value); setError(false); } }
     catch { if (scope.current === requestedCampus) setError(true); }
   };
   useEffect(() => {
     let active = true; setChosen([]); setBulkRider(''); setData(null); setAssignmentResult(''); setAssignmentErrors([]);
     const refresh = async () => {
       if (document.visibilityState === 'hidden') return;
-      try { const value = await liveApi.kitchen.getHandoff(campusId); if (active) { setData(value); setError(false); } }
+      try { const value = await liveApi.kitchen.getHandoff(campusId,storeId); if (active) { setData(value); setError(false); } }
       catch { if (active) setError(true); }
     };
     refresh(); const timer = setInterval(refresh, 10000);
@@ -63,7 +63,7 @@ export default function KitchenHandoff({ campusId = undefined }: { campusId?: st
     <p className="rounded-xl border border-border bg-card p-3 text-xs text-muted-foreground">{msg('FE_KITCHEN_HANDOFF_HELP', 'Assign a rider to a ready batch, check its items, then hand it over. The assigned rider confirms pickup in their rider screen; no admin confirmation is needed.')}</p>
     {!!data?.batches?.length && <div className="rounded-xl border border-border bg-card p-3 space-y-2">
       <label className="flex gap-2 text-sm"><input type="checkbox" disabled={!!busy} checked={chosen.length > 0 && data.batches.every((batch) => chosen.includes(batch.id))} onChange={(event) => setChosen(event.target.checked ? data.batches.map((batch) => batch.id) : [])} /> Select all batches</label>
-      <label className="block text-sm">Rider for selected batches<select aria-label="Rider for selected batches" value={bulkRider} onChange={(event) => setBulkRider(event.target.value)} disabled={!!busy} className="mt-1 w-full rounded-lg border border-border bg-background p-2"><option value="">Choose a rider</option>{(data.riders || []).map((rider) => <option key={rider.id} value={rider.id}>{rider.full_name}</option>)}</select></label>
+      <label className="block text-sm">Rider for selected batches<select aria-label="Rider for selected batches" value={bulkRider} onChange={(event) => setBulkRider(event.target.value)} disabled={!!busy} className="mt-1 w-full rounded-lg border border-border bg-background p-2"><option value="">Choose a rider</option>{(data.riders || []).filter(rider => data.batches.filter(batch => chosen.includes(batch.id)).every(batch => !batch.store_id || (rider.store_ids || []).includes(batch.store_id))).map((rider) => <option key={rider.id} value={rider.id}>{rider.full_name}</option>)}</select></label>
       <button type="button" onClick={assignSelected} disabled={!!busy || !chosen.length || !bulkRider} className="rounded-full bg-primary px-4 py-2 text-sm font-bold text-primary-foreground disabled:opacity-40">{busy === 'bulk' ? 'Assigning…' : `Assign ${chosen.length} selected ${chosen.length === 1 ? 'batch' : 'batches'}`}</button>
       <p className="text-xs text-muted-foreground">Each zone keeps its own batch. Successful assignments stay saved if another batch needs a retry.</p>
     </div>}
@@ -81,7 +81,7 @@ export default function KitchenHandoff({ campusId = undefined }: { campusId?: st
       </div>)}
       <label className="block text-xs font-bold">{msg('FE_KITCHEN_HANDOFF_RIDER', 'Rider')}<select aria-label={msg('FE_KITCHEN_HANDOFF_RIDER', 'Rider')} value={selected[batch.id] ?? batch.rider_id ?? ''} onChange={event => setSelected(current => ({ ...current, [batch.id]: event.target.value }))} className="mt-1 block w-full rounded-xl border border-border bg-background p-3 text-sm" disabled={!!busy}>
         <option value="">{msg('FE_KITCHEN_CHOOSE_RIDER', 'Choose a rider')}</option>
-        {(data?.riders || []).map(rider => <option key={rider.id} value={rider.id}>{rider.full_name}</option>)}
+        {(data?.riders || []).filter(rider=>!batch.store_id || (rider.store_ids || []).includes(batch.store_id)).map(rider => <option key={rider.id} value={rider.id}>{rider.full_name}</option>)}
       </select></label>
       <button onClick={() => assign(batch)} disabled={!!busy || !(selected[batch.id] || batch.rider_id) || (batch.status === 'assigned' && (!selected[batch.id] || selected[batch.id] === batch.rider_id))} className="w-full rounded-full bg-gradient-cta py-3 text-sm font-bold text-white disabled:opacity-40">{busy === batch.id ? msg('FE_ONBOARDING_SAVING', 'Saving…') : msg('FE_KITCHEN_SAVE_RIDER', 'Save rider')}</button>
       {batch.status === 'assigned' && <p className="text-xs text-muted-foreground">{msg('FE_KITCHEN_PICKUP_WAITING', 'Assigned. Waiting for the rider to confirm pickup.')}</p>}

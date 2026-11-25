@@ -1,5 +1,7 @@
+import { apiClient } from '@/lib/apiClient';
+import { isFeatureEnabled, useFeatureFlags } from '@/lib/featureConfig';
 import OrderItemCustomizations from '@/components/OrderItemCustomizations';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Calendar, Package, Zap, Check, ChefHat } from 'lucide-react';
 import { useKitchenData } from '@/hooks/useKitchenData';
@@ -30,6 +32,22 @@ const COLUMN_ACCENTS = {
   ready: { dot: 'bg-success', badge: 'tone-success', label: 'Ready for Pickup' },
 };
 
+function StoreKitchen({ campusId, canManageSettings }) {
+  useFeatureFlags();
+  const release=isFeatureEnabled('multi_store_ordering');
+  const [stores,setStores]=useState<any[]>([]);
+  const [selected,setSelected]=useState('');
+  const [failure,setFailure]=useState('');
+  const [retry,setRetry]=useState(0);
+  useEffect(()=>{
+    let active=true;
+    if(!release){setStores([]);setSelected('');return;}
+    apiClient.get('/admin/work-stores',{campus_id:campusId}).then(value=>{if(active){setStores(value.stores);setFailure('');}}).catch(error=>{if(active)setFailure(error.message);});
+    return ()=>{active=false;};
+  },[campusId,release,retry]);
+  return <>{release && <div className="border-b border-border bg-card p-4 space-y-2"><label className="text-sm font-bold">{msg('FE_KITCHEN_STORE_VIEW','Store view')}<select value={selected} onChange={event=>setSelected(event.target.value)} className="ml-3 rounded-xl border border-border p-2"><option value="">{msg('FE_KITCHEN_ALL_STORES','All assigned stores')}</option>{stores.map(store=><option value={store.id} key={store.id}>{store.name}</option>)}</select></label>{failure && <p role="alert">{failure} <button onClick={()=>setRetry(value=>value+1)} className="font-bold underline">{msg('FE_PLATFORM_RETRY','Retry')}</button></p>}</div>}<KitchenWorkspace key={`${campusId}:${selected}`} campusId={campusId} canManageSettings={canManageSettings} storeId={selected}/></>;
+}
+
 export default function Kitchen() {
   const { user, isLoading } = useHolyGrill();
   const { adminCampusId } = useCampus();
@@ -40,11 +58,11 @@ export default function Kitchen() {
     {isSuperAdmin && <div className="flex items-center justify-end gap-3 border-b border-border bg-card px-4 py-2"><AdminCampusSelector /></div>}
     {isSuperAdmin && !campusId
       ? <p className="p-6 text-sm text-muted-foreground">{msg('FE_KITCHEN_SELECT_CAMPUS', 'Select a campus to open its kitchen workspace.')}</p>
-      : <KitchenWorkspace key={campusId || 'own-campus'} campusId={campusId} canManageSettings={user?.role === 'admin' || isSuperAdmin} />}
+      : <StoreKitchen key={`${user?.id}:${campusId || 'own-campus'}`} campusId={campusId} canManageSettings={user?.role === 'admin' || isSuperAdmin} />}
   </>;
 }
 
-function KitchenWorkspace({ campusId, canManageSettings }) {
+function KitchenWorkspace({ campusId, canManageSettings, storeId = '' }) {
   const [tab, setTab] = useState('queue');
   const [dateRange, setDateRange] = useState({ from: '', to: '' });
   const {
@@ -52,7 +70,7 @@ function KitchenWorkspace({ campusId, canManageSettings }) {
     settings, capacity, metrics, windowStatus, open, prepTarget, flashingIds, actionLoading,
     batchBusy, batchResult, itemAvailability, availabilityBusy, selectWindow, handleStatusUpdate,
     handleMarkUnavailable, handleMarkAvailable, handleBatchAdvance, clearBatchResult,
-  } = useKitchenData(campusId, dateRange.from, dateRange.to);
+  } = useKitchenData(campusId, dateRange.from, dateRange.to, storeId);
 
   if (!authed) return <Navigate to="/login" state={{ from: '/kitchen' }} replace />;
   if (loading) return <StaffPanelSkeleton variant="kitchen" />;
@@ -140,7 +158,7 @@ function KitchenWorkspace({ campusId, canManageSettings }) {
           <p className="text-sm font-semibold">{firstDay} to {lastDay} · {visibleQueue.length} paid orders. Historical tickets are read-only; preparation and handoff use today’s orders.</p>
         </section>}
         {tab === 'catering' && <KitchenCatering />}
-        {tab === 'handoff' && <KitchenHandoff campusId={campusId} />}
+        {tab === 'handoff' && <KitchenHandoff campusId={campusId} storeId={storeId} />}
         {tab === 'queue' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 lg:gap-4">
             {['received', 'preparing', 'ready'].map((status) => {

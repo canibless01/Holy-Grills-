@@ -445,6 +445,10 @@ def _claim_reward_redemption(db, redemption_id: str, user_id: str, order_id: str
 # the whole order when the reward cannot be spent. Its message wording is the
 # database's; translate the known cases so the customer gets a stable 400.
 _RPC_ERROR_MAP = (
+    ("hg_store_ordering_disabled", MSG.STORE_ORDERING_DISABLED),
+    ("hg_store_order_unavailable", MSG.STORE_ORDER_UNAVAILABLE),
+    ("hg_store_order_changed", MSG.STORE_ORDER_CHANGED),
+
     ("order_lock_unavailable", MSG.ORDER_LOCK_NOT_ACTIVE),
     ("order_lock_pricing_mismatch", MSG.ORDER_PRICE_CHANGED),
     ("order_payment_conservation", MSG.ORDER_TOTAL_INVALID),
@@ -902,13 +906,21 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
     pickup = None
     if delivery_type == 'store_pickup':
         from app.services.store_pickup import require_pickup
-        pickup = require_pickup(campus_id)
+        pickup = require_pickup(campus_id,payload.get("store_id"))
         delivery_location_id = delivery_location_lat = delivery_location_lon = None
         gate = {'name': pickup['name']}
 
     from app.routes.delivery import validate_coordinates, is_within_delivery_area, find_nearest_gate
     if delivery_location_lat is not None or delivery_location_lon is not None:
         delivery_location_lat, delivery_location_lon = validate_coordinates(delivery_location_lat, delivery_location_lon)
+
+    from app.services import store_fulfilment
+    store_plan = (pickup or {}).get('store') if pickup else store_fulfilment.resolve(
+        campus_id,delivery_type,payload.get('store_id'),delivery_location_lat,delivery_location_lon)
+    if store_plan and delivery_type=='off_campus' and delivery_location_lat is not None:
+        if not store_fulfilment.within_radius(store_plan,campus_id,delivery_location_lat,delivery_location_lon):
+            raise ValueError(MSG.DELIVERY_OUTSIDE_AREA)
+
 
     campus_id_for_check = campus_id   # use the order's own already-resolved campus, not g alone —
     # g.campus_id is unset for guests and for background/no-request-context callers
@@ -919,7 +931,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         if not gate or (campus_id_for_check and gate.get("campus_id") not in (campus_id_for_check, None)):
             raise ValueError(MSG.DELIVERY_OUTSIDE_AREA)
     elif delivery_type == "off_campus" and delivery_location_lat is not None and delivery_location_lon is not None:
-        if not is_within_delivery_area(db, delivery_location_lat, delivery_location_lon, campus_id_for_check):
+        if not store_plan and not is_within_delivery_area(db, delivery_location_lat, delivery_location_lon, campus_id_for_check):
             raise ValueError(MSG.DELIVERY_OUTSIDE_AREA)
         if not delivery_location_id:
             nearest_gate = find_nearest_gate(db, delivery_location_lat, delivery_location_lon, campus_id_for_check)
@@ -1093,6 +1105,8 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
 
     if pickup:
         delivery_address_snapshot['instructions'] = pickup['instructions']
+    if store_plan:
+        delivery_address_snapshot['_fulfilment_store'] = store_plan
 
     # Pre-calculate hp_preview. The food-earn rate is read live from system_settings (same source
     # hp_service._get_food_earn_rate() uses for the actual payout at delivery, key "hp_per_naira_food",
@@ -1186,6 +1200,7 @@ def create_order(user_id: str | None, payload: dict, quote_only: bool = False) -
         'hp_bonus_plan':hp_bonus_plan,
         'food_hp_plan':food_hp_plan,
         'delivery_fee_original':delivery_fee_original,
+        'fulfilment_store':store_plan,
         'squad_delivery_discount_amount':float(squad_delivery_discount_dec),
         'promo_discount':promo_discount,'squad_discount':squad_discount,
         'order_lock_discount':order_lock_discount,'total_amount':total,
@@ -1525,6 +1540,10 @@ def walk_order_to_status(
                 logger.error("walk_order_to_status: could not resolve the role of %s: %s",
                               changed_by, exc)
 
+        if order.get('store_id'):
+            from app.services.store_fulfilment import staff_may_access
+            if not staff_may_access(changed_by,order['store_id'],order.get('campus_id')):
+                raise OrderForbiddenError(MSG.ORDER_ACCESS_DENIED)
         if caller_role not in ("rider", "kitchen", "admin", "super_admin"):
             raise OrderForbiddenError(MSG.ORDER_ACCESS_DENIED)
         if caller_role == "rider":
@@ -1809,6 +1828,10 @@ def update_order_status(order_id: str, new_status: str, changed_by: str = None, 
                 logger.error("update_order_status: could not resolve the role of %s: %s",
                               changed_by, exc)
 
+        if order.get('store_id'):
+            from app.services.store_fulfilment import staff_may_access
+            if not staff_may_access(changed_by,order['store_id'],order.get('campus_id')):
+                raise OrderForbiddenError(MSG.ORDER_ACCESS_DENIED)
         if caller_role not in ("rider", "kitchen", "admin", "super_admin"):
             raise OrderForbiddenError(MSG.ORDER_ACCESS_DENIED)
         if caller_role == "rider":

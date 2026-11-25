@@ -57,16 +57,19 @@ def handoff_batches():
     campus, error = _resolve_kitchen_campus_id()
     if error: return error
     if not campus: return jsonify({'error': MSG.KITCHEN_CAMPUS_UNRESOLVED}), 400
-    db = get_db()
-    batches = (db.table('delivery_batches').select('id,zone,status,rider_id,delivery_date,campus_id')
+    from app.services.store_work_scope import client as store_work_client
+    db = store_work_client(get_user_client())
+    batches = (db.table('delivery_batches').select('id,zone,status,rider_id,delivery_date,campus_id,store_id')
                .eq('campus_id', campus).in_('status', ['open', 'assigned'])
                .or_(f'delivery_date.eq.{today_wat().isoformat()},delivery_date.is.null')
                .order('created_at').limit(100).execute()) or []
-    riders = (db.table('profiles').select('id,full_name').eq('campus_id', campus)
+    riders = (get_db().table('profiles').select('id,full_name').eq('campus_id', campus)
               .eq('role', 'rider').eq('is_active', True).order('full_name').execute()) or []
+    if any(batch.get('store_id') for batch in batches):
+        riders=get_db().rpc('hg_store_riders',{'p_actor':g.user_id,'p_campus':campus}) or []
     orders = []
     if batches:
-        query = (db.table('orders').select('id,batch_id,user_id,guest_name,status,delivery_type,delivery_location_id,delivery_address_snapshot,delivery_location_lat,delivery_location_lon,delivery_window_id,is_scheduled,scheduled_for,created_at,order_items(name_snapshot,quantity,options_snapshot,order_addon_selections(name_snapshot,quantity))')
+        query = (db.table('orders').select('id,batch_id,user_id,guest_name,status,store_id,fulfilment_store_snapshot,delivery_type,delivery_location_id,delivery_address_snapshot,delivery_location_lat,delivery_location_lon,delivery_window_id,is_scheduled,scheduled_for,created_at,order_items(name_snapshot,quantity,options_snapshot,order_addon_selections(name_snapshot,quantity))')
                  .eq('campus_id', campus).in_('batch_id', [batch['id'] for batch in batches])
                  .in_('status', ['ready', 'assigned']))
         orders = _attach_kitchen_customer_names(_today_preparation(query).execute() or [])
@@ -145,7 +148,8 @@ def list_measurement_units():
       200:
         description: List of measurement units
     """
-    db = get_user_client()
+    from app.services.store_work_scope import client as store_work_client
+    db = store_work_client(get_user_client())
     rows = db.table("measurement_units").select("id,name").order("name").execute() or []
     return jsonify(rows), 200
 
@@ -173,7 +177,8 @@ def create_stock_item():
       201:
         description: Stock item created
     """
-    db = get_user_client()
+    from app.services.store_work_scope import client as store_work_client
+    db = store_work_client(get_user_client())
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": MSG.INVALID_INPUT}), 400
@@ -270,7 +275,8 @@ def list_stock_items():
       200:
         description: Stock items
     """
-    db = get_user_client()
+    from app.services.store_work_scope import client as store_work_client
+    db = store_work_client(get_user_client())
     state = request.args.get("state", "active")
     if state not in ("active", "archived", "all"):
         return jsonify({"error": MSG.INVALID_INPUT}), 400
@@ -317,7 +323,8 @@ def edit_stock_item(stock_item_id):
         if not valid_threshold:
             return jsonify({"error": MSG.STOCK_NUMERIC_FIELDS_INVALID}), 400
     patch = {"name": data["name"].strip(), "low_stock_threshold": data["low_stock_threshold"]}
-    db = get_user_client()
+    from app.services.store_work_scope import client as store_work_client
+    db = store_work_client(get_user_client())
     existing, error = fetch_or_403(db, "stock_items", stock_item_id, not_found_msg=MSG.STOCK_ITEM_NOT_FOUND)
     if error:
         return error
@@ -354,7 +361,8 @@ def set_stock_archived(stock_item_id):
         return jsonify({"error": MSG.INVALID_INPUT}), 400
     if not isinstance(data["archived"], bool) or any(not isinstance(data[k], str) or not validate_uuid(data[k]) for k in ("expected_version", "request_id")):
         return jsonify({"error": MSG.INVALID_INPUT}), 400
-    db = get_user_client()
+    from app.services.store_work_scope import client as store_work_client
+    db = store_work_client(get_user_client())
     existing, error = fetch_or_403(db, "stock_items", stock_item_id, not_found_msg=MSG.STOCK_ITEM_NOT_FOUND)
     if error:
         return error
@@ -557,7 +565,8 @@ def get_stock_ledger(stock_item_id):
       200:
         description: Stock item ledger history
     """
-    db = get_user_client()
+    from app.services.store_work_scope import client as store_work_client
+    db = store_work_client(get_user_client())
     existing, err = fetch_or_403(db, "stock_items", stock_item_id, select="id", not_found_msg=MSG.STOCK_ITEM_NOT_FOUND)
     if err: return err
 
@@ -610,7 +619,8 @@ def get_kitchen_settings():
     campus_id, err = _resolve_kitchen_campus_id()
     if err:
         return err
-    db = get_user_client()
+    from app.services.store_work_scope import client as store_work_client
+    db = store_work_client(get_user_client())
     q = db.table("kitchen_settings").select("*")
     if campus_id:
         q = q.eq("campus_id", campus_id)
@@ -643,7 +653,8 @@ def get_kitchen_setting(key):
     campus_id, err = _resolve_kitchen_campus_id()
     if err:
         return err
-    db = get_user_client()
+    from app.services.store_work_scope import client as store_work_client
+    db = store_work_client(get_user_client())
     q = db.table("kitchen_settings").select("*").eq("key", key)
     if campus_id:
         q = q.eq("campus_id", campus_id)
@@ -690,7 +701,8 @@ def update_kitchen_settings():
         return err
     if not campus_id:
         return jsonify({"error": MSG.KITCHEN_CAMPUS_UNRESOLVED}), 400
-    db = get_user_client()
+    from app.services.store_work_scope import client as store_work_client
+    db = store_work_client(get_user_client())
     now = datetime.now(timezone.utc).isoformat()
     if "max_delivery_radius_km" in settings:
         raw_radius = settings["max_delivery_radius_km"]
@@ -758,10 +770,11 @@ def live_queue():
     campus_id, err = _resolve_kitchen_campus_id()
     if err:
         return err
-    db = get_user_client()
+    from app.services.store_work_scope import client as store_work_client
+    db = store_work_client(get_user_client())
     q = (
         db.table("orders")
-        .select("id,user_id,guest_name,status,notes,delivery_type,delivery_address_snapshot,delivery_location_lat,delivery_location_lon,is_squad_order,squad_name,received_at,created_at,is_scheduled,scheduled_for,delivery_window_id,preparing_at,delivery_windows(label,ends_at),order_items(menu_item_id,name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
+        .select("id,user_id,guest_name,status,notes,store_id,fulfilment_store_snapshot,delivery_type,delivery_address_snapshot,delivery_location_lat,delivery_location_lon,is_squad_order,squad_name,received_at,created_at,is_scheduled,scheduled_for,delivery_window_id,preparing_at,delivery_windows(label,ends_at),order_items(menu_item_id,name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
         .in_("status", ["received", "paid", "preparing", "ready"])
     )
     try:
@@ -797,7 +810,8 @@ def delivery_windows():
     campus_id, err = _resolve_kitchen_campus_id()
     if err:
         return err
-    db = get_user_client()
+    from app.services.store_work_scope import client as store_work_client
+    db = store_work_client(get_user_client())
     now = datetime.now(timezone.utc).isoformat()
     q = db.table("delivery_windows").select("*")
     if campus_id:
@@ -861,7 +875,8 @@ def scheduled_orders():
         selected_date = as_date(request.args.get("date") or today_wat().isoformat())
     except ValueError:
         return jsonify({"error": MSG.INVALID_INPUT}), 400
-    db = get_user_client()
+    from app.services.store_work_scope import client as store_work_client
+    db = store_work_client(get_user_client())
     # Scheduled orders: is_scheduled=True AND status='received' (not yet activated).
     # The DB enum does not include a 'scheduled' status value; the is_scheduled
     # boolean column is the authoritative discriminator. Once kitchen promotes an
@@ -909,7 +924,8 @@ def kitchen_metrics():
     campus_id, err = _resolve_kitchen_campus_id()
     if err:
         return err
-    db = get_user_client()
+    from app.services.store_work_scope import client as store_work_client
+    db = store_work_client(get_user_client())
     today_start = _today_start_iso()  # same WAT-midnight helper as menu.py/order_service.py
     from app.routes.menu import _today_fulfilment_filter
     q = (db.table("orders").select("id,status,received_at,preparing_at,ready_at,delivery_window_id")
@@ -986,7 +1002,8 @@ def batch_summary(window_id):
     campus_id, err = _resolve_kitchen_campus_id()
     if err:
         return err
-    db = get_user_client()
+    from app.services.store_work_scope import client as store_work_client
+    db = store_work_client(get_user_client())
     q = (
         db.table("orders")
         .select("id,status,order_items(name_snapshot,quantity,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
@@ -1047,7 +1064,8 @@ def batch_advance(batch_id):
     campus_id, err = _resolve_kitchen_campus_id()
     if err:
         return err
-    db = get_user_client()
+    from app.services.store_work_scope import client as store_work_client
+    db = store_work_client(get_user_client())
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": MSG.JSON_OBJECT_REQUIRED}), 400

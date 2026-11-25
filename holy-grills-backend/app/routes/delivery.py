@@ -127,6 +127,11 @@ def is_within_delivery_area(db, lat: float, lon: float, campus_id: str | None) -
     """
     if not campus_id:
         return True
+    from app.services.feature_flags import is_feature_enabled
+    if is_feature_enabled('multi_store_ordering',campus_id):
+        from app.services.store_fulfilment import options,within_radius
+        choices=options(campus_id,'off_campus',lat,lon)
+        return any(within_radius(row,campus_id,lat,lon) for row in choices['stores'])
     campus = db.table("campuses").select("lat,lon").eq("id", campus_id).single().execute()
     if not campus or campus.get("lat") is None or campus.get("lon") is None:
         return True  # not configured yet — don't block orders because of it
@@ -283,7 +288,7 @@ def calculate_fee():
         from app.services.store_pickup import require_pickup
         from app.routes.events import _get_campus_id
         try:
-            option = require_pickup(getattr(g, 'campus_id', None) or _get_campus_id())
+            option = require_pickup(getattr(g, 'campus_id', None) or _get_campus_id(),data.get('store_id'))
             return jsonify({'delivery_type': delivery_type, 'delivery_fee': 0, 'location_name': option['name']}), 200
         except ValueError:
             return jsonify({'error': MSG.STORE_PICKUP_UNAVAILABLE}), 400
@@ -750,7 +755,8 @@ def store_pickup_option():
     from app.routes.events import _get_campus_id
     try:
         campus = getattr(g, 'campus_id', None) or _get_campus_id()
-        return jsonify(pickup_option(campus)),200
+        return jsonify(pickup_option(campus,request.args.get('store_id'))),200
+    except ValueError as exc:return jsonify({'error':str(exc)}),400
     except (SupabaseError,requests.RequestException) as exc:return db_error_response(exc,'store_pickup.option')
 
 
@@ -791,3 +797,16 @@ def store_pickup_configuration():
         return jsonify(result[0] if isinstance(result,list) else result),200
     except ValueError as exc:return jsonify({'error':str(exc)}),400
     except (SupabaseError,requests.RequestException) as exc:return db_error_response(exc,'store_pickup.config')
+
+
+@delivery_bp.route('/stores',methods=['GET'])
+@optional_auth
+def available_stores():
+    campus=getattr(g,'campus_id',None) if getattr(g,'user_id',None) else None
+    if not campus:
+        campus,error=_require_campus_selection()
+        if error:return error
+    from app.services.store_fulfilment import options
+    try:
+        return jsonify(options(campus,request.args.get('delivery_type','on_campus'),request.args.get('lat'),request.args.get('lon')))
+    except ValueError as exc:return jsonify({'error':str(exc)}),400

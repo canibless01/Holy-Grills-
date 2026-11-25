@@ -223,6 +223,7 @@ export default function OrderConfirmation() {
         <div className="flex items-center gap-3 text-sm">
           <MapPin className="w-4 h-4 text-muted-foreground shrink-0" />
           <div>
+            {order.fulfilment_store_snapshot?.name && <p className="mb-2 text-xs"><strong>{msg('FE_CHECKOUT_STORE', 'Fulfilling store')}: </strong>{order.fulfilment_store_snapshot.name}</p>}
             <div className="text-xs text-muted-foreground">{order.delivery_type === 'store_pickup' ? msg('FE_STORE_PICKUP', 'Store pickup') : 'Delivery to'}</div>
             <div className="font-semibold text-foreground">{order.delivery_type === 'store_pickup' ? <DeliveryAddress order={order} /> : order.delivery_address?.line1 || msg('FE_ORDER_ADDRESS_UNAVAILABLE', 'Delivery details unavailable')}</div>
           </div>
