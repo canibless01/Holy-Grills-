@@ -41,7 +41,7 @@ def test_registration_resolvers_use_selected_ids_and_active_campus_scope():
 
 @pytest.mark.parametrize('role', ['community_manager','admin','super_admin'])
 def test_seen_status_updates_through_real_transport(role):
-    db=client_with_rows({'id':'assignment','ambassador_id':'student'}, {'profile_id':'student','campus_id':CAMPUS})
+    db=client_with_rows({'id':'assignment','ambassador_id':'student','message_id':'message'}, {'deleted_at':None}, {'profile_id':'student','campus_id':CAMPUS})
     with Flask(__name__).test_request_context(), patch('app.services.ambassador_service.audit'):
         g.user_role=role; g.campus_id=CAMPUS
         result=set_assignment_status(db,'actor','assignment','seen',None)
@@ -51,7 +51,7 @@ def test_seen_status_updates_through_real_transport(role):
 
 
 def test_foreign_campus_cannot_mark_seen():
-    db=client_with_rows({'id':'assignment','ambassador_id':'student'}, {'profile_id':'student','campus_id':'other'})
+    db=client_with_rows({'id':'assignment','ambassador_id':'student','message_id':'message'}, {'deleted_at':None}, {'profile_id':'student','campus_id':'other'})
     with Flask(__name__).test_request_context(), patch('app.services.ambassador_service.audit'):
         g.user_role='community_manager'; g.campus_id=CAMPUS
         with pytest.raises(AmbassadorError): set_assignment_status(db,'actor','assignment','seen',None)
