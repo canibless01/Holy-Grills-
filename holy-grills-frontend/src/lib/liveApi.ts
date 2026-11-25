@@ -1559,6 +1559,9 @@ const ambassadors = {
     return (r && r.messages) || [];
   },
   async createPromo(body) { return apiClient.post('/ambassadors/staff/promo-messages', body); },
+  async editPromo(id: string, body) { return apiClient.patch(`/ambassadors/staff/promo-messages/${id}`, body); },
+  async deletePromo(id: string, revision: number) { return apiClient.delete(`/ambassadors/staff/promo-messages/${id}`, { revision }); },
+  async setWhatsApp(id: string, whatsappPhone: string | null) { return apiClient.patch(`/ambassadors/staff/ambassadors/${id}/whatsapp`, { whatsapp_phone: whatsappPhone }); },
   async promoAssignments(messageId: string) {
     const r = await apiClient.get(`/ambassadors/staff/promo-messages/${messageId}/assignments`);
     return (r && r.assignments) || [];

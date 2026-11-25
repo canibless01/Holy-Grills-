@@ -321,8 +321,8 @@ def attributed_orders(db, ambassador_id: str, month: str | None = None,
 
 def _assignment_metrics(db, ambassador_id: str, month: str) -> dict:
     rows = db.table("ambassador_promo_assignments").select(
-        "id,status"
-    ).eq("ambassador_id", ambassador_id).eq("month", month).execute() or []
+        "id,status,ambassador_promo_messages!inner(deleted_at)"
+    ).eq("ambassador_id", ambassador_id).eq("month", month).is_("ambassador_promo_messages.deleted_at", "null").execute() or []
     assigned = len(rows)
     shared = sum(1 for r in rows if r.get("status") == "shared")
     seen = sum(1 for r in rows if r.get("status") in ("seen", "shared"))
@@ -635,6 +635,8 @@ def create_promo_message(db, actor: dict, *, image_url: str, caption: str,
         raise AmbassadorError(MSG.AUTH_FIELD_INVALID.format(field='target_all / ambassador_ids'))
     if request_id is not None and not validate_uuid(request_id):
         raise AmbassadorError(MSG.AUTH_FIELD_INVALID.format(field='request_id'))
+    from app.services.ambassador_promotions import image_url as validate_image
+    image_url = validate_image(image_url)
     month = parse_month(month)
     result = db.rpc('hg_create_ambassador_promo_atomic', {
         'p_actor_id': actor['id'], 'p_message_id': request_id or str(uuid.uuid4()),
@@ -643,6 +645,8 @@ def create_promo_message(db, actor: dict, *, image_url: str, caption: str,
         'p_target_all': target_all, 'p_ambassador_ids': sorted(set(ambassador_ids)),
     })
     error = result.get('error') if isinstance(result, dict) else None
+    if error == 'promo_deleted':
+        raise AmbassadorError(MSG.AMBASSADOR_PROMO_DELETED, status=409)
     if error == 'promo_no_targets':
         raise AmbassadorError(MSG.AMBASSADOR_PROMO_NO_TARGETS)
     if error == 'promo_forbidden':
@@ -664,7 +668,7 @@ def create_promo_message(db, actor: dict, *, image_url: str, caption: str,
 def list_promo_messages(db, month: str, campus_id: str | None, is_super: bool) -> list[dict]:
     month = parse_month(month)
     rows = db.table("ambassador_promo_messages").select("*").eq(
-        "month", month).order("created_at", ascending=False).execute() or []
+        "month", month).is_("deleted_at", "null").order("created_at", ascending=False).execute() or []
     if campus_id or not is_super:
         rows = [r for r in rows if r.get("campus_id") is None or r.get("campus_id") == campus_id]
     return rows
@@ -673,17 +677,16 @@ def list_promo_messages(db, month: str, campus_id: str | None, is_super: bool) -
 def promo_assignments(db, message_id: str, campus_id=None) -> list[dict]:
     # Assignments have no campus_id. Scope through their existing ambassador FK
     # before fetching recipients; the route also checks the attached profile.
-    selection = "*,scope_ambassador:ambassadors!ambassador_id!inner(campus_id)" if campus_id else "*"
+    selection = "*,scope_ambassador:ambassadors!ambassador_id!inner(campus_id,whatsapp_phone)"
     query = db.table("ambassador_promo_assignments").select(selection).eq("message_id", message_id)
     if campus_id:
         query = query.eq("scope_ambassador.campus_id", campus_id)
     rows = query.execute() or []
-    for row in rows:
-        row.pop("scope_ambassador", None)
+    overrides = {row['ambassador_id']: (row.pop('scope_ambassador', None) or {}).get('whatsapp_phone') for row in rows}
     ids = [r["ambassador_id"] for r in rows]
     profiles = _profile_basics(db, ids)
     for r in rows:
-        r["profile"] = profiles.get(r["ambassador_id"], {})
+        r["profile"] = {**profiles.get(r["ambassador_id"], {}), "ambassador_whatsapp": overrides.get(r["ambassador_id"])}
     return rows
 
 
@@ -695,6 +698,9 @@ def set_assignment_status(db, actor_id: str, assignment_id: str,
         "id", assignment_id).single().execute()
     if not row:
         raise AmbassadorError(MSG.AMBASSADOR_ASSIGNMENT_NOT_FOUND, status=404)
+    message = db.table("ambassador_promo_messages").select("deleted_at").eq("id", row['message_id']).single().execute()
+    if message and message.get('deleted_at'):
+        raise AmbassadorError(MSG.AMBASSADOR_PROMO_DELETED, status=409)
     ambassador = db.table(AMBASSADOR_TABLE).select("*").eq(
         "profile_id", row["ambassador_id"]).single().execute()
     if not ambassador:

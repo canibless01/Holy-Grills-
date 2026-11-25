@@ -463,3 +463,28 @@ def staff_create_grant():
 @ambassadors_bp.errorhandler(svc.AmbassadorError)
 def programme_error(error):
     return jsonify({"error": str(error)}), error.status
+
+
+@ambassadors_bp.route("/staff/promo-messages/<message_id>", methods=["PATCH", "DELETE"])
+@require_role(COMMUNITY_MANAGER_ROLE, "admin")
+def staff_manage_promo(message_id):
+    from app.services import ambassador_promotions
+    if not validate_uuid(message_id):
+        return jsonify({"error": MSG.RESOURCE_NOT_FOUND}), 404
+    data = _body() or {}
+    result = ambassador_promotions.manage(get_db(), g.user_id, message_id, _staff_scope(),
+        data.get('revision'), 'delete' if request.method == 'DELETE' else 'edit', data)
+    return jsonify(result), 200
+
+
+@ambassadors_bp.route("/staff/ambassadors/<ambassador_id>/whatsapp", methods=["PATCH"])
+@require_role(COMMUNITY_MANAGER_ROLE, "admin")
+def staff_ambassador_whatsapp(ambassador_id):
+    from app.services import ambassador_promotions
+    if not validate_uuid(ambassador_id):
+        return jsonify({"error": MSG.RESOURCE_NOT_FOUND}), 404
+    data = _body() or {}
+    if 'whatsapp_phone' not in data:
+        return jsonify({"error": MSG.AMBASSADOR_WHATSAPP_INVALID}), 400
+    result = ambassador_promotions.contact(get_db(), g.user_id, ambassador_id, _staff_scope(), data['whatsapp_phone'])
+    return jsonify(result), 200

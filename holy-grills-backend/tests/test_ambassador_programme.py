@@ -439,7 +439,7 @@ class PromoDistributionTests(AmbassadorTestBase):
         actor = {'id': ADMIN_ID, 'role': 'admin', 'campus_id': CAMPUS_A}
 
         result = svc.create_promo_message(
-            self.db, actor, image_url='https://img.example/p.jpg',
+            self.db, actor, image_url='https://res.cloudinary.com/test/image/upload/p.jpg',
             caption='Order with {{link}}', target_all=True,
             ambassador_ids=[], month=MONTH)
         self.assertEqual(result['recipient_count'], 2)
@@ -1123,7 +1123,7 @@ class MigrationContractTests(unittest.TestCase):
         app.register_blueprint(routes.ambassadors_bp, url_prefix='/api/ambassadors')
         rules = [r.rule for r in app.url_map.iter_rules()
                  if r.endpoint.startswith('ambassadors.')]
-        self.assertEqual(len(rules), 20)
+        self.assertEqual(len(rules), 22)
         self.assertIn('/api/ambassadors/track-click', rules)
         self.assertIn('/api/ambassadors/me', rules)
 
@@ -1233,7 +1233,7 @@ class PriorityAmbassadorRewardTests(AmbassadorTestBase):
     def test_manual_status_change_refreshes_request_metrics(self):
         self.ctx();self.seed_ambassador()
         request_context=self.app.test_request_context();request_context.push();self.addCleanup(request_context.pop)
-        self.db.seed('ambassador_promo_assignments',[{'id':'assignment','ambassador_id':AMB,'month':MONTH,'status':'pending'}])
+        self.db.seed('ambassador_promo_assignments',[{'id':'assignment','message_id':'message','ambassador_id':AMB,'month':MONTH,'status':'pending'}])
         self.assertEqual(svc.assignment_metrics(self.db,AMB,MONTH)['seen_count'],0)
         svc.set_assignment_status(self.db,ADMIN_ID,'assignment','seen',None)
         self.assertEqual(svc.assignment_metrics(self.db,AMB,MONTH)['seen_count'],1)
@@ -1402,7 +1402,7 @@ class AdminPageContinuationTests(AmbassadorTestBase):
         with patch.object(svc,'_profile_basics',return_value={AMB:{'id':AMB,'campus_id':CAMPUS_A}}):
             result=svc.promo_assignments(db,ADMIN_ID,CAMPUS_A)
         self.assertEqual([r['id'] for r in result],[AMB])
-        q.select.assert_called_once_with('*,scope_ambassador:ambassadors!ambassador_id!inner(campus_id)')
+        q.select.assert_called_once_with('*,scope_ambassador:ambassadors!ambassador_id!inner(campus_id,whatsapp_phone)')
         q.eq.assert_any_call('scope_ambassador.campus_id',CAMPUS_A)
         self.assertNotIn(('campus_id',CAMPUS_A),[c.args for c in q.eq.call_args_list])
         self.assertNotIn('scope_ambassador',result[0])
