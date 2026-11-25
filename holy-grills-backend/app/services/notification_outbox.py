@@ -82,6 +82,16 @@ def dispatch_notification(notification_id):
                 'id', meta.get('reference_id')).single().execute() or {}
             if grant.get('ambassador_id') != snapshot['user_id'] or grant.get('status') != 'issued':
                 return finish({'state':'cancelled','error':'ambassador_grant_not_issued_or_owner_changed'})
+        if snapshot.get('type') == 'ambassador_progress_report':
+            if channel != 'email' or db.rpc('hg_ambassador_report_notice_valid', {
+                'p_user': snapshot['user_id'], 'p_campus': (snapshot.get('metadata') or {}).get('report_campus_id')}) is not True:
+                return finish({'state':'cancelled','error':'ambassador_report_no_longer_eligible'})
+        campaign_ttl = None
+        if snapshot.get('type') == 'engagement_cycle':
+            from app.services.engagement_campaigns import dispatch_ttl
+            campaign_ttl = dispatch_ttl(db, {**snapshot, 'campus_id': profile.get('campus_id')})
+            if channel != 'push' or campaign_ttl <= 0:
+                return finish({'state':'cancelled','error':'engagement_cycle_no_longer_due'})
         blast_id=snapshot.get('blast_id')
         if blast_id:
             blast=db.table('notification_blasts').select('status').eq('id',blast_id).single().execute() or {}
@@ -130,6 +140,8 @@ def dispatch_notification(notification_id):
                     snapshot.get('action_url'),meta.get('urgency'),meta.get('push_image'),claim['key'])
         else:
             return finish({'state':'failed','error':'unsupported_channel'})
+        if campaign_ttl is not None:
+            prepared = {**prepared, 'ttl': campaign_ttl}
         began=db.rpc('hg_begin_guest_cart_dispatch' if guest_cart else 'hg_begin_notification_dispatch',{'p_id':notification_id,'p_token':claim['token'],'p_prepared':prepared})
         if began is not True:
             return {'state':'lease_lost'}

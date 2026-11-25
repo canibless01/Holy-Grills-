@@ -66,4 +66,43 @@ Automated verification: 46 targeted activity/report/streak-recovery/operations-a
 
 Actual verification limits: database read boundaries are verified. Actual new-device guest opt-in, native OS permission, device display and real provider delivery for these changes are not claimed. No customer-wide tests or new messages were sent. The new metrics do not reconstruct historical traffic before collection existed.
 
-Remaining implementation: the editable repeating fourteen-day morning/15:00 push campaign, its queue/receipt recovery, configured operating-day/cutoff awareness, nickname/deep-link previews and provider TTL checks. It will remain a draft until a campus admin explicitly enables it.
+The repeating campaign is completed in batch 4 below.
+
+
+## Batch 4 — repeating 14-day campus push campaign
+
+Implemented:
+- Admin → Campaigns & Blasts → “14-day community push campaign”. The editor loads its configuration only when opened. A campus must be selected; changing the super-admin campus resets the editor. Campus admins cannot read or edit another campus, and community managers/students cannot manage campaigns.
+- One optional campaign per campus, initially paused, with 28 editable steps: morning and afternoon for days 1–14. Defaults are 09:00 and 15:00 WAT. Start date and times are editable. The cycle repeats over calendar days; closed operating days are skipped, rather than shifting the cycle.
+- Nickname personalization falls back to the first name, then “friend”. Other supported tokens are name, campus and order_cutoff. Preview renders a selected step without sending. Links are restricted to existing customer routes; images use Cloudinary. Default campaign copy lives in messages.py.
+- Reuses the existing 15-minute scheduled-blast task and durable push outbox. No new beat job, scheduler or hosting service. Queueing is paginated and bounded; missed slots older than 30 minutes are skipped, so recovery never bursts historical messages.
+- Reuses strict campus ordering schedules and checkout capacity status. Closed days, date overrides, cutoff and full capacity suppress ordering pushes. Actual ordering windows remain configurable; no Sunday or 16:00 cutoff is hardcoded in this feature.
+- Recipients must be active students on the campus, with a registered device token and no saved push/promotions opt-out. Anonymous visitors are not silently enrolled in a personalized account campaign. Their separate SDK consent and new-account adoption remain supported.
+- Atomic user/date/slot receipts prevent duplicates across concurrent ticks, crashes, edits and re-enabling a campaign. Each config revision has an audit snapshot; competing saves return a reload conflict.
+- Dispatch rechecks active config revision, recipient/campus, preferences and operating state. Paused, edited or expired notices are cancelled. Push TTL is bounded by the slot expiry and ordering cutoff. The existing outbox allows only this new type’s TTL to decrease on retry; content, app and provider idempotency key stay fixed, and existing dispatch guards are preserved.
+
+Database: 20261125143354_engagement_cycle_campaigns.sql applied successfully to Test Two. Three private RLS-protected tables and guarded service-role RPCs were added. Live read-back verifies no active campaign, no campaign receipt or due send from rollout, denied public/authenticated access and preserved stock/reminder outbox guards. No test records or cleanup were performed on the production database.
+
+Automated verification: 267 targeted ambassador/engagement/reporting/notification-preference/outbox/blast tests pass. Isolated local PostgreSQL tests cover six simultaneous enqueue calls producing one notification/receipt/outbox, interrupted enqueue rollback, interrupted push recovery with the same provider key, shorter-TTL-only replay, foreign-campus/staff/opt-out exclusions, stale edit conflicts, pause/re-enable duplicate protection, audit history and private grants. Native browser tests at 393px and 1280px cover deferred load, day-14 edit, nickname preview, save, pause, stale conflict and reload with zero sends and no horizontal overflow. TypeScript, ESLint and the full frontend production build pass.
+
+Actual provider/device verification: no real campaign was enabled or sent. A production provider acceptance receipt and physical-device display/deep-link tap for this new campaign remain external acceptance, not automated-test claims. Existing user-confirmed push receipt does not prove this new campaign on a physical device. API, worker and frontend deployments must pick up the main commits before the editor and scheduled path are available.
+
+Assigned implementation status: batches 1–4 complete. This track does not include the other chat’s fulfilment, checkout or shared commerce work. Operator action: review the 28 steps and selected campus, then explicitly enable the campaign when ready for real recipients.
+
+
+## Activated campaign and ambassador report mail — 25 November follow-up
+
+The owner explicitly requested activation and receiving the campaign from 26 November. The FUTA campaign is now enabled with all 28 message steps, a 26 November start, and 09:00 / 15:00 WAT slots. Saved preferences and operating/capacity rules remain in force. No immediate or customer-wide test was sent. The owner’s subscribed super-admin account is explicitly enrolled as an owner preview; other staff remain excluded, and its test-account analytics exclusion is unchanged. Observer membership is private, service-managed, role/campus guarded and revocable. It never overrides an opt-out.
+
+Production evidence before this follow-up push: API health reported commit 1775a1e with Redis, Supabase and Auth connected. Recent successful scheduled-blast and cart-scan worker receipts reported the same commit. The public frontend’s deployed AdminNotifications chunk contains the new campaign editor and endpoint. This confirms the existing campaign implementation reached production; future device receipt is still an observation to make at the scheduled time. Vercel management metadata was unavailable because team authorization was required; public asset verification was used instead.
+
+Added automatic ambassador email reports:
+- Mondays, 09:00 WAT: the completed previous week and a clearly labelled monthly progress snapshot. First upcoming report: 30 November.
+- First of each month, 09:00 WAT: completed-month aggregate. First upcoming report: 1 December for November.
+- Each active ambassador receives personal verified sign-ups, qualifying delivered orders, manually confirmed sharing progress, monthly target and current student tier. The team section contains only their campus’s aggregate ambassador count, sign-ups, delivered orders, confirmed shares and current tier distribution. No other member’s contact details, revenue, order values, profit or wallet figures appear.
+- Tier counts are current at report generation, not reconstructed historical month-end tiers. Reports state that explicitly. Preferences are honoured, and recipients who leave the programme or campus before dispatch are rejected.
+- The existing scheduled-blast tick captures the report intent and uses the existing durable email outbox. Per-member/kind/period receipts prevent duplicate capture. A two-day recovery window handles brief outages without a burst of old reports; uncertain provider outcomes keep the outbox’s existing no-blind-retry rule. Campuses with no outstanding eligible report recipient skip the expensive insights read.
+
+Migrations 20261125150729_ambassador_scheduled_reports.sql and 20261125204618_engagement_campaign_owner_observer.sql are applied to Test Two. Live checks verify active FUTA settings, owner eligibility, working count-only report aggregation and denied ordinary authenticated access to private receipts/report RPCs. No past reports were sent on rollout, and no production cleanup was performed.
+
+Automated proof: 280 focused backend tests; local PostgreSQL rollback tests for campus boundaries, current tiers, opt-outs, removal, private grants and safe aggregate output; six concurrent report captures create one receipt/email/outbox. Existing campaign race/retry tests still pass with observer support. Observer tests reject foreign-campus admins, preserve opt-outs, revoke removed observers and prevent self-enrolment. Full frontend build passes. Email transport and physical device receipt for future reports are not claimed from fixture tests.

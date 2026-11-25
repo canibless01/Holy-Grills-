@@ -1,3 +1,4 @@
+import EngagementCampaignPanel from './EngagementCampaignPanel';
 import { plainBlastHtml } from '@/lib/blastPreview';
 import { useState, useEffect, useRef } from 'react';
 import { Send, Bell, Calendar, Clock, CheckCircle2, AlertCircle, Eye, Mail, TrendingUp } from 'lucide-react';
@@ -317,6 +318,7 @@ export default function AdminNotifications() {
 
   return (
     <div className="space-y-4">
+      <EngagementCampaignPanel />
       {/* New Campaign */}
       <Card>
         <h3 className="font-bold text-sm text-foreground mb-3 flex items-center gap-2">
