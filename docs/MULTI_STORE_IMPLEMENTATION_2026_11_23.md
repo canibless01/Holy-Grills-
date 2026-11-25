@@ -1,6 +1,6 @@
 # Multi-store fulfilment — implementation and release record
 
-Updated 23 November 2026. **Implemented in source; store ordering remains disabled.** This record replaces the original design's assumptions where the owner subsequently requested uniform campus operations.
+Updated 25 November 2026. **Implemented in source; store ordering remains disabled.** This record replaces the original design's assumptions where the owner subsequently requested uniform campus operations.
 
 ## Implemented scope
 
@@ -24,10 +24,10 @@ Test Two project: `zaxdkrmzyibkvlsrgmvq`. Migration history was checked again af
 | `20261123153119_store_batch_scope.sql` | Applied once |
 | `20261123153234_store_fulfilment_release_gate.sql` | Applied once |
 | `20261123153609_store_live_readiness.sql` | Applied once |
-| `20261123153640_store_batch_group_key.sql` | Pending; absent from latest history |
-| `20261123193439_store_dispatch_readiness.sql` | Pending; absent from latest history |
+| `20261125085607_store_batch_group_key.sql` | Applied once, 25 November |
+| `20261125085616_store_dispatch_readiness.sql` | Applied once, 25 November |
 
-The pending index migration replaces the old open-batch key with disjoint legacy/store keys, allowing two stores to serve the same gate/window. The final migration supplies dispatch readiness, eligible rider lookup and bounded private RLS helpers, and preserves historical rider completion/payout access after membership removal. Do not enable store ordering before both are applied and verified. Previous timed-out application attempts have uncertain outcomes until history is inspected: check history first, never blindly reapply. If an older payload appears, compare its function definitions and add a follow-up migration for differences.
+The index migration replaces the old open-batch key with disjoint legacy/store keys, allowing two stores to serve the same gate/window. The dispatch migration supplies dispatch readiness, eligible rider lookup and bounded private RLS helpers, and preserves historical rider completion/payout access after membership removal. Both are now applied; live rollback verification passed on 25 November. Operational browser acceptance is still required before activation. Previous timed-out application attempts have uncertain outcomes until history is inspected: check history first, never blindly reapply. If an older payload appears, compare its function definitions and add a follow-up migration for differences.
 
 New configuration tables have RLS enabled and no browser table grants. Public RPCs are service-only invokers. Private policy helpers bind their checks to `auth.uid()` and a fixed search path; the private schema is not exposed. Advisors reported no new store-related warning; intentional RLS-without-policy information reflects backend-only configuration tables, not a reason to grant broad access.
 
@@ -39,13 +39,13 @@ New configuration tables have RLS enabled and no browser table grants. Public RP
 - `tests/sql/store_configuration_rollback.sql`: create/replay, conflicting edits, university links, staff role/campus validation, audit atomicity and grants.
 - `tests/sql/store_order_to_rider_rollback.sql`: guest card pending/verified replay, wallet debit, unpaid preparation refusal, shared capacity across two stores, separate same-gate batches, kitchen RLS/cross-store denial, rider assignment/foreign-store denial, delivery/batch completion, partial-refund replay and conservation, frozen store address and delivered rider history after membership removal.
 - `tests/sql/store_selected_pickup_rollback.sql`: selected-store wallet order/replay, future/unpaid preparation guards, collection replay, fulfillment of already-paid orders after the pickup flag is disabled, zero delivery fee/no rider/no mode switching and unchanged delivery path. Existing legacy pickup rollback regression also passed.
-- Earlier live Test Two configuration tests passed. The live two-store flow passed payment/admission and cross-store kitchen checks, then exposed the old unique batch index when the second store became ready. The corrected complete flow passed locally; a complete corrected live run is still outstanding.
+- Earlier live Test Two configuration tests passed. The live two-store flow passed payment/admission and cross-store kitchen checks, then exposed the old unique batch index when the second store became ready. The corrected complete flow passed locally; all three corrected live fixtures subsequently passed on Test Two on 25 November, including the actual production RLS policies.
 - No real gateway charge, customer email, notification blast, live test-data seed or cleanup was performed.
 
 ## Release checks still required
 
-1. Apply/verify the two pending migrations and run the three rollback fixtures on Test Two. The connector currently returns migration metadata, but even `SELECT 1` times out after reconnection. Do not treat metadata availability as working SQL execution.
-2. Review actual production RLS/grants and the resulting disjoint batch indexes after application; confirm no duplicate migration/function signature and preserve existing non-store permission checks.
+1. Completed 25 November: SQL connectivity recovered, both migrations applied once with their actual history versions, and all three rollback fixtures passed on Test Two. The earlier timeout was an execution limitation, not evidence of application. Source filenames now match applied versions.
+2. Completed 25 November: live catalogue review and rollback tests check actual RLS/grants, disjoint legacy/store batch indexes and helper identities. New configuration tables remain private to the backend. No second store schema or duplicate helper signature was added.
 3. Configure real store addresses/coordinates and active kitchen/rider memberships, then exercise the checkout → kitchen → rider and pickup interfaces in a browser. Native Chromium is blocked before launch by this execution environment's socket restrictions; API/SQL tests do not replace visual acceptance.
 4. Verify deployed provider payment/receipt behavior using the established operational acceptance process before activating the flag. Provider execution was not exercised here.
 
