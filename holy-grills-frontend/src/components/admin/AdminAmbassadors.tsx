@@ -1,3 +1,4 @@
+import AmbassadorWeeklyReport from './AmbassadorWeeklyReport';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useCmsCreateIntent } from '@/lib/useCmsCreateIntent';
 import { Plus, Trash2, Search, Copy, Check, Users, Trophy, Loader2 } from 'lucide-react';
@@ -73,6 +74,7 @@ export default function AdminAmbassadors() {
 
       {tab === 'ambassadors' ? (
         <Card className="p-4 space-y-3">
+          <AmbassadorWeeklyReport />
           <div className="flex justify-between items-center flex-wrap gap-2">
             <p className="text-xs text-muted-foreground">{rows.length} active ambassador{rows.length === 1 ? '' : 's'}</p>
             {isFinancialAdmin && (

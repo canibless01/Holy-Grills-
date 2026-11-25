@@ -1,3 +1,4 @@
+import HpSourceReconciliation from './HpSourceReconciliation';
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
@@ -428,6 +429,7 @@ export default function AdminAnalytics() {
       <EngagementDashboard />
       <SquadOrdersDashboard range={range} />
       <HpEcosystemDashboard range={range} />
+      <HpSourceReconciliation range={range} />
       </>
       )}
 

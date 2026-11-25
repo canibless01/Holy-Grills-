@@ -6,12 +6,13 @@ import ImageUploader from './ImageUploader';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
 import { toast } from '@/components/ui/use-toast';
 import { msg } from '@/lib/messages';
+import { PromoActions, AmbassadorWhatsAppContact } from './AmbassadorPromoActions';
 import { buildWhatsAppShareUrl } from '@/lib/whatsappShare';
 
 const LINK_TOKENS = [/{{link}}/g, /{link}/g, /{{LINK}}/g];
 const personalize = (caption: string, link: string) =>
   LINK_TOKENS.reduce((out, token) => out.replace(token, link), caption || '');
-const trackingLink = (code?: string | null) => (code ? `${window.location.origin}/?ref=${code}` : '');
+const trackingLink = (code?: string | null) => (code ? `${window.location.origin}/register?ref=${encodeURIComponent(code)}` : '');
 
 export default function AdminAmbassadorPromo() {
   const [messages, setMessages] = useState<any[]>([]);
@@ -51,7 +52,7 @@ export default function AdminAmbassadorPromo() {
       )}
 
       {messages.map((m) => (
-        <PromoMessageRow key={m.id} message={m} open={openId === m.id}
+        <PromoMessageRow key={`${m.id}:${m.revision || 1}`} message={m} onSaved={load} open={openId === m.id}
           onToggle={() => setOpenId((id) => (id === m.id ? null : m.id))}
           />
       ))}
@@ -61,7 +62,7 @@ export default function AdminAmbassadorPromo() {
   );
 }
 
-function PromoMessageRow({ message, open, onToggle }: { message: any; open: boolean; onToggle: () => void }) {
+function PromoMessageRow({ message, open, onToggle, onSaved }: { message: any; open: boolean; onToggle: () => void; onSaved: () => void }) {
   const [assignments, setAssignments] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
   const loaded = useRef(false);
@@ -110,6 +111,7 @@ function PromoMessageRow({ message, open, onToggle }: { message: any; open: bool
         <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
+      <PromoActions message={message} onSaved={onSaved} />
       {open && (
         <div className="border-t border-border p-3 space-y-2">
           {assignmentLoading && <p role="status">Loading assignments…</p>}
@@ -124,7 +126,7 @@ function PromoMessageRow({ message, open, onToggle }: { message: any; open: bool
                 {personalize(message.caption, trackingLink(a.profile?.referral_code))}
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                <a href={buildWhatsAppShareUrl(personalize(message.caption, trackingLink(a.profile?.referral_code)), a.profile?.phone)} target="_blank" rel="noopener noreferrer"
+                <a href={buildWhatsAppShareUrl(personalize(message.caption, trackingLink(a.profile?.referral_code)), (a.profile?.ambassador_whatsapp || a.profile?.phone))} target="_blank" rel="noopener noreferrer"
                   className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-success text-white text-[11px] font-bold">
                   <Share2 className="w-3.5 h-3.5" />
                   {msg('FE_ADMIN_AMBASSADOR_PROMO_SHARE', 'Share on WhatsApp')}
@@ -145,6 +147,7 @@ function PromoMessageRow({ message, open, onToggle }: { message: any; open: bool
                   ))}
                 </div>
               </div>
+              <AmbassadorWhatsAppContact id={a.ambassador_id} value={a.profile?.ambassador_whatsapp} onSaved={phone => setAssignments(rows => rows.map(row => row.ambassador_id === a.ambassador_id ? { ...row, profile: { ...row.profile, ambassador_whatsapp: phone } } : row))} />
               {a.evidence_note && <div className="text-[10px] italic text-muted-foreground">“{a.evidence_note}”</div>}
             </div>
           ))}

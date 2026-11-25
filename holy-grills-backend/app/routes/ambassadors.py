@@ -144,7 +144,7 @@ def my_ambassador_programme():
     # cannot read another student's programme; the self-read RLS policies stay
     # as defense in depth for any direct table access.
     data = svc.ambassador_dashboard(
-        get_db(), g.user_id, current_app.config.get("FRONTEND_URL", ""))
+        get_db(), g.user_id, current_app.config.get("FRONTEND_URL", ""), verified_metrics=True)
     if data is None:
         # Not an ambassador — a normal 200 flag, not an error, so the student
         # dashboard can hide the card without a failed request.
@@ -170,7 +170,8 @@ def my_meal_discounts():
 def staff_list_ambassadors():
     db = get_db()
     month = svc.parse_month(request.args.get("month"))
-    rows = svc.staff_ambassador_list(db, _staff_scope(), _is_super())
+    from app.services.ambassador_reports import insights
+    rows = insights(db, g.user_id, _staff_scope(), month)['ambassadors']
     return jsonify({"ambassadors": rows, "month": month}), 200
 
 
@@ -463,3 +464,35 @@ def staff_create_grant():
 @ambassadors_bp.errorhandler(svc.AmbassadorError)
 def programme_error(error):
     return jsonify({"error": str(error)}), error.status
+
+
+@ambassadors_bp.route("/staff/promo-messages/<message_id>", methods=["PATCH", "DELETE"])
+@require_role(COMMUNITY_MANAGER_ROLE, "admin")
+def staff_manage_promo(message_id):
+    from app.services import ambassador_promotions
+    if not validate_uuid(message_id):
+        return jsonify({"error": MSG.RESOURCE_NOT_FOUND}), 404
+    data = _body() or {}
+    result = ambassador_promotions.manage(get_db(), g.user_id, message_id, _staff_scope(),
+        data.get('revision'), 'delete' if request.method == 'DELETE' else 'edit', data)
+    return jsonify(result), 200
+
+
+@ambassadors_bp.route("/staff/ambassadors/<ambassador_id>/whatsapp", methods=["PATCH"])
+@require_role(COMMUNITY_MANAGER_ROLE, "admin")
+def staff_ambassador_whatsapp(ambassador_id):
+    from app.services import ambassador_promotions
+    if not validate_uuid(ambassador_id):
+        return jsonify({"error": MSG.RESOURCE_NOT_FOUND}), 404
+    data = _body() or {}
+    if 'whatsapp_phone' not in data:
+        return jsonify({"error": MSG.AMBASSADOR_WHATSAPP_INVALID}), 400
+    result = ambassador_promotions.contact(get_db(), g.user_id, ambassador_id, _staff_scope(), data['whatsapp_phone'])
+    return jsonify(result), 200
+
+
+@ambassadors_bp.route("/staff/weekly-report", methods=["GET"])
+@require_role(COMMUNITY_MANAGER_ROLE, "admin")
+def staff_weekly_report():
+    from app.services.ambassador_reports import weekly
+    return jsonify(weekly(get_db(), g.user_id, _staff_scope(), request.args.get('week'))), 200
