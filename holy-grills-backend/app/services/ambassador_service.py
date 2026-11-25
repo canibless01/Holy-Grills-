@@ -940,7 +940,7 @@ def list_grants(db, ambassador_id: str | None = None, ambassador_ids: list[str] 
 # ---------------------------------------------------------------------------
 # Ambassador self-service dashboard payload
 # ---------------------------------------------------------------------------
-def ambassador_dashboard(db, user_id: str, frontend_url: str) -> dict | None:
+def ambassador_dashboard(db, user_id: str, frontend_url: str, *, verified_metrics=False) -> dict | None:
     tag = db.table(AMBASSADOR_TABLE).select("*").eq(
         "profile_id", user_id).eq("status", "active").single().execute()
     if not tag:
@@ -950,9 +950,17 @@ def ambassador_dashboard(db, user_id: str, frontend_url: str) -> dict | None:
         "id,full_name,nickname,referral_code,campus_id"
     ).eq("id", user_id).single().execute() or {}
     code = profile.get("referral_code")
-    lifetime = lifetime_metrics(db, user_id)
-    month_metrics = milestone_metrics(db, user_id, month)
-    activity = assignment_metrics(db, user_id, month)
+    if verified_metrics:
+        from app.services.ambassador_reports import insights
+        report = insights(db, user_id, tag.get('campus_id'), month, only=user_id)
+        verified = (report.get('ambassadors') or [{}])[0]
+        lifetime = verified.get('lifetime') or {'total_orders': 0, 'total_signups': 0, 'total_order_value': 0}
+        activity = verified.get('month') or {}
+        month_metrics = {key: activity.get(key, 0) for key in ('orders', 'signups', 'shares')}
+    else:
+        lifetime = lifetime_metrics(db, user_id)
+        month_metrics = milestone_metrics(db, user_id, month)
+        activity = assignment_metrics(db, user_id, month)
     milestones = evaluate_milestones(db, user_id, month)
     discounts = list_my_discounts(db, user_id)
     redemptions = db.table("ambassador_meal_discount_redemptions").select(

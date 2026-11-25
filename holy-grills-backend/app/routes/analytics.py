@@ -776,51 +776,34 @@ def hp_analytics():
         q = q.eq("campus_id", campus_id)
     hp_txns = q.execute() or []
 
-    # hp_transactions.amount is always positive (CHECK amount > 0); the direction lives in `type`.
-    # B-9: exclude hp_transfer_received from earned and hp_transfer_sent from spent, report transfers separately
-    earned = sum(t["amount"] for t in hp_txns if t.get("type") == "earn" and t.get("source") != "hp_transfer_received")
-    spent = sum(t["amount"] for t in hp_txns if t.get("type") == "spend" and t.get("source") != "hp_transfer_sent")
-    expired = sum(t["amount"] for t in hp_txns if t.get("type") == "expire")
-    pending = sum(t["amount"] for t in hp_txns if t.get("status") == "pending" and t["amount"] > 0)
-    transfer_received = sum(t["amount"] for t in hp_txns if t.get("source") == "hp_transfer_received")
-    transfer_sent = sum(t["amount"] for t in hp_txns if t.get("source") == "hp_transfer_sent")
-
-    # All 4 Tiers check
+    from app.services.hp_reporting import period_totals
+    totals = period_totals(hp_txns)
     tiers = db.table("hp_tiers").select("id,name,slug,min_points").order("sort_order").execute() or []
+    owners_query = db.table("profiles").select("hp_balance,current_tier_id,is_active")
+    if campus_id:
+        owners_query = owners_query.eq("campus_id", campus_id)
+    owners = owners_query.execute() or []
+    tier_distribution = [{"tier": tier['name'], "slug": tier.get('slug'),
+        "count": sum(1 for owner in owners if owner.get('is_active') and owner.get('current_tier_id') == tier['id'])} for tier in tiers]
+    return jsonify({"from_date": from_date, "to_date": to_date, **totals,
+        "hp_in_circulation": sum(int(p.get('hp_balance') or 0) for p in owners),
+        "balance_basis": "current", "flow_basis": "selected_period",
+        "tier_distribution": tier_distribution}), 200
 
-    tier_distribution = []
-    if tiers:
-        for tier in tiers:
-            tq = db.table("profiles").select("id", count="exact").eq("current_tier_id", tier["id"]).eq("is_active", "true")
-            if campus_id:
-                tq = tq.eq("campus_id", campus_id)
-            res = tq.execute()
-            cnt = res.get("count", 0) if isinstance(res, dict) else len(res or [])
-            tier_distribution.append({"tier": tier["name"], "slug": tier.get("slug"), "count": cnt})
-    else:
-        # Fallback to standard 4 tiers if hp_tiers table is not populated yet
-        tier_names = [
-            ("Ember / Starter", 0),
-            ("Flame", 2500),
-            ("Blaze / Inferno", 7500),
-            ("Holy", 20000),
-        ]
-        for name, _ in tier_names:
-            tier_distribution.append({"tier": name, "count": 0})
 
-    return jsonify({
-        "from_date": from_date,
-        "to_date": to_date,
-        "hp_earned_active": earned,
-        "hp_spent": spent,
-        "hp_expired": expired,
-        "hp_pending": pending,
-        "hp_transfer_received": transfer_received,
-        "hp_transfer_sent": transfer_sent,
-        "hp_in_circulation": earned - spent - expired,
-        "redemption_rate": round(spent / earned * 100, 1) if earned > 0 else 0,
-        "tier_distribution": tier_distribution,
-    }), 200
+@analytics_bp.route("/hp-reconciliation", methods=["GET"])
+@require_role("admin")
+def hp_reconciliation():
+    try:
+        _, _, start, end = _date_range(30)
+        campus = _scoped_campus()
+    except ValueError:
+        return jsonify({"error": MSG.ANALYTICS_INVALID_DATE}), 400
+    result = get_db().rpc('hg_hp_reconciliation', {'p_actor': g.user_id, 'p_scope': campus, 'p_start': start, 'p_end': end})
+    if not isinstance(result, dict) or result.get('error'):
+        forbidden = isinstance(result, dict) and result.get('error') == 'forbidden'
+        return jsonify({"error": MSG.RESOURCE_ACCESS_DENIED if forbidden else MSG.ANALYTICS_INVALID_DATE}), 403 if forbidden else 400
+    return jsonify(result), 200
 
 
 @analytics_bp.route("/items-menu", methods=["GET"])

@@ -4195,6 +4195,28 @@ class MSG:
     FE_STOCK_REPORT_HIDE = "Hide stock report"
     FE_STOCK_REPORT_SHOW = "Stock report & CSV"
 
+    # Ambassador reports and HP reconciliation (engagement track).
+    FE_HP_SOURCE_REPORT = "HP balances by source"
+    FE_HP_REPORT_BASIS = "Active and pending balances are current. Awards and spending use the selected period. Pending awards are not spendable; source balances use the unspent ledger amounts."
+    FE_HP_REPORT_LOADING = "Loading HP reconciliation…"
+    FE_HP_ACTIVE_BALANCE = "Account active HP"
+    FE_HP_LEDGER_BALANCE = "Unspent ledger HP"
+    FE_HP_PENDING_BALANCE = "Pending HP"
+    FE_HP_BALANCE_DIFFERENCE = "Reconciliation difference"
+    FE_HP_SOURCE = "Source"
+    FE_HP_PERIOD_AWARDED = "Active awards in period"
+    AMBASSADOR_REPORT_RANGE = "Choose a valid week or programme month."
+    AMBASSADOR_REPORT_PERSON = "Ambassador"
+    AMBASSADOR_WEEKLY_TITLE = "Holy Grills ambassador week: {start} to {end}"
+    AMBASSADOR_WEEKLY_TOTAL = "Together: {signups} attributed signups, {orders} delivered orders, ₦{retained_order_value:,.2f} retained order value, {shared_count}/{assigned_count} confirmed assignment shares."
+    AMBASSADOR_WEEKLY_ROW = "{name}: {signups} signups · {orders} delivered orders · {shared_count}/{assigned_count} confirmed shares."
+    FE_AMBASSADOR_WEEKLY_REPORT = "Weekly ambassador report"
+    FE_AMBASSADOR_REPORT_WEEK = "Week containing"
+    FE_AMBASSADOR_REPORT_LOAD = "Prepare report"
+    FE_AMBASSADOR_REPORT_COPY = "Copy report"
+    FE_AMBASSADOR_REPORT_SHARE = "Share report on WhatsApp"
+    FE_AMBASSADOR_REPORT_HELP = "Delivered, paid orders after completed refunds. Sharing is confirmed manually; opening WhatsApp is not proof of a share."
+
 M = MSG
 
 

@@ -647,6 +647,7 @@ const riders = {
 // token) and could not be verified. AdminDashboard guards every field so it
 // renders live values where the shape matches and degrades gracefully otherwise.
 const analytics = {
+  async hpReconciliation(params = {}) { return apiClient.get('/analytics/hp-reconciliation', params); },
   async wallet(params = {}) { return apiClient.get('/analytics/wallet', params); },
   async dashboard(params = {}) { return apiClient.get('/analytics/dashboard', params); },
   async sales(params = {}) { return apiClient.get('/analytics/sales', params); },
@@ -1537,6 +1538,7 @@ const ambassadors = {
   },
   // Ambassador self-service (their own programme data only).
   async myProgramme() { return apiClient.get('/ambassadors/me'); },
+  async weeklyReport(week: string) { return apiClient.get('/ambassadors/staff/weekly-report', { week }); },
   async myMealDiscounts() {
     const r = await apiClient.get('/ambassadors/meal-discounts');
     return (r && r.discounts) || [];
