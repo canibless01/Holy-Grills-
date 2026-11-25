@@ -62,6 +62,7 @@ def create_app(config_class=Config, *, background=False):
 
     from flask_cors import CORS
     from flasgger import Swagger
+    from app.routes.engagement_campaigns import engagement_campaigns_bp
     from app.routes.engagement import engagement_bp
     from app.routes.health import health_bp
     from app.routes.messages import messages_bp
@@ -250,6 +251,7 @@ def create_app(config_class=Config, *, background=False):
     app.register_blueprint(squads_bp, url_prefix="/api/squads")
     app.register_blueprint(admin_economics_bp, url_prefix="/api/admin/economics")
     app.register_blueprint(ambassadors_bp, url_prefix="/api/ambassadors")
+    app.register_blueprint(engagement_campaigns_bp, url_prefix="/api/engagement-campaign")
     app.register_blueprint(engagement_bp, url_prefix="/api/engagement")
     app.register_blueprint(health_bp, url_prefix="/api")
     app.register_blueprint(messages_bp, url_prefix="/api/messages")

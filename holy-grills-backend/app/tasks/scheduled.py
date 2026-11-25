@@ -917,6 +917,14 @@ def send_scheduled_blasts(self, campus_id=None):
         return {"skipped": "Lock not acquired", "notification_recovery": recovery, "refund_recovery": refund_recovery, "wallet_transfer_recovery": wallet_transfer_recovery}
 
     try:
+        # Same beat tick and durable outbox; no additional scheduler/service.
+        try:
+            from app.services.engagement_campaigns import enqueue_due
+            cycle = enqueue_due(db, campus_id=campus_id)
+            if cycle.get("queued"):
+                recover_due_notifications(limit=100)
+        except Exception as exc:
+            logger.warning("Engagement campaign recovery unavailable: %s", type(exc).__name__)
         now = datetime.now(timezone.utc).isoformat()
         query = (
             db.table("notification_blasts")
