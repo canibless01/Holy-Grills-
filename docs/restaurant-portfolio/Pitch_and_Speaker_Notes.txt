@@ -1,0 +1,39 @@
+OUTREACH AND WALKTHROUGH
+Blessing Oluwasegun | Restaurant operations portfolio
+
+WHATSAPP / EMAIL OPENER
+Hi [Name], I’m Blessing Oluwasegun. I built the ordering and operations system behind Holy Grills—from the online menu and paid orders to kitchen preparation, delivery and stock control. I’d like to show you how a separately branded version could fit [Restaurant] and its branches. I’ve attached a short portfolio. Would a brief walkthrough be useful?
+
+60–90 SECOND STORY
+A restaurant needs more than a website showing food. Someone has to confirm payment, tell the kitchen what to prepare, organise deliveries and understand the day’s sales and stock movements.
+
+I built those connected workflows for Holy Grills. Customers browse a visual menu and place orders; the operations team works from order records, a preparation view and delivery batches. The administrative tools cover menu availability, stock and reporting.
+
+These screenshots are from that existing implementation, using real menu and historical paid-order data with personal details masked. They are not mockups for your restaurant.
+
+For your business, the proposal would be an independent installation: your brand, your database, your payment account and your team’s access. We would first map your branches and daily process, then agree which functions belong in the first release. That keeps the proposal focused on how your team actually works.
+
+PAGE-BY-PAGE TALKING POINTS
+1. Cover: this is an existing system I built, which can be adapted for your restaurant.
+2. Menu: show prices, product photos, categories and sold-out states. Ask how they currently communicate availability.
+3. Order desk: explain payment state, delivery fee and order details. Ask who confirms and dispatches orders.
+4. Kitchen: explain grouped preparation quantities and readiness. This screenshot uses a historical order window, not a live queue.
+5. Delivery: explain fees by area, batches and rider records. Ask whether they have their own riders or use partners.
+6. Stock: explain purchase/usage units and low-stock thresholds. This is the actual setup form; no ingredient balances were invented.
+7. Reporting: explain the historical figures and CSV exports. Do not present the five-order sample as a scale or revenue claim.
+8. Toolkit: choose the relevant capabilities rather than promising every module.
+9. Tailoring: explain independent installations and deliberate branch setup.
+10. Next steps: agree one service-day workflow and a scoped first release.
+
+DISCOVERY QUESTIONS
+- How many branches, and can customers choose one?
+- Which staff can change prices, stock, orders and refunds?
+- Are stocks and preparation queues separate for each branch?
+- Delivery, collection, dine-in, or a combination?
+- Immediate orders, preorder windows, or both?
+- Which payment provider and settlement account?
+- Who maintains menu photos, availability and operating hours?
+- Which reports are required daily?
+
+SENDING
+Send only the portfolio PDF to prospects. Keep Internal_Adaptation_Scope.txt for your planning. No messages have been sent on your behalf.

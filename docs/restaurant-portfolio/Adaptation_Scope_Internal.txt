@@ -1,0 +1,48 @@
+INTERNAL PLANNING NOTES — NOT A CLIENT QUOTATION
+22 November 2026
+
+MODEL CONFIRMED
+Each restaurant gets an independent branded installation and database, with its own domain, staff, menu, payment account and messaging integrations. It is not a shared marketplace. Multiple stores can live inside one restaurant’s installation after branch scoping is implemented and verified.
+
+COMPLEXITY
+Adapting the core is feasible and substantially reuses the existing application. It is not just a logo replacement. A first adaptation has moderate-to-high engineering complexity because Holy Grills currently uses academic campuses, student signup fields and brand-specific reward/engagement features. Branches in the same campus must be distinct operational entities; renaming “campus” everywhere is insufficient.
+
+WHAT CAN BE REUSED
+- Storefront content and menu configuration.
+- Categories, product options/add-ons and availability.
+- Guest/member ordering, payment verification and tracking.
+- Administrative orders, supported cancellation/refund controls.
+- Kitchen preparation and readiness/handoff workflows.
+- Delivery areas, fees, batches and rider views.
+- Ingredient units, stock movements and thresholds.
+- Reporting, exports, operational communication and role controls.
+
+WHAT MUST BE SCOPED FOR A RESTAURANT
+- Remove mandatory academic faculty/department/level fields from ordinary customer signup.
+- Model restaurant branches explicitly: order ownership, stock, menu overrides, staff roles, service areas and queues.
+- Define immediate-service versus preorder/cutoff behaviour.
+- Choose relevant modules and safely disable dependencies.
+- Replace brand copy, imagery, policies, SEO, templates and provider identities.
+- Provision separate database/API/frontend/worker services and credentials.
+- Prove the selected flows under that restaurant’s actual configuration.
+
+OPTIONAL / NOT IN THE PROSPECT PORTFOLIO
+Holy Points, ambassadors, streaks, legacy gifts, campus community notifications, events and marketplace are Holy Grills-specific or optional. Wallet, automatic funding and transfers can be discussed only if useful to a client; they are not promised in the first restaurant package. Do not casually remove their database tables/functions/triggers before mapping dependencies.
+
+DATABASE BLUEPRINT
+The existing schema-export kit can extract tables, constraints, indexes, functions, triggers, policies and grants without customer/order/menu rows. Free-tier Supabase does not itself prevent a schema-only pg_dump. Direct PostgreSQL connectivity has been the practical blocker in this environment. A full live SQL export has NOT yet been obtained. The existing inventory and local restore safeguards do not substitute for the final live dump.
+
+Use a schema-only export plus reviewed minimal configuration seeds for a clean installation. Do not copy Holy Grills customers, prices, orders, wallets or financial history into a client database. Extension/auth/storage dependencies, role grants, migrations and application-required configuration still need an empty-project restore check.
+
+NEXT.JS STATUS
+The Home/Menu public Next.js pilot is implemented, tested and merged into main as a separate holy-grills-next folder. It is not the production frontend. Authentication, cart, checkout, staff pages, PWA and full CMS parity remain to be migrated. No separate Vercel pilot deployment has been created by this work.
+
+The gradual pilot should server-render the public Home/Menu using the existing Python API, with scoped caching and a separate preview. Database-driven content remains database-driven. Later phases must prove authentication, cart, checkout, payment callbacks, PWA, notifications and each staff role before cutover. Private account/admin/kitchen/rider pages should remain authenticated and excluded from search indexing. Next.js can improve initial rendering and public crawlability; it cannot guarantee faster backend responses by itself.
+
+COST / COMMERCIAL SCOPE
+Each independent installation has its own hosting, database, messaging and payment-provider costs. Reuse lowers implementation effort; ongoing maintenance still needs a shared release process. Quote timing and price after branch, ordering and stock requirements are agreed. Do not promise an overnight complete restaurant platform or an already verified multi-store migration.
+
+PORTFOLIO DATA AND SAFETY
+Read-only snapshot of 22 actual menu items and five historical paid, delivered orders. Personal customer/staff contacts were not retrieved. Customer labels and visible order identifiers were masked. Administrative and role-specific screens were rendered locally using the snapshot; no production login impersonation or business-state mutation was performed. No active kitchen tickets or ingredient stock records were invented. Screenshots are a portfolio illustration of the existing UI, not proof of every end-to-end workflow or a new client deployment.
+
+The source GitHub repository is public. Keep live snapshots and this portfolio outside tracked source. Existing production code, prices, orders and provider configuration were not changed for this portfolio.
