@@ -44,9 +44,10 @@ with sync_playwright() as p:
   ctx.route('**/api/**',api);page=ctx.new_page();page.on('pageerror',lambda error:errors.append(str(error)))
   page.goto(BASE+('/kitchen' if role=='kitchen' else '/admin?section=store'),wait_until='domcontentloaded')
   page.get_by_role('button',name='Central kitchen & store supplies',exact=True).click()
-  expect(page.get_by_role('heading',name='Central kitchen & store supplies',exact=True)).to_be_visible()
+  expect(page.get_by_role('heading',name='Supply desk',exact=True)).to_be_visible()
   location=page.get_by_label('Stock location',exact=True)
   if role=='admin':
+   page.get_by_text('Tracking settings',exact=True).click()
    page.get_by_label('Allocate this item to stores',exact=True).click();page.get_by_role('button',name='Transfer stock',exact=True).click()
    dialog=page.get_by_role('dialog');dialog.get_by_label('Quantity in usage units',exact=True).fill('60');dialog.get_by_label('Reason / dispatch note',exact=True).fill('Dispatch to counter')
    dialog.get_by_role('button',name='Record movement',exact=True).click();expect(dialog.get_by_role('alert')).to_contain_text('Controlled lost response')
@@ -61,5 +62,6 @@ with sync_playwright() as p:
   assert calls[-1]['store_id']==S and calls[-1]['action']=='usage' and state['store']==55 and state['total']==95
   assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'),(role,width)
   assert not errors,errors
+  page.wait_for_timeout(5200)
   page.screenshot(path=f'/workspace/work/multi-store/stock-{role}-{width}.png',full_page=True);print(json.dumps({'role':role,'width':width,'passed':True}),flush=True);ctx.close()
  b.close()

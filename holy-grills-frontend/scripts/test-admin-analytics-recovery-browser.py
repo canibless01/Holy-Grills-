@@ -37,11 +37,11 @@ with sync_playwright() as p:
   ctx.route('**/api/**',api);ctx.route('https://*.onesignal.com/**',lambda r:r.abort())
   page=ctx.new_page();page.set_default_timeout(15000);page.clock.set_fixed_time(datetime(2026,11,14,23,30,tzinfo=timezone.utc));page.on('pageerror',lambda e:errors.append(str(e)));page.goto(BASE+'/admin?section=analytics',wait_until='domcontentloaded',timeout=30000)
   alert=page.get_by_role('alert').filter(has_text='Analytics could not be loaded completely.');expect(alert).to_be_visible();expect(page.get_by_label('To date',exact=True)).to_have_value('2026-11-15');expect(page.get_by_label('From date',exact=True)).to_have_value('2026-10-16');assert not page.get_by_text('Revenue (Delivered)',exact=True).count()
-  state['fail']=False;alert.get_by_role('button',name='Retry',exact=True).click();expect(page.get_by_text('Revenue (Delivered)',exact=True)).to_be_visible();assert '₦1,234' in page.locator('body').inner_text();assert state['brands']==1
+  state['fail']=False;alert.get_by_role('button',name='Retry',exact=True).click();expect(page.get_by_text('Revenue (Delivered)',exact=True)).to_be_visible();assert '₦1,234' in page.locator('body').inner_text();assert state['brands']==0
   state['hold']=True;page.get_by_role('button',name='7d',exact=True).click();page.wait_for_timeout(150);assert state['held'];expect(page.get_by_label('From date',exact=True)).to_be_visible()
   state['hold']=False;page.get_by_role('button',name='90d',exact=True).click();expect(page.get_by_text('Revenue (Delivered)',exact=True)).to_be_visible()
   for route in state['held']:route.fulfill(status=200,json={'total_revenue':9999,'order_count':999})
-  page.wait_for_timeout(150);assert '₦9,999' not in page.locator('body').inner_text();assert state['brands']==1
+  page.wait_for_timeout(150);assert '₦9,999' not in page.locator('body').inner_text();assert state['brands']==0
   page.get_by_label('From date',exact=True).fill('2026-12-01');expect(page.get_by_role('alert')).to_contain_text('Choose a valid start and end date');assert not any(q.get('from_date')==['2026-12-01'] for _,q in state['reads'])
   page.get_by_role('button',name='30d',exact=True).click();expect(page.get_by_text('Revenue (Delivered)',exact=True)).to_be_visible()
   page.get_by_role('button',name='orders',exact=True).click();expect(page.get_by_text('Export failed. Please retry.',exact=True)).to_be_visible();state['export_fail']=False

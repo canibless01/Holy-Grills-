@@ -76,6 +76,10 @@ export default function AdminAnalytics() {
   const [brandError, setBrandError] = useState(false);
   const [brandLoading, setBrandLoading] = useState(true);
   const [tab, setTab] = useState('sales');
+  const groupVersion = useRef(0);
+  const [groupState, setGroupState] = useState({ key: '', loading: true, error: '' });
+  const groupKey = JSON.stringify([fromDate, toDate, tab]);
+  const currentGroup = groupState.key === groupKey ? groupState : { loading: true, error: '' };
   const [brandPartnerships, setBrandPartnerships] = useState([]);
   const [brandModal, setBrandModal] = useState(false);
   const [brandForm, setBrandForm] = useState({ brand_name: '', contact_email: '', requested_data: {} });
@@ -95,20 +99,12 @@ export default function AdminAnalytics() {
       setLoadError(msg('FE_ANALYTICS_RANGE_INVALID','Choose a valid start and end date, with the start no later than the end.'));
       setLoading(false); return;
     }
-    const [s, u, h, o, it, rt, rf, gf, mp, ab] = await Promise.allSettled([
-      liveApi.analytics.sales(range),
-      liveApi.analytics.users(range),
-      liveApi.admin.getAnalyticsHp(range),
-      liveApi.analytics.orders(range),
-      liveApi.analytics.items(range),
-      liveApi.analytics.retention({ weeks: 12 }),
-      liveApi.admin.getAnalyticsReferrals(),
-      liveApi.analytics.gifts(),
-      liveApi.analytics.marketplace(),
-      liveApi.analytics.abandonedCarts(),
+    const [s, u, h, o] = await Promise.allSettled([
+      liveApi.analytics.sales(range), liveApi.analytics.users(range),
+      liveApi.admin.getAnalyticsHp(range), liveApi.analytics.orders(range),
     ]);
     if (version !== loadVersion.current) return;
-    if ([s,u,h,o,it,rt,rf,gf,mp,ab].some(result => result.status === 'rejected')) {
+    if ([s,u,h,o].some(result => result.status === 'rejected')) {
       setLoadError(msg('FE_ANALYTICS_READ_FAILED','Analytics could not be loaded completely. Retry before using these figures.'));
       setLoading(false); return;
     }
@@ -116,17 +112,31 @@ export default function AdminAnalytics() {
     setUsers(u.status === 'fulfilled' ? body(u.value) : null);
     setHp(h.status === 'fulfilled' ? h.value : null);
     setOrders(o.status === 'fulfilled' ? body(o.value) : null);
-    if (it.status === 'fulfilled') { const v = body(it.value); setItems(Array.isArray(v) ? v : (v?.items || [])); } else setItems([]);
-    setRetention(rt.status === 'fulfilled' ? body(rt.value) : null);
-    setReferrals(rf.status === 'fulfilled' ? body(rf.value) : null);
-    setGifts(gf.status === 'fulfilled' ? body(gf.value) : null);
-    setMarketplace(mp.status === 'fulfilled' ? body(mp.value) : null);
-    setAbandoned(ab.status === 'fulfilled' ? body(ab.value) : null);
     setLoading(false);
 
   };
 
   useEffect(() => { void load(); return () => { loadVersion.current++; }; }, [fromDate, toDate]);
+
+  // Expensive cohort/auxiliary reports belong to the tab that displays them.
+  // A slow hidden report must not hold the revenue overview behind one spinner.
+  const loadGroup = async () => {
+    const version = ++groupVersion.current;
+    setGroupState({ key: groupKey, loading: true, error: '' });
+    if (!fromDate || !toDate || fromDate > toDate) return;
+    const jobs = tab === 'sales' ? [liveApi.analytics.items(range), liveApi.analytics.marketplace(), liveApi.analytics.abandonedCarts()]
+      : tab === 'customers' ? [liveApi.analytics.retention({ weeks: 12 }), liveApi.admin.getAnalyticsReferrals(), liveApi.analytics.gifts()] : [];
+    const values = await Promise.allSettled(jobs);
+    if (version !== groupVersion.current) return;
+    if (values.some(value => value.status === 'rejected')) {
+      setGroupState({ key: groupKey, loading: false, error: msg('FE_ANALYTICS_READ_FAILED', 'Analytics could not be loaded completely. Retry before using these figures.') }); return;
+    }
+    const data = values.map(value => value.status === 'fulfilled' ? body(value.value) : null);
+    if (tab === 'sales') { setItems(Array.isArray(data[0]) ? data[0] : data[0]?.items || []); setMarketplace(data[1]); setAbandoned(data[2]); }
+    if (tab === 'customers') { setRetention(data[0]); setReferrals(data[1]); setGifts(data[2]); }
+    setGroupState({ key: groupKey, loading: false, error: '' });
+  };
+  useEffect(() => { void loadGroup(); return () => { groupVersion.current++; }; }, [groupKey]);
 
   const loadBrands = async () => {
     const version = ++brandVersion.current; setBrandLoading(true); setBrandError(false);
@@ -134,7 +144,7 @@ export default function AdminAnalytics() {
     catch { if (version === brandVersion.current) setBrandError(true); }
     finally { if (version === brandVersion.current) setBrandLoading(false); }
   };
-  useEffect(() => { void loadBrands(); return () => { brandVersion.current++; }; }, []);
+  useEffect(() => { if (tab === 'customers') void loadBrands(); return () => { brandVersion.current++; }; }, [tab]);
 
   const submitBrandPartnership = async () => {
     if (!brandForm.brand_name || !brandForm.contact_email) {
@@ -264,7 +274,9 @@ export default function AdminAnalytics() {
         ))}
       </div>
 
-      {tab === 'sales' && (
+      {currentGroup.loading && <div role="status"><Skeleton className="h-64" /></div>}
+      {currentGroup.error && <Card className="p-5 space-y-3"><p role="alert">{currentGroup.error}</p><button className="rounded-full bg-primary px-4 py-2 text-sm font-bold text-white" onClick={() => void loadGroup()}>{msg('FE_LOOKUP_RETRY', 'Retry')}</button></Card>}
+      {!currentGroup.loading && !currentGroup.error && tab === 'sales' && (
       <>
       <Card className="p-4">
         <SectionTitle icon={Download} title="Export (CSV)" sub={`${fromDate} → ${toDate} · GET /analytics/export`} />
@@ -337,7 +349,7 @@ export default function AdminAnalytics() {
       </>
       )}
 
-      {tab === 'customers' && (
+      {!currentGroup.loading && !currentGroup.error && tab === 'customers' && (
       <>
       <Card className="p-5">
         <SectionTitle icon={Users} title="Cohort Retention" sub="Share of users who ordered again · GET /analytics/retention" />
@@ -433,7 +445,7 @@ export default function AdminAnalytics() {
       </>
       )}
 
-      {tab === 'operations' && (
+      {!currentGroup.loading && !currentGroup.error && tab === 'operations' && (
       <>
       <OrderTimingDashboard range={range} />
       <DeliveryLocationDashboard range={range} />

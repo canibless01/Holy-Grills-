@@ -750,6 +750,7 @@ const admin = {
   async expireHpFromUser(userId, body) { return apiClient.post('/hp/admin/expire', { user_id: userId, ...body }); },
 
   // --- Orders (verified: /admin/orders, /orders/:id/status, /orders/:id/refund, /orders/:id/history) ---
+  async getAdminOrderPage(params = {}) { return apiClient.get('/admin/orders', params); },
   async getAdminOrders(params = {}) { return unwrap(await apiClient.get('/admin/orders', params), 'orders'); },
   async overrideOrderStatus(id, body) { return apiClient.patch(`/orders/${id}/status`, body); },
   async refund(id, body) { return apiClient.post(`/orders/${id}/refund`, body); },

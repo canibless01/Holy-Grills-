@@ -214,12 +214,17 @@ def list_all_orders():
     user_id = request.args.get("user_id")
     if user_id and not validate_uuid(user_id):
         return jsonify({"error": MSG.INVALID_INPUT}), 400
+    search = (request.args.get("search") or "").strip().replace("-", "").lower()
+    if search and (not re.fullmatch(r"[0-9a-f]{3,32}", search)):
+        return jsonify({"error": MSG.ADMIN_ORDER_SEARCH_INVALID}), 400
     campus_id = resolve_scoped_campus_id(requested_campus)
     try:
-        q = (db.table("orders").select("*,order_items(name_snapshot,quantity,price_snapshot,line_total,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
+        q = (db.table("orders").select("*,customer:profiles!orders_user_id_fkey(id,full_name,phone),order_items(name_snapshot,quantity,price_snapshot,line_total,selected_variations,options_snapshot,order_addon_selections(name_snapshot,quantity))")
              .in_("payment_status", ["paid", "partially_refunded", "refunded"]).neq("is_test", True))
         if campus_id:
             q = q.eq("campus_id", campus_id)
+        if search:
+            q = q.gte("id", str(uuid.UUID(hex=search.ljust(32, "0")))).lte("id", str(uuid.UUID(hex=search.ljust(32, "f"))))
         if status:
             q = q.eq("status", status)
         if user_id:
@@ -232,10 +237,16 @@ def list_all_orders():
             q = q.gte("created_at", wat_day_bounds_utc(from_date)[0])
         if to_date:
             q = q.lt("created_at", wat_day_bounds_utc(to_date)[1])
-        orders = q.order("created_at", ascending=False).limit(limit).offset(offset).execute() or []
+        orders = q.order("created_at", ascending=False).limit(limit + 1).offset(offset).execute() or []
     except (SupabaseError, requests.RequestException) as e:
         return db_error_response(e, "list_all_orders")
-    return jsonify({"orders": orders, "count": len(orders), "limit": limit, "offset": offset}), 200
+    has_more = len(orders) > limit
+    orders = orders[:limit]
+    for order in orders:
+        contact = (order.get('delivery_address_snapshot') or {}).get('contact_phone')
+        if contact:
+            order['customer_phone'] = contact
+    return jsonify({"orders": orders, "count": len(orders), "limit": limit, "offset": offset, "has_more": has_more}), 200
 
 
 @admin_bp.route("/users/<user_id>/orders", methods=["GET"])

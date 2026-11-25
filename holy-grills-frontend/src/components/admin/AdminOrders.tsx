@@ -31,28 +31,33 @@ export default function AdminOrders() {
   const [overrideOrder, setOverrideOrder] = useState(null);
   const [walkOrder, setWalkOrder] = useState(null);
   const [busy, setBusy] = useState(null);
-  const [users, setUsers] = useState({});
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const readVersion = useRef(0);
+  const limit = 50;
   // Assign flow — opens the shared batch modal preset to one order, so an
   // admin standing on an order (incl. scheduled/off-window ones) can hand it
   // to a rider without leaving the Orders tab.
   const [assignCtx, setAssignCtx] = useState<{ orderId: string; windows: Array<{ id?: string | number; label?: string }> } | null>(null);
 
-  // Frontend profile join — the admin orders endpoint returns user_id without a
-  // profiles join, so we load the user list once and resolve user_id → name/phone
-  // locally. Guest orders already carry guest_name/guest_phone on the order.
+  // Search is server-side and debounced; identity comes with each scoped order.
   useEffect(() => {
-    (async () => { try { const u = await mockApi.admin.getUsers(); const map = {}; (u || []).forEach((x) => { if (x.id) map[x.id] = x; }); setUsers(map); } catch { /* ignore */ } })();
-  }, []);
+    if (tab !== 'orders') return;
+    const timer = setTimeout(() => { void load(0); }, search ? 300 : 0);
+    return () => { clearTimeout(timer); readVersion.current++; };
+  }, [search, statusFilter, fromDate, tab]);
 
-  useEffect(() => { if (tab === 'orders') load(); }, [search, statusFilter, fromDate, tab]);
-
-  const load = async () => {
-    setLoading(true);
-    const o = await mockApi.admin.getAdminOrders({ status: statusFilter, from_date: fromDate || undefined });
-    let result = o;
-    if (search) result = o.filter(ord => ord.id.toLowerCase().includes(search.toLowerCase()));
-    setOrders(result);
-    setLoading(false);
+  const load = async (pageOffset: number = offset) => {
+    const version = ++readVersion.current;
+    setLoading(true); setLoadError('');
+    try {
+      const result = await mockApi.admin.getAdminOrderPage({ status: statusFilter, from_date: fromDate || undefined, search: search.trim() || undefined, limit, offset: pageOffset });
+      if (version !== readVersion.current) return;
+      setOrders(result.orders || []); setHasMore(result.has_more === true); setOffset(pageOffset);
+    } catch (failure) {
+      if (version === readVersion.current) setLoadError(failure.message || msg('FE_ADMIN_ORDERS_RETRY', 'Orders could not be loaded. Retry before making changes.'));
+    } finally { if (version === readVersion.current) setLoading(false); }
   };
 
   const openAssign = async (orderId: string) => {
@@ -166,7 +171,7 @@ export default function AdminOrders() {
       ) : (
       <>
       {/* KPI summary — computed from the loaded, filtered orders */}
-      {!loading && orders.length > 0 && (
+      {!loading && !loadError && orders.length > 0 && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {[
             { label: 'Loaded', value: orders.length, icon: Package, iconClass: 'text-primary', iconBg: 'bg-primary/10' },
@@ -200,7 +205,7 @@ export default function AdminOrders() {
           className="px-4 py-2.5 rounded-xl border border-border text-sm font-semibold text-foreground focus:outline-none focus:border-primary/60" />
       </div>
 
-      {loading ? <LoadingSpinner label="Loading orders..." /> : orders.length === 0 ? (
+      {loading ? <LoadingSpinner label="Loading orders..." /> : loadError ? <div role="alert" className="rounded-2xl border border-destructive/30 bg-card p-5 space-y-3"><p>{loadError}</p><button className="rounded-full bg-primary px-5 py-2 text-sm font-bold text-white" onClick={() => void load()}>{msg('FE_PLATFORM_RETRY', 'Retry')}</button></div> : orders.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <Package className="w-8 h-8 mx-auto mb-2 text-muted-foreground" /> No orders found
         </div>
@@ -210,8 +215,8 @@ export default function AdminOrders() {
             const isTerminal = ['delivered', 'cancelled', 'refunded'].includes(o.status);
             const isOpen = expanded === o.id;
             const cust = getOrderCustomer(o);
-            const custName = cust.display !== 'Walk-in' ? cust.display : (users[o.user_id]?.full_name || (o.guest_name ? o.guest_name : 'Walk-in'));
-            const custPhone = cust.phone || users[o.user_id]?.phone || '';
+            const custName = cust.display !== 'Walk-in' ? cust.display : (o.guest_name || 'Walk-in');
+            const custPhone = cust.phone || '';
             return (
               <div key={o.id} className="rounded-2xl bg-card border border-border p-4 shadow-card">
                 <button onClick={() => toggleExpand(o.id)} className="w-full text-left">
@@ -296,12 +301,13 @@ export default function AdminOrders() {
         </div>
       )}
 
+      {!loading && !loadError && (offset > 0 || hasMore) && <nav className="flex items-center justify-between gap-3" aria-label={msg('FE_ADMIN_ORDERS_PAGE', 'Orders {start}–{end}', { start: offset + 1, end: offset + orders.length })}><button className="min-h-11 rounded-full border border-border px-4 text-sm font-bold disabled:opacity-50" disabled={offset === 0} onClick={() => void load(Math.max(0, offset - limit))}>{msg('FE_ADMIN_ORDERS_PREVIOUS', 'Previous orders')}</button><span className="text-xs">{offset + 1}–{offset + orders.length}</span><button className="min-h-11 rounded-full border border-border px-4 text-sm font-bold disabled:opacity-50" disabled={!hasMore} onClick={() => void load(offset + limit)}>{msg('FE_ADMIN_ORDERS_NEXT', 'Next orders')}</button></nav>}
       {assignCtx && (
         <CreateBatchModal
           windows={assignCtx.windows}
           presetOrderIds={[assignCtx.orderId]}
           onClose={() => setAssignCtx(null)}
-          onSaved={load}
+          onSaved={() => load()}
         />
       )}
 
