@@ -1701,6 +1701,8 @@ class MSG:
     AUTH_FIELD_REQUIRED           = "'{field}' is required"
     AUTH_VERIFY_EMAIL_SENT        = "If your email is not yet confirmed, a new verification link has been sent. Check your inbox."
     AUTH_VERIFY_EMAIL_MISSING     = "email is required"
+    NOTIFICATION_BRAND_NAME = "Holy Grills"
+    NOTIFICATION_BRANDED_TITLE = "Holy Grills · {title}"
     DEVICE_TOKEN_REMOVED = "Push device registration removed"
     DEVICE_TOKEN_REQUIRED         = "'token' is required"
     DEVICE_TOKEN_REGISTERED       = "Device token registered"

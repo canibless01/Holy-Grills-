@@ -36,3 +36,12 @@ All optional store/pass flags remain disabled. The separate owner-approved engag
 ## 26 November follow-up
 
 The hourly worker observation is closed, with 11 actual successful runs and no failed run at the recorded checkpoint. The morning campaign has three provider-accepted pushes and 17 skipped unresolved external-account aliases; individual device diagnostics remain open, not successful delivery. See [operational evidence and latest verification](OPERATIONAL_CLOSEOUT_2026_11_26.md). The latest targeted combined run passed 156 tests and the SDK registration suite passed. Subscription-identity reads were blocked by automatic approval review's account usage limit; they were not executed. No change to optional feature activation, worker frequency, customer identities or campaign recipient consent was made.
+
+
+## Provider diagnosis and fixes — 26 November continuation
+
+The prior device-lookup review blocker has recovered. All 17 affected account aliases were found and match their owners. Sixteen currently have no active browser-push subscription; one is currently active. Email subscriptions are not push consent. The historical skipped rows remain skipped; current state is not retroactive evidence of delivery.
+
+The resulting stale device-eligibility defect is fixed and pushed: only opted-in devices are registered, current-device disable/rotation removes its owner-scoped server row, and serialized writes preserve opt-out during delayed requests. No historical bulk cleanup or provider reassignment occurred. See [device lifecycle proof](PUSH_DEVICE_LIFECYCLE_2026_11_26.md), including 2,192 backend tests and a live RLS rollback test.
+
+The owner confirmed receiving the morning message and reported missing branding. That presentation fix is recorded separately in [push branding](PUSH_BRANDING_2026_11_26.md). The genuine next message after deployment can confirm the revised appearance; no duplicate send is needed. Remaining unrelated operator setup and deferred expansions above are unchanged.

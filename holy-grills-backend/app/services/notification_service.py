@@ -12,6 +12,7 @@ import threading
 from urllib.parse import urljoin, urlsplit
 import requests as http_requests
 from datetime import datetime, timezone, timedelta
+from app.utils.notification_brand import push_heading
 from app.constants import APP_TAGLINE_DEFAULT
 from app.db import get_db, get_user_client, SupabaseError
 from app.services.notification_preferences import effective_preferences, permitted_channels, REQUEST_TYPES
@@ -1210,7 +1211,7 @@ def _prepare_notification_push(user_id, title, body, action_url, urgency=None, p
         "app_id": app_id,
         "include_aliases": {"external_id": [user_id]},
         "target_channel": "push",
-        "headings": {"en": title},
+        "headings": {"en": push_heading(title)},
         "contents": {"en": body},
     }
     # Reuse this UUID throughout the existing transport retry loop.
@@ -1222,6 +1223,9 @@ def _prepare_notification_push(user_id, title, body, action_url, urgency=None, p
     if icon:
         payload['chrome_web_icon'] = icon
         payload['firefox_icon'] = icon
+    badge = _push_action_url('/brand/icon-mark.png')
+    if badge:
+        payload['chrome_web_badge'] = badge
     if push_image:
         from app.utils.upload_urls import is_cms_image_url
         if is_cms_image_url(push_image):

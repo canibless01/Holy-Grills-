@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 from app.messages import MSG
+from app.utils.notification_brand import push_heading
 from app.services.ambassador_promotions import image_url
 from app.utils.logger import get_logger
 
@@ -59,7 +60,7 @@ def render(step, profile, campus, cutoff):
     tokens = {'nickname': nickname, 'name': name or nickname, 'campus': campus, 'order_cutoff': cutoff}
     def replace(text):
         return re.sub(r'{{(.*?)}}', lambda m: str(tokens[m.group(1).strip()]), text)
-    return {'title': replace(step['title']), 'body': replace(step['body']),
+    return {'title': push_heading(replace(step['title'])), 'body': replace(step['body']),
             'action_url': step['action_url'], 'push_image': step.get('push_image')}
 
 

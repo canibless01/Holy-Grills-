@@ -18,3 +18,8 @@ The v16 SDK registration suite passes: single-flight initialization, verified id
 Two attempted read-only OneSignal subscription-identity lookups were not executed: automatic approval review failed because the account hit its usage limit. This is neither an HTTP provider response nor proof that those subscriptions no longer exist. Do not reinterpret the review errors as device/provider evidence or bypass review with another transport. Individual alias/device verification remains the precise open push diagnostic. No alias was reassigned, subscription deleted or duplicate campaign message sent.
 
 Actual physical-device display/link tap, pass-specific test charge without a configured test key, genuinely due reminder receipt, future ambassador/monthly runs and owner store/price configuration cannot be manufactured by local tests. These remain separately recorded operational checks. The worker-execution and documented implementation checks are closed. Latest published checkpoint before this follow-up: 42e3873.
+
+
+### Provider read recovery and root cause
+
+Later read-only provider checks succeeded for all 17 accounts; aliases exist and match their owners. Sixteen have no active browser-push subscription, while one is currently active. The old review failures are historical, not an ongoing access blocker. Saved server device IDs did not prove opted-in push and could outlive a disabled subscription. The [device-lifecycle repair](PUSH_DEVICE_LIFECYCLE_2026_11_26.md) addresses that record mismatch without altering saved consent or deleting historical tokens in bulk. The owner also confirmed morning notification receipt; its requested branding correction is tracked in [the branding batch](PUSH_BRANDING_2026_11_26.md).
