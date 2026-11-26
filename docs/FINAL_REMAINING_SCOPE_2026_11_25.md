@@ -31,3 +31,8 @@ Central ingredients with manually transferred store consumables are the implemen
 Managed pg_net placement and unavailable Free-plan leaked-password protection are previously reviewed configuration exceptions, not pending application fixes. No other specific reproduced defect is reopened by this document. If a new live symptom is reported, reproduce it as a new finding rather than restoring historical backlog rows.
 
 All optional store/pass flags remain disabled. The separate owner-approved engagement campaign remains unchanged. No live customer funds, messages or cleanup were touched by this final check.
+
+
+## 26 November follow-up
+
+The hourly worker observation is closed, with 11 actual successful runs and no failed run at the recorded checkpoint. The morning campaign has three provider-accepted pushes and 17 skipped unresolved external-account aliases; individual device diagnostics remain open, not successful delivery. See [operational evidence and latest verification](OPERATIONAL_CLOSEOUT_2026_11_26.md). The latest targeted combined run passed 156 tests and the SDK registration suite passed. Subscription-identity reads were blocked by automatic approval review's account usage limit; they were not executed. No change to optional feature activation, worker frequency, customer identities or campaign recipient consent was made.
