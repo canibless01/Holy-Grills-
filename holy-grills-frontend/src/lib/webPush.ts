@@ -50,8 +50,8 @@ export const subscribeToWebPush = async (userId: string | null = null) => {
 
 /**
  * Disable push on this device — flips the OneSignal subscription off. The
- * backend device-token row stays; delivery stops because OneSignal will not
- * send to an unsubscribed player.
+ * current account/device token is removed; other devices and account-wide
+ * preferences remain unchanged. OneSignal also stops delivery to this device.
  */
 export const unsubscribeFromWebPush = async () => {
   try {

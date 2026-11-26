@@ -85,6 +85,7 @@ const auth = {
   async confirmReset(body) { return apiClient.post('/auth/reset-password/confirm', body); },
   async verifyEmail(body) { return apiClient.post('/auth/verify-email', body); },
   async deviceToken(body) { return apiClient.post('/auth/device-token', body); },
+  async removeDeviceToken(body) { return apiClient.delete('/auth/device-token', body); },
   async getStreak() { return apiClient.get('/auth/streak'); },
   // Check-in history — no dedicated backend endpoint; the streak record from
   // GET /auth/streak carries week_progress with day-level statuses, so the

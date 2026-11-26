@@ -33,7 +33,7 @@ function CampaignEditor() {
     finally { lock.current = false; setBusy(false); }
   };
   const load = () => run(async () => {
-    const result = await apiClient.get<{ campaign: Campaign }>('/engagement-campaign');
+    const result: { campaign: Campaign } = await apiClient.get('/engagement-campaign');
     setCampaign(result.campaign); setSaved(result.campaign.is_active); setPreview(null);
   });
   const change = (values: Partial<Campaign>) => { setCampaign(c => c ? { ...c, ...values } : c); setPreview(null); };
@@ -42,7 +42,7 @@ function CampaignEditor() {
     if (campaign) change({ steps: campaign.steps.map(s => s.day === day && s.slot === slot ? { ...s, ...values } : s) });
   };
   const save = () => run(async () => {
-    const result = await apiClient.patch<{ campaign: Campaign }>('/engagement-campaign', campaign);
+    const result: { campaign: Campaign } = await apiClient.patch('/engagement-campaign', campaign);
     setCampaign(result.campaign); setSaved(result.campaign.is_active);
     toast({ title: msg('FE_CYCLE_SAVED', 'Campaign saved. Changes apply to future unsent slots.') });
   });

@@ -39,6 +39,7 @@ let sdkInstance: any = null;
 let registeredUserId: string | null = null;
 let identifiedUserId: string | null = null;
 let storedDevice: { userId: string; subscriptionId: string } | null = null;
+let deviceSyncTask: Promise<void> = Promise.resolve();
 let initialization: Promise<void> | null = null;
 let identityGeneration = 0;
 let logoutTask: Promise<void> | null = null;
@@ -57,10 +58,29 @@ const loadScript = (src: string) => new Promise<void>((resolve, reject) => {
   document.head.appendChild(script);
 });
 
-const storeDeviceToken = async (userId: string, subscriptionId: string) => {
-  if (!userId || !subscriptionId || registeredUserId !== userId || identifiedUserId !== userId) return;
-  await liveApi.auth.deviceToken({ token: subscriptionId, platform: 'web', device_model: (navigator.userAgent || '').slice(0, 100) });
-  if (registeredUserId === userId && identifiedUserId === userId) storedDevice = { userId, subscriptionId };
+// Serialise device writes so a late registration cannot undo a later opt-out.
+// An assigned SDK ID alone is not proof that browser push is enabled.
+const storeDeviceToken = (userId: string, subscriptionId: string, previousId?: string): Promise<void> => {
+  const generation = identityGeneration;
+  const operation = deviceSyncTask.catch(() => {}).then(async () => {
+    if (!userId || !subscriptionId || generation !== identityGeneration || registeredUserId !== userId || identifiedUserId !== userId) return;
+    const subscription = sdkInstance?.User?.PushSubscription;
+    if (previousId && previousId !== subscription?.id) {
+      await liveApi.auth.removeDeviceToken({ token: previousId });
+      if (storedDevice?.userId === userId && storedDevice.subscriptionId === previousId) storedDevice = null;
+    }
+    if (subscription?.id !== subscriptionId) return;
+    if (subscription.optedIn !== true || (typeof Notification !== 'undefined' && Notification.permission === 'denied')) {
+      await liveApi.auth.removeDeviceToken({ token: subscriptionId });
+      if (storedDevice?.userId === userId && storedDevice.subscriptionId === subscriptionId) storedDevice = null;
+      return;
+    }
+    if (storedDevice?.userId === userId && storedDevice.subscriptionId === subscriptionId) return;
+    await liveApi.auth.deviceToken({ token: subscriptionId, platform: 'web', device_model: (navigator.userAgent || '').slice(0, 100) });
+    if (generation === identityGeneration && registeredUserId === userId && identifiedUserId === userId) storedDevice = { userId, subscriptionId };
+  });
+  deviceSyncTask = operation;
+  return operation;
 };
 
 const initialize = async (appId: string) => {
@@ -82,8 +102,9 @@ const initialize = async (appId: string) => {
               initialized = true;
               OneSignal.User?.PushSubscription?.addEventListener('change', (event: any) => {
                 const id = event?.current?.id;
-                if (id && registeredUserId && identifiedUserId === registeredUserId) {
-                  storeDeviceToken(registeredUserId, id).catch(() => {});
+                const previousId = event?.previous?.id;
+                if ((id || previousId) && registeredUserId && identifiedUserId === registeredUserId) {
+                  return storeDeviceToken(registeredUserId, id || previousId, previousId).catch(() => {});
                 }
               });
               resolve();
@@ -209,7 +230,11 @@ export const ensurePushReady = async (userId: string | null = null, timeoutMs = 
 };
 
 export const optOutOneSignal = async () => {
-  if (sdkInstance) await sdkInstance.User?.PushSubscription?.optOut();
+  if (sdkInstance) {
+    await sdkInstance.User?.PushSubscription?.optOut();
+    const id = sdkInstance.User?.PushSubscription?.id;
+    if (id && registeredUserId) await storeDeviceToken(registeredUserId, id);
+  }
 };
 
 /**

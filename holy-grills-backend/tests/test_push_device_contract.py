@@ -27,3 +27,28 @@ def test_overlong_device_model_is_rejected_before_write():
     _,status,db=call({'token':'controlled-subscription','platform':'web','device_model':'x'*101})
     assert status==400
     db.table.return_value.insert.assert_not_called()
+
+
+def revoke(body):
+    db=MagicMock()
+    with Flask(__name__).test_request_context('/auth/device-token',method='DELETE',json=body),patch.object(auth,'get_user_client',return_value=db):
+        g.user_id=USER
+        response,status=auth.unregister_device_token.__wrapped__()
+    return response.json,status,db
+
+
+def test_revocation_is_owned_scoped_and_idempotent():
+    for _ in range(2):
+        response,status,db=revoke({'token':'  current-device  '})
+        assert status==200
+        assert db.table.call_args.args==('device_tokens',)
+        assert db.table.return_value.eq.call_args.args==('user_id',USER)
+        assert db.table.return_value.eq.return_value.eq.call_args.args==('token','current-device')
+        db.table.return_value.eq.return_value.eq.return_value.delete.assert_called_once_with()
+
+
+def test_revocation_rejects_forged_owner_or_invalid_tokens_before_write():
+    for body in ({},{'token':True},{'token':' '},{'token':'x'*513},{'token':'device','user_id':'other'}):
+        _,status,db=revoke(body)
+        assert status==400
+        db.table.assert_not_called()

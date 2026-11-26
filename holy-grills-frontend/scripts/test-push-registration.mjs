@@ -22,7 +22,7 @@ try {
       });
       builder.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({ contents:
         path.includes('app.config') ? 'export default {onesignal:{appId:\'fixture\'}};' :
-        path.includes('liveApi') ? 'export const liveApi={auth:{deviceToken:async body=>globalThis.__register(body)},notifications:{updatePreferences:async body=>globalThis.__prefs.push(body)}};' :
+        path.includes('liveApi') ? 'export const liveApi={auth:{deviceToken:async body=>globalThis.__register(body),removeDeviceToken:async body=>globalThis.__unregister(body)},notifications:{updatePreferences:async body=>globalThis.__prefs.push(body)}};' :
         'export const msg=(_key,fallback)=>fallback;' }));
     } }],
   });
@@ -56,6 +56,8 @@ try {
   };
 
   const registrations = [];
+  const removals = [];
+  globalThis.__unregister = async body => removals.push(body);
   const prefs = [];
   let registrationError = null;
   globalThis.__prefs = prefs;
@@ -173,6 +175,51 @@ try {
     releaseLogout(); await logout; await waitGuest;
     assert.equal(guestModule.isPushRegistered(), true);
 
+    // Disabled/permission-only IDs must not be advertised as reachable devices.
+    const lifecycle = makeSdk();
+    lifecycle.sub.id = 'disabled-device';
+    globalThis.window.OneSignalDeferred = { push: fn => queueMicrotask(() => fn(lifecycle.sdk)) };
+    Notification.permission = 'granted';
+    const lifecycleModule = await import(`${pathToFileURL(output).href}?device-lifecycle`);
+    const registrationsBefore = registrations.length;
+    await lifecycleModule.initOneSignal('lifecycle-member');
+    assert.equal(registrations.length, registrationsBefore, 'an ID without opt-in cannot be registered');
+    assert.equal(removals.at(-1).token, 'disabled-device');
+    assert.equal(lifecycleModule.isPushRegistered(), false);
+    lifecycle.sub.optedIn = true;
+    await lifecycle.subscriptions.emit('change', { current: { id: lifecycle.sub.id } });
+    assert.equal(lifecycleModule.isPushRegistered(), true);
+    lifecycle.sub.optedIn = false;
+    await lifecycle.subscriptions.emit('change', { current: { id: lifecycle.sub.id } });
+    assert.equal(lifecycleModule.isPushRegistered(), false);
+    assert.equal(removals.at(-1).token, 'disabled-device');
+    assert.ok(removals.every(body => Object.keys(body).join() === 'token'), 'revocation never selects an account');
+
+    // A delayed POST cannot land after the opt-out DELETE and leave stale eligibility.
+    let releaseRegistration;
+    const ordinaryRegister = globalThis.__register;
+    globalThis.__register = async body => {
+      if (body.token === 'pending-device') await new Promise(resolve => { releaseRegistration = resolve; });
+      await ordinaryRegister(body);
+    };
+    lifecycle.sub.id = 'pending-device'; lifecycle.sub.optedIn = true;
+    const inFlight = lifecycle.subscriptions.emit('change', { current: { id: lifecycle.sub.id } });
+    await new Promise(resolve => realSetTimeout(resolve, 0));
+    assert.equal(typeof releaseRegistration, 'function');
+    lifecycle.sub.optedIn = false;
+    const optedOut = lifecycle.subscriptions.emit('change', { current: { id: lifecycle.sub.id } });
+    releaseRegistration(); await inFlight; await optedOut;
+    assert.equal(removals.at(-1).token, 'pending-device');
+    assert.equal(lifecycleModule.isPushRegistered(), false);
+    globalThis.__register = ordinaryRegister;
+
+    // Subscription rotation removes only its known previous ID, then registers the new one.
+    lifecycle.sub.id = 'replacement-device'; lifecycle.sub.optedIn = true;
+    await lifecycle.subscriptions.emit('change', { previous: { id: 'pending-device' }, current: { id: lifecycle.sub.id } });
+    assert.equal(registrations.at(-1).token, 'replacement-device');
+    assert.equal(removals.at(-1).token, 'pending-device');
+    assert.equal(lifecycleModule.isPushRegistered(), true);
+
     // ── 5. www alias: never initialize the SDK on the wrong origin ──────────
     globalThis.__redirectedTo = null;
     const alias = makeSdk();
@@ -210,7 +257,7 @@ try {
 
   console.log('PASS v16 single-flight, verified identity, no automatic permission, permission-only refusal, '
     + 'backend registration failure, denied permission, cleanup, v16 opt-out, logout, bounded stalled SDK, '
-    + 'ready gate before the prompt, anonymous guest registration without private writes, login adoption, serialized guest logout, no SDK init on the www alias, and no redirect loop when the host bounces back');
+    + 'disabled-device cleanup, serialised opt-out/write races, owned token rotation, ready gate before the prompt, anonymous guest registration without private writes, login adoption, serialized guest logout, no SDK init on the www alias, and no redirect loop when the host bounces back');
 } finally {
   await rm(temp, { recursive: true, force: true });
 }

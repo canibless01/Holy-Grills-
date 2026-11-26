@@ -1157,6 +1157,26 @@ def reset_password_confirm():
     return jsonify({"message": MSG.PASSWORD_CHANGED, "user": user, "sessions_revoked": sessions_revoked}), 200
 
 
+@auth_bp.route("/device-token", methods=["DELETE"])
+@require_auth
+@rate_limit("RATE_LIMIT_DEVICE_TOKEN_REQUESTS", "RATE_LIMIT_DEVICE_TOKEN_WINDOW")
+def unregister_device_token():
+    """Forget only this account's current device; preserve all other devices."""
+    data = _json_body()
+    if data is None:
+        return _bad_body()
+    if set(data) - {"token"}:
+        return jsonify({"error": MSG.INVALID_INPUT}), 400
+    token = data.get("token")
+    if not isinstance(token, str) or not token.strip():
+        return jsonify({"error": MSG.DEVICE_TOKEN_REQUIRED}), 400
+    token = token.strip()
+    if len(token) > 512:
+        return jsonify({"error": MSG.DEVICE_TOKEN_INVALID}), 400
+    get_user_client().table("device_tokens").eq("user_id", g.user_id).eq("token", token).delete()
+    return jsonify({"message": MSG.DEVICE_TOKEN_REMOVED}), 200
+
+
 @auth_bp.route("/device-token", methods=["POST"])
 @require_auth
 @rate_limit("RATE_LIMIT_DEVICE_TOKEN_REQUESTS", "RATE_LIMIT_DEVICE_TOKEN_WINDOW")
