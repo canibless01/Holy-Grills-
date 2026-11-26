@@ -111,3 +111,5 @@ No real customer account, order, wallet movement or database cleanup is part of 
 - The Android integration adds no database migrations, production customer writes or production release-manifest activation. Latest main was merged to preserve the other chat’s work. Customer-wide campaigns were not sent.
 
 The internal APK is a debug-signed testing build. It is not the customer release, and its signing key must not become the permanent production identity.
+
+The first hosted Android run exposed an obsolete default SDK package (`tools`) in the setup action. The workflow now explicitly installs platform-tools, Android 36 and build-tools 36.0.0. Direct GitHub release-asset upload was rejected with HTTP 401 by the current connection; no release asset was published. The local internal APK and workflow artifacts are separate delivery paths.

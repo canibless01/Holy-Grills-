@@ -36,6 +36,8 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-36 build-tools;36.0.0
       - run: npm ci
       - run: npm run typecheck && npm run lint && npm run test:native && npm run test:push-registration
       - name: Prepare release signing
