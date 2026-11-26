@@ -88,3 +88,42 @@ def test_pass_webhook_does_not_fall_through_to_wallet_funding(app,purchase):
     with patch.object(service,'confirm',return_value={'campus_id':'c'}) as confirm,patch('app.routes.webhooks.get_db') as db:
         assert _handle_charge_success(charge)=='c'
     confirm.assert_called_once_with(charge);db.assert_not_called()
+
+
+def test_disabled_worker_short_circuits_without_renewal_provider_or_notifications(app):
+    result={'skipped':True,'reason':'delivery_pass_disabled'}
+    with patch.object(service,'rpc',return_value=result) as rpc,patch.object(service,'_provider') as provider,patch.object(service,'notify_receipt') as notices:
+        assert service.sweep()==result
+    rpc.assert_called_once_with('scan');provider.assert_not_called();notices.assert_not_called()
+
+
+def test_disabled_feature_does_not_hide_existing_payment_recovery(app):
+    identity=str(uuid4())
+    with patch.object(service,'rpc',return_value={'due':[],'pending':[{'id':identity}],'notices':[],'issues':[]}) as rpc,patch.object(service,'verify',return_value={'status':'credited'}) as verify:
+        result=service.sweep()
+    verify.assert_called_once_with(None,identity)
+    assert result['verified']==1 and 'skipped' not in result
+
+
+def test_cron_records_disabled_pass_as_skipped_not_success(app):
+    from app.tasks import scheduled
+    with patch.object(service,'sweep',return_value={'skipped':True,'reason':'delivery_pass_disabled'}),patch.object(scheduled,'_log_cron_execution') as log:
+        scheduled.delivery_pass_renewals.run()
+    assert log.call_args.args[:2]==('delivery-pass-renewals','skipped')
+
+
+@pytest.mark.parametrize('minutes,action,reason,expected',[
+    (1,'scheduled_execution_skipped','delivery_pass_disabled','disabled'),
+    (181,'scheduled_execution_skipped','delivery_pass_disabled','overdue'),
+    (1,'scheduled_execution_failed','delivery_pass_disabled','failed'),
+    (1,'scheduled_execution_skipped','other_reason','overdue'),
+])
+def test_disabled_job_monitor_does_not_report_false_overdue_or_hide_worker_failure(app,minutes,action,reason,expected):
+    from datetime import datetime,timedelta,timezone
+    from app.routes import admin
+    stamp=(datetime.now(timezone.utc)-timedelta(minutes=minutes)).isoformat()
+    db=MagicMock();db.rpc.return_value=[{'job':'delivery-pass-renewals','last_run':{'created_at':stamp,'action':action,'after_value':{'result':{'skipped':True,'reason':reason}}},'last_success':None}]
+    with app.test_request_context(),patch.object(admin,'get_db',return_value=db):
+        response,status=admin.cron_status.__wrapped__()
+    assert status==200 and response.json['jobs']['delivery-pass-renewals']['status']==expected
+    assert response.json['summary'][expected]>=1

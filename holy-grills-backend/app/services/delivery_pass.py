@@ -178,6 +178,8 @@ def sweep():
     """One shared hourly scan; no external recurring charge and no per-user cron."""
     started = monotonic()
     work = rpc('scan')
+    if work.get('skipped'):
+        return work
     result = {'renewed': 0, 'verified': 0, 'notified': 0, 'issues': 0, 'retryable': 0}
     for row in work.get('due', []):
         if monotonic() - started > 20: break

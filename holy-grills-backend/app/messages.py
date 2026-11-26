@@ -59,6 +59,8 @@ class MSG:
     FE_PASS_TEST = "Test payment"
     FE_PASS_REFUND_REASON = "Reason for refund"
     FE_PASS_LOADING = "Loading delivery subscriptions…"
+    FE_PASS_JOB_DISABLED = "Feature off"
+    FE_PASS_JOB_DISABLED_HELP = "Delivery-pass processing is paused by its feature flag."
     FE_PASS_TITLE = "Delivery pass"
     FE_PASS_SUBTITLE = "One month. Delivery covered."
     FE_PASS_MANAGE = "Manage pass"

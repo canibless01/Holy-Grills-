@@ -1958,6 +1958,11 @@ def cron_status():
                 status = "never_run"
             elif str(last.get("action", "")).endswith("_failed"):
                 status = "failed"
+            elif (job == "delivery-pass-renewals"
+                  and last.get("action") == "scheduled_execution_skipped"
+                  and ((last.get("after_value") or {}).get("result") or {}).get("reason") == "delivery_pass_disabled"
+                  and _age_minutes(last["created_at"], now) <= 2 * interval):
+                status = "disabled"
             elif not last_success or _age_minutes(last_success["created_at"], now) > 2 * interval:
                 status = "overdue"
             else:
@@ -1973,7 +1978,7 @@ def cron_status():
             }
     except (SupabaseError, requests.RequestException) as e:
         return db_error_response(e, "cron_status")
-    counts = {s: sum(1 for v in status_map.values() if v["status"] == s) for s in ("ok", "failed", "overdue", "never_run")}
+    counts = {s: sum(1 for v in status_map.values() if v["status"] == s) for s in ("ok", "failed", "overdue", "never_run", "disabled")}
     return jsonify({
         "checked_at": now.isoformat(),
         "jobs": status_map,

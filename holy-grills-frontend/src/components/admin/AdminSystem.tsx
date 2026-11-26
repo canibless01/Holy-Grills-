@@ -199,19 +199,21 @@ function CronJobs() {
       {jobs.map((j, i) => {
         const ok = j.status === 'ok' || j.status === 'success';
         const unreported = j.status === 'not_reported';
+        const disabled = j.status === 'disabled';
         const never = j.status === 'never_run' || !j.status;
         return (
           <motion.div key={j.job || i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.03, 0.2) }}>
             <Card className="p-3.5 flex items-center gap-3 hover:border-primary/30 transition-colors">
-              <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${ok ? 'bg-success' : never || unreported ? 'bg-border' : 'bg-destructive'} ${ok ? 'animate-pulse' : ''}`} />
+              <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${ok ? 'bg-success' : never || unreported || disabled ? 'bg-border' : 'bg-destructive'} ${ok ? 'animate-pulse' : ''}`} />
               <div className="flex-1 min-w-0">
                 <div className="font-mono font-bold text-sm text-foreground truncate">{j.job}</div>
                 {j.desc && <div className="text-[10px] text-muted-foreground truncate">{j.desc}</div>}
+                {disabled && <p className="text-[11px] text-muted-foreground">{msg('FE_PASS_JOB_DISABLED_HELP', 'Delivery-pass processing is paused by its feature flag.')}</p>}
                 <div className="text-[11px] text-muted-foreground font-semibold">
                   Last run: {j.last_triggered ? timeAgo(j.last_triggered) : unreported ? msg('FE_SYSTEM_NOT_REPORTED', 'Not reported') : 'Never'} · {j.cadence || '—'}
                 </div>
               </div>
-              <Pill tone={ok ? 'green' : never || unreported ? 'outline' : 'red'} className="hidden sm:inline-flex">{unreported ? msg('FE_SYSTEM_NOT_REPORTED', 'Not reported') : never ? 'never run' : j.status}</Pill>
+              <Pill tone={ok ? 'green' : never || unreported || disabled ? 'outline' : 'red'} className="hidden sm:inline-flex">{disabled ? msg('FE_PASS_JOB_DISABLED', 'Feature off') : unreported ? msg('FE_SYSTEM_NOT_REPORTED', 'Not reported') : never ? 'never run' : j.status}</Pill>
               <button
                 onClick={() => run(j.job)}
                 disabled={!!busy || refreshing || !isSuperAdmin}
