@@ -1,47 +1,38 @@
-# Final implementation closeout and remaining scope — 25 November 2026
+# Current assignment closeout — 26 November 2026
 
-## Implementation closure
+This is the authoritative current status for this chat. It replaces the historical pending wording previously accumulated here. Older dated evidence remains valid for its stated cases. The assigned implementation and recorded verification are complete; this does not certify every imaginable future interaction.
 
-The delivery-pass implementation is closed for its recorded code, database, UI, security and payment-contract checks. It imports the exact existing Paystack client from automatic funding rather than introducing another gateway integration. A fresh 65-test run covers that shared transport, original amount/reference/owner verification, isolated callback/webhook routing, retries/recovery, automatic funding regressions and worker registration/links. Three new tests explicitly prove shared-client identity, initialization amount/callback metadata and verification against the original receipt reference.
+## Completed
 
-This supplements the live Supabase rollback lifecycle and actual order/kitchen/rider/refund tests, native mobile/desktop checks, 140 rapid admin/security checks and prior 2,163-test integrated run. No reproduced implementation defect remains open in this assigned continuation. Existing working Paystack integration is reused as requested; an actual pass-specific gateway charge was not executed and is not claimed.
+| Area | Current result and evidence |
+|---|---|
+| Combined admin audit | Original 38 section action/evidence map reconciled; Stores & teams and Delivery subscriptions bring the registry to 40 distinct sections. [Admin closeout](AUDIT_CLOSEOUT_2026_11_25.md). |
+| Multi-store ordering and fulfilment | Campus-wide menus/prices/windows, store attribution/selection, isolated batches/teams, kitchen/rider lifecycle, pickup, refunds and store reports. Live rollback tests passed. [Implementation](MULTI_STORE_IMPLEMENTATION_2026_11_23.md). |
+| Central kitchen and store consumables | Ingredients central; explicit per-store supply transfers/usage/waste and combined totals. No duplicate ingredient/wallet ledger. [Stock evidence](CENTRAL_KITCHEN_STORE_STOCK_2026_11_25.md). |
+| Commerce/admin loading | Bounded order pages, customer join, debounced search/race recovery and deferred analytics reads. [Loading evidence](ADMIN_COMMERCE_LOADING_2026_11_25.md). |
+| Delivery pass | Shared proven Paystack transport, verified receipt/return/webhook routing, wallet renewal, expiry, reward preservation, recovery and support refunds. Live SQL and recorded browser tests pass. The actual hourly worker has executed successfully in production. [Pass evidence](DELIVERY_PASS_2026_11_25.md), [worker evidence](OPERATIONAL_CLOSEOUT_2026_11_26.md). |
+| Ambassador, analytics and engagement | Other chat's implemented batches are merged: promotional-message management, reports, source/activity analytics, consent handling and owner-approved recurring campaign. [Track evidence](ENGAGEMENT_TRACK_2026_11_25.md). |
+| Push diagnosis and device lifecycle | Provider reads recovered: all 17 previously skipped account aliases resolve correctly now; 16 currently lack active browser push. Only opted-in devices are registered; owned disable/rotation cleanup and serialized writes prevent stale eligibility. Other devices and saved consent are preserved. [Repair and RLS evidence](PUSH_DEVICE_LIFECYCLE_2026_11_26.md). |
+| Notification branding | Shared Holy Grills heading, existing red/gold icon, transparent Android status mark, matching campaign preview and immutable retry behavior. [Branding evidence](PUSH_BRANDING_2026_11_26.md). |
+| Deployment and existing delivery | Main is e6810a2; real scheduled-order/campaign workers report that revision. The public frontend bundle contains the new device-sync code. Manifest, service worker and notification assets respond correctly. Three existing morning messages each show successful=1 and errored=0 at OneSignal; the owner confirmed notification receipt. [Sanitized release evidence](evidence/release-2026-11-26/rollout.json). |
 
-The [admin reconciliation](AUDIT_CLOSEOUT_2026_11_25.md) closes stale blanket statements that the admin audit is untouched. The original 38 sections have recorded action evidence; the new store/pass surfaces have their own evidence. Both chats' implementations are merged. This is closure of the documented cases, not a guarantee against arbitrary future defects.
+Latest full backend suite: **2,195 passed**. Frontend typecheck, lint, full production build and the SDK lifecycle/race checks pass. Live Supabase rollback tests verify financial conservation and relevant owner/campus/store boundaries. No new customer blast, forced opt-in, real charge, historical bulk-token deletion or database cleanup was performed.
 
-## What remains in total
+## Remaining operator choices and observations
 
-### Operator setup and observations; no unfinished pass code
+1. **Optional rollout settings:** supply actual store locations/coordinates/staff and a delivery-pass price/policy when these optional features are wanted. Multi-store, pickup and pass flags remain deliberately off. Existing campus ordering does not require activating them.
+2. **Future live observations:** the revised notification appearance on the next genuinely due message; a genuinely due scheduled-order reminder and tracking tap; future ambassador/monthly runs and bank settlement/failover observations as applicable. Successful provider dispatch is distinct from device display. No artificial production activity is required merely to fill a checklist.
+3. **Optional pass-specific provider exercise:** the shared integration and recovery contracts are closed as requested. A separate actual pass charge remains unobserved because this audit runtime has no Paystack test key. This is recorded acceptance depth, not an unresolved implementation defect.
+4. **Native Chrome UI:** the linked production manifest is valid and its worker/assets are served correctly. A fresh native-browser protocol check encountered the audit proxy's certificate-trust failure; that check was not marked passed. Earlier installation evidence is retained. Do not infer an app TLS defect or claim the install menu was freshly observed on a physical device.
 
-1. **Delivery pass rollout:** configure the real campus price/policy when desired; keep its flag off until deliberately released. Automatic renewal is explicitly wallet-funded, not recurring bank/card billing.
-2. **Hourly job observation CLOSED — 26 November:** first actual success was 25 November at 23:00 WAT. Live records show 11 successful runs through 26 November at 09:00 WAT, no failed run and no work/retries on the inspected recent runs. The worker runs revision 93aec202, which includes the pass implementation. The release flag remains off. See [26 November operational evidence](OPERATIONAL_CLOSEOUT_2026_11_26.md).
-3. **Optional pass-specific gateway acceptance:** run a controlled payment/return/webhook/recovery in a runtime carrying the Paystack test key when available. Shared integration and contract checks are closed; actual charge execution remains unobserved rather than an unresolved code defect.
-4. **Physical-store rollout:** enter actual store addresses, coordinates and staff, then deliberately enable multi-store/pickup if needed. There are currently no configured stores; the optional flags remain off. This does not require changing the existing campus ordering mode.
-5. **Operational observations retained from both tracks:** actual scheduled-order reminder receipt/private tracking tap; new recurring-campaign and ambassador-report recipient/device observations at their scheduled times; next normal monthly execution; real bank settlement/failover/quota observations as relevant. Existing provider/device acceptance is not reopened, and no customer blast, quota exhaustion or real charge is needed merely to fill a checklist.
+## Explicitly deferred expansions
 
-### Deferred feature expansions, not current launch repairs
-
-- Ordering-campus selection independent of academic campus, and university-first signup.
+- Ordering-campus selection independent of academic campus and university-first signup.
 - Marketplace/peer expansion.
-- Official ticket transfer, delegated door staff and shared-HP group-ticket extensions. Ordinary group purchase/shared purchaser registration is already implemented.
-- Broad UI redesign and exploration of the owner's uploaded UI skills.
-- Optional obsolete-schema and test-data cleanup: deferred, with owner-entered menu/storefront/settings and essential configuration protected.
+- Official ticket transfer, delegated door staff and shared-HP extensions. Ordinary group ticket purchase is already implemented.
+- Broad visual redesign and exploration of the owner's uploaded UI skills.
+- Optional test-data/obsolete-schema cleanup, preserving real menu/storefront/settings/configuration.
 
-Central ingredients with manually transferred store consumables are the implemented inventory model requested by the owner. Automatic recipe deduction/packaging reservation/stock-driven menus are outside that limited extension; they are not silently presented as unfinished requested features.
+Automatic recipe consumption, packaging reservation and stock-driven menus are outside the limited central-kitchen/store-consumables extension requested. Managed pg_net placement and unavailable Free-plan leaked-password protection are reviewed configuration exceptions. None of these is silently counted as completed feature work or a new launch-code repair.
 
-Managed pg_net placement and unavailable Free-plan leaked-password protection are previously reviewed configuration exceptions, not pending application fixes. No other specific reproduced defect is reopened by this document. If a new live symptom is reported, reproduce it as a new finding rather than restoring historical backlog rows.
-
-All optional store/pass flags remain disabled. The separate owner-approved engagement campaign remains unchanged. No live customer funds, messages or cleanup were touched by this final check.
-
-
-## 26 November follow-up
-
-The hourly worker observation is closed, with 11 actual successful runs and no failed run at the recorded checkpoint. The morning campaign has three provider-accepted pushes and 17 skipped unresolved external-account aliases; individual device diagnostics remain open, not successful delivery. See [operational evidence and latest verification](OPERATIONAL_CLOSEOUT_2026_11_26.md). The latest targeted combined run passed 156 tests and the SDK registration suite passed. Subscription-identity reads were blocked by automatic approval review's account usage limit; they were not executed. No change to optional feature activation, worker frequency, customer identities or campaign recipient consent was made.
-
-
-## Provider diagnosis and fixes — 26 November continuation
-
-The prior device-lookup review blocker has recovered. All 17 affected account aliases were found and match their owners. Sixteen currently have no active browser-push subscription; one is currently active. Email subscriptions are not push consent. The historical skipped rows remain skipped; current state is not retroactive evidence of delivery.
-
-The resulting stale device-eligibility defect is fixed and pushed: only opted-in devices are registered, current-device disable/rotation removes its owner-scoped server row, and serialized writes preserve opt-out during delayed requests. No historical bulk cleanup or provider reassignment occurred. See [device lifecycle proof](PUSH_DEVICE_LIFECYCLE_2026_11_26.md), including 2,192 backend tests and a live RLS rollback test.
-
-The owner confirmed receiving the morning message and reported missing branding. That presentation fix is recorded separately in [push branding](PUSH_BRANDING_2026_11_26.md). The genuine next message after deployment can confirm the revised appearance; no duplicate send is needed. Remaining unrelated operator setup and deferred expansions above are unchanged.
+No specific reproduced code defect remains open from this assignment after the linked fixes. A new live symptom should become a new reproducible finding, rather than reopening old inventory rows as an unfinished backlog.
