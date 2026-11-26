@@ -44,12 +44,14 @@ function WebInstallPrompt() {
     return saved > 1 && Date.now() >= saved && Date.now() - saved < 7 * 86400000;
   };
   useEffect(() => {
-    const update = () => setShow(!isStandalone() && hasInstallPrompt() && !recentlyDismissed());
+    const update = () => startTransition(() => setShow(!isStandalone() && hasInstallPrompt() && !recentlyDismissed()));
     const manual = () => {
       if (isStandalone()) return;
-      setError(false);
-      if (hasInstallPrompt()) setShow(true);
-      else setShowIOS(true);
+      startTransition(() => {
+        setError(false);
+        if (hasInstallPrompt()) setShow(true);
+        else setShowIOS(true);
+      });
     };
     const installed = () => { setShow(false); setShowIOS(false); };
     update();
@@ -65,14 +67,14 @@ function WebInstallPrompt() {
 
   useEffect(() => {
     if (!isMobile || isStandalone() || recentlyDismissed()) return;
-    const timer = setTimeout(() => setShow(true), 4000);
+    const timer = setTimeout(() => startTransition(() => setShow(true)), 4000);
     return () => clearTimeout(timer);
   }, [isMobile]);
 
   const handleInstall = async () => {
     if (busy) return;
     if (apk && !isIOS) { window.location.assign(apk.url); return; }
-    if (isIOS) { setShow(false); setShowIOS(true); return; }
+    if (isIOS) { startTransition(() => { setShow(false); setShowIOS(true); }); return; }
     setBusy(true); setError(false);
     const result = await triggerInstall();
     setBusy(false); setShow(false);

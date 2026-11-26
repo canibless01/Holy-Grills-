@@ -103,11 +103,11 @@ No real customer account, order, wallet movement or database cleanup is part of 
 ## Verification record — 26 November 2026
 
 - Web production build (including existing web push and public-page contracts), TypeScript, ESLint and five native workflow test groups pass.
-- Fixture-backed Android/iPhone browser acceptance passes: Android APK CTA and download route share one manifest request; iPhone opens the Safari guide without requesting the manifest. No customer writes, page errors or horizontal overflow occurred.
+- Fixture-backed Android/iPhone browser acceptance passes in three consecutive runs after install-prompt updates were made non-urgent during hydration: Android APK CTA and download route share one manifest request; iPhone opens the Safari guide without requesting the manifest. No customer writes, page errors or horizontal overflow occurred.
 - Gradle compiles the native Android project. A prior debug APK installed successfully on a Google APIs Android 35 emulator, and Android accepted its launch. The software-only emulator then suffered a system-process ANR and lost its WebView connection; this is **not** a passed interactive app, encrypted-vault or push acceptance test. No real customer credentials were used.
 - OneSignal’s Android platform probe reports `fcm_live`. No native subscription, account association, targeted test push, provider dispatch or physical receipt is claimed from that configuration probe. No campaign was sent.
 - The Maps browser-key probe could not complete in the execution environment. Native `https://localhost/*` referrer acceptance and actual phone GPS remain unverified.
 - GitHub denied this connection permission to set Actions secrets (`403 Resource not accessible by integration`). The repository owner must add `HG_ANDROID_GOOGLE_MAPS_API_KEY` and eventual release-signing secrets in Settings → Secrets and variables → Actions. Local builds use ignored local configuration. A CI debug build can compile without the Maps secret, but that does not enable working Google Maps.
-- There are no database migrations, production customer writes or production release-manifest activation in this branch. Customer-wide campaigns were not sent.
+- The Android integration adds no database migrations, production customer writes or production release-manifest activation. Latest main was merged to preserve the other chat’s work. Customer-wide campaigns were not sent.
 
 The internal APK is a debug-signed testing build. It is not the customer release, and its signing key must not become the permanent production identity.
