@@ -1,8 +1,11 @@
+import { isNativeApp } from '@/native/platform';
+import { CapacitorHttp } from '@capacitor/core';
 import { registrationOptions } from './registrationOptions';
 // HolyGrill Live API — drop-in replacement for mockApi that calls the real backend.
 // Every method mirrors mockApi's signature so components only change their import.
 // Base URL + JWT token handling live in ./apiClient. Verified against the live
 // backend at https://holygrills-production.up.railway.app/api (Railway, Nov 2026).
+import { getRefreshToken } from '@/lib/apiClient';
 import { apiClient, ApiError, login as apiLogin, clearTokens, setTokens, isAuthenticated, getToken, API_BASE_URL } from './apiClient';
 import { getOrderCustomer } from './hgUtils';
 import { hpTierName } from './valueText';
@@ -57,7 +60,7 @@ const auth = {
     if (data?.access_token && data?.refresh_token) setTokens(data.access_token, data.refresh_token);
     return data;
   },
-  async refresh() { return apiClient.post('/auth/refresh', { refresh_token: localStorage.getItem('hg_refresh_token') }); },
+  async refresh() { return apiClient.post('/auth/refresh', { refresh_token: getRefreshToken() }); },
   async updateProfile(body) { return apiClient.patch('/auth/profile', body); },
   // Dedicated avatar upload — POST /auth/profile/photo { photo_url }. The
   // update_profile route does not accept photo_url, so the avatar must go
@@ -281,6 +284,13 @@ const events = {
     const adminCampusId = token && localStorage.getItem('hg_admin_campus_id');
     const campusHeader = adminCampusId || guestCampusId;
     const qs = accessToken ? `?access_token=${encodeURIComponent(accessToken)}` : guestEmail ? `?guest_email=${encodeURIComponent(guestEmail)}` : '';
+    if (isNativeApp()) {
+      const result = await CapacitorHttp.get({ url: `${API_BASE_URL}/events/${eventId}/tickets/${ticketId}/pdf${qs}`,
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(campusHeader ? { 'X-Campus-ID': campusHeader } : {}) }, responseType: 'arraybuffer' });
+      if (result.status >= 400) throw new ApiError(result.status, 'Failed to download ticket PDF');
+      const bytes = Uint8Array.from(atob(result.data), value => value.charCodeAt(0));
+      return URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    }
     const res = await fetch(`${API_BASE_URL}/events/${eventId}/tickets/${ticketId}/pdf${qs}`, {
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),

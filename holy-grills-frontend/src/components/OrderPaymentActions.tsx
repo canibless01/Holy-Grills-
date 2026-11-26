@@ -1,3 +1,4 @@
+import { launchPayment } from '@/native/payments';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { CreditCard } from 'lucide-react';
@@ -23,7 +24,7 @@ export default function OrderPaymentActions({ order, claimToken, onUpdated, auto
       if (result.payment_status === 'paid') { await onUpdated(); return; }
       if (verify) { setError(result.message || msg('FE_ORDER_PAYMENT_PENDING', 'Payment has not been confirmed. You can continue payment or check again.')); return; }
       if (!isAllowedPaymentUrl(result.authorization_url)) throw new Error(msg('FE_ORDER_PAYMENT_INVALID_LINK', 'The payment link could not be verified. Please retry.'));
-      window.location.assign(result.authorization_url);
+      await launchPayment(result.authorization_url, `/orders/${order.id}?payment_return=1${claimToken ? '&claim_token=' + encodeURIComponent(claimToken) : ''}`);
     } catch (e) { setError(e.message || msg('FE_ORDER_PAYMENT_UNAVAILABLE', 'Payment is unavailable. Your order is saved; please retry here.')); }
     finally { busyRef.current = false; setBusy(false); }
   };

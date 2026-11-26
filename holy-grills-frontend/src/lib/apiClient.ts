@@ -1,3 +1,4 @@
+import { apiFetch } from '@/native/apiFetch';
 // HolyGrill Live API Client — calls the real backend at https://holygrills-production.up.railway.app
 import { localStore, sessionStore } from '@/lib/storage';
 import { queryClientInstance } from '@/lib/query-client';
@@ -83,7 +84,7 @@ async function performRefresh() {
   const doFetch = () => new Promise((resolve, reject) => {
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), 12000);
-    fetch(`${BASE_URL}/auth/refresh`, {
+    apiFetch(`${BASE_URL}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refresh }),
@@ -228,7 +229,7 @@ async function request(path: string, options: RequestOptions = {}) {
 
   let res;
   try {
-    res = await fetch(`${BASE_URL}${path}`, { ...fetchOptions, headers, signal: controller.signal });
+    res = await apiFetch(`${BASE_URL}${path}`, { ...fetchOptions, headers, signal: controller.signal });
   } catch (e) {
     clearTimeout(timeoutId);
     options.signal?.removeEventListener('abort', abortFromCaller);
@@ -296,7 +297,7 @@ async function requestRaw(path: string, options: RequestOptions = {}) {
 
   let res;
   try {
-    res = await fetch(`${BASE_URL}${path}`, { ...options, headers, signal: controller.signal });
+    res = await apiFetch(`${BASE_URL}${path}`, { ...options, headers, signal: controller.signal });
   } catch (e) {
     clearTimeout(timeoutId);
     if (e.name === 'AbortError') throw new ApiError(0, 'Request timed out — the server may be starting up. Try again in a moment.');
@@ -389,7 +390,7 @@ export const apiClient = {
 
 // Auth helper — login and store tokens
 export async function login(email: string, password: string) {
-  const res = await fetch(`${BASE_URL}/auth/login`, {
+  const res = await apiFetch(`${BASE_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),

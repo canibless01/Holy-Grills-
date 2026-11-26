@@ -1,3 +1,4 @@
+import { isNativeCredential, readNativeCredential, writeNativeCredential } from '@/native/secureSession';
 /**
  * SSR-safe storage
  * ============================================================================
@@ -22,12 +23,14 @@ const hasSession = () => typeof window !== 'undefined' && !!window.sessionStorag
 
 const make = (has: () => boolean, kind: 'local' | 'session') => ({
   getItem(key: string): string | null {
+    if (isNativeCredential(key)) return readNativeCredential(key);
     try {
       if (has()) return window[kind === 'local' ? 'localStorage' : 'sessionStorage'].getItem(key);
     } catch { /* private mode / disabled storage — fall through to memory */ }
     return memory.get(key) ?? null;
   },
   setItem(key: string, value: string): void {
+    if (isNativeCredential(key)) { writeNativeCredential(key, value); return; }
     try {
       if (has()) {
         window[kind === 'local' ? 'localStorage' : 'sessionStorage'].setItem(key, value);
@@ -37,6 +40,7 @@ const make = (has: () => boolean, kind: 'local' | 'session') => ({
     memory.set(key, value);
   },
   removeItem(key: string): void {
+    if (isNativeCredential(key)) { writeNativeCredential(key, null); return; }
     try {
       if (has()) window[kind === 'local' ? 'localStorage' : 'sessionStorage'].removeItem(key);
     } catch { /* ignore */ }

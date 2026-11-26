@@ -1,3 +1,4 @@
+import { saveNativeBlobUrl } from '@/native/download';
 import GroupRegisterModal from '@/components/events/GroupRegisterModal';
 import { apiClient } from '@/lib/apiClient';
 import { EventAdmissionOpening } from '@/components/events/EventAdmissionWindow';
@@ -335,6 +336,7 @@ export default function EventDetail() {
               try {
                 // Guest tickets require guest_email for ownership verification (spec §11.10).
                 const url = await liveApi.events.downloadTicketPdf(eventId, ticket.ticket_id || ticket.id, ticket.guest_email, ticket.access_token);
+                if (await saveNativeBlobUrl(url, `holy-grills-ticket-${(ticket.ticket_id || '').slice(0, 8)}.pdf`)) { URL.revokeObjectURL(url); return; }
                 const a = document.createElement('a');
                 a.href = url;
                 a.download = `holy-grills-ticket-${(ticket.ticket_id || '').slice(0, 8)}.pdf`;

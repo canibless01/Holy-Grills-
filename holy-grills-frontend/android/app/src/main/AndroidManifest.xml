@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:allowBackup="false"
+        android:usesCleartextTraffic="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/build_app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+
+        <meta-data android:name="com.onesignal.suppressLaunchURLs" android:value="true" />
+
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:name=".MainActivity"
+            android:label="@string/build_app_name"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="holygrills" android:host="app" />
+            </intent-filter>
+            <!-- HTTPS association needs the release certificate in the website's assetlinks.json. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="holygrills.online" />
+                <data android:path="/" />
+                <data android:pathPrefix="/orders" />
+                <data android:pathPrefix="/track-orders" />
+                <data android:pathPrefix="/order-confirmation" />
+                <data android:pathPrefix="/wallet" />
+                <data android:pathPrefix="/events" />
+                <data android:pathPrefix="/marketplace" />
+                <data android:pathPrefix="/register" />
+                <data android:pathPrefix="/signup" />
+                <data android:pathPrefix="/r/" />
+                <data android:pathPrefix="/login" />
+                <data android:pathPrefix="/reset-password" />
+                <data android:pathPrefix="/dashboard" />
+                <data android:pathPrefix="/menu" />
+                <data android:pathPrefix="/rewards" />
+                <data android:pathPrefix="/profile" />
+                <data android:pathPrefix="/addresses" />
+                <data android:pathPrefix="/notifications" />
+                <data android:pathPrefix="/referrals" />
+                <data android:pathPrefix="/squads" />
+                <data android:pathPrefix="/streak" />
+
+            </intent-filter>
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"></meta-data>
+        </provider>
+    </application>
+
+    <!-- GPS is requested only after Use my location. No contacts, camera or storage permission. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- Permissions -->
+
+    <uses-permission android:name="android.permission.INTERNET" />
+</manifest>

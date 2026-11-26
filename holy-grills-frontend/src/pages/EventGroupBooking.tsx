@@ -1,3 +1,4 @@
+import { launchPayment } from '@/native/payments';
 import { sessionStore } from '@/lib/storage';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -53,7 +54,7 @@ export default function EventGroupBooking() {
       if (['paid', 'not_required'].includes(result.payment_status) && result.tickets) { setGroup(result); return; }
       if (!isAllowedPaymentUrl(result.authorization_url)) throw new Error(msg('EVENT_GROUP_PAYMENT_INVALID', 'The payment link could not be verified.'));
       redirecting = true;
-      window.location.assign(result.authorization_url);
+      await launchPayment(result.authorization_url, window.location.pathname + window.location.search + (window.location.search ? '&' : '?') + 'reference=' + encodeURIComponent(result.reference || 'pending'));
     } catch (failure) { if (scope.current === originalScope) setError(failure.message); }
     finally { if (!redirecting) { lock.current = false; setBusy(false); } }
   };

@@ -1,3 +1,5 @@
+import { isNativeApp } from '@/native/platform';
+import { nativePushState } from '@/native/pushState';
 /**
  * Holy Grill — OneSignal Push Integration (v16 User-Model SDK)
  * ----------------------------------------------------------------------------
@@ -148,6 +150,7 @@ const identify = async (target: string) => {
 };
 
 export const initOneSignal = async (userId: string | null) => {
+  if (isNativeApp()) { try { await (await import('@/native/push')).nativePushReady(userId); } catch { /* Optional: never blocks login. */ } return; }
   const appId = APP_CONFIG.onesignal.appId;
   if (userId) registeredUserId = userId;
   if (!appId) return;
@@ -180,6 +183,7 @@ export const initOneSignal = async (userId: string | null) => {
  * Rejects with a user-readable message; never hangs.
  */
 export const ensurePushReady = async (userId: string | null = null, timeoutMs = READY_TIMEOUT_MS): Promise<void> => {
+  if (isNativeApp()) { await (await import('@/native/push')).nativePushReady(userId); return; }
   const appId = APP_CONFIG.onesignal.appId;
   if (!appId) {
     throw new Error(msg('FE_ONESIGNAL_PUSH_NOTIFICATIONS_AREN_T_CONFIGURED', 'Push notifications aren’t configured yet. Set the OneSignal App ID in app.config to enable them.'));
@@ -230,6 +234,7 @@ export const ensurePushReady = async (userId: string | null = null, timeoutMs = 
 };
 
 export const optOutOneSignal = async () => {
+  if (isNativeApp()) { await (await import('@/native/push')).nativePushOptOut(); return; }
   if (sdkInstance) {
     await sdkInstance.User?.PushSubscription?.optOut();
     const id = sdkInstance.User?.PushSubscription?.id;
@@ -242,6 +247,7 @@ export const optOutOneSignal = async () => {
  * v16: OneSignal.logout() removes the external_id and resets to anonymous.
  */
 export const logoutOneSignal = async () => {
+  if (isNativeApp()) { await (await import('@/native/push')).nativePushLogout(); return; }
   registeredUserId = null; identifiedUserId = null; storedDevice = null; identityGeneration += 1;
   const generation = identityGeneration;
   const previous = logoutTask;
@@ -256,6 +262,7 @@ export const logoutOneSignal = async () => {
 };
 
 export const requestPushPermission = async () => {
+  if (isNativeApp()) return (await import('@/native/push')).nativePushPermission();
   const appId = APP_CONFIG.onesignal.appId;
   if (!appId) {
     // OneSignal isn't configured yet — surface the real reason instead of a
@@ -342,10 +349,12 @@ export const requestPushPermission = async () => {
 };
 
 export const isPushSupported = () => {
+  if (isNativeApp()) return true;
   return typeof window !== 'undefined' && 'Notification' in window && 'serviceWorker' in navigator && window.isSecureContext !== false;
 };
 
 export const isPushRegistered = () => {
+  if (isNativeApp()) return nativePushState.registered;
   const subscription = sdkInstance?.User?.PushSubscription;
   if (logoutTask || !subscription?.optedIn || !subscription?.id || subscription.id.startsWith('local-')) return false;
   if (!registeredUserId) return identifiedUserId === null;

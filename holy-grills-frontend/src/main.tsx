@@ -1,7 +1,10 @@
+import { isNativeApp } from '@/native/platform';
+import { resetNativeSession } from '@/native/secureSession';
+import { bootstrapNative } from '@/native/bootstrap';
 import ReactDOM from 'react-dom/client'
 import App from '@/App'
 import { isHydratingPrerender } from '@/lib/hydrationMode'
-import { loadMessages } from '@/lib/messages'
+import { loadMessages, msg } from '@/lib/messages'
 import { clearOriginMarker, enforceCanonicalOrigin, isBeingOriginBounced } from '@/lib/canonicalOrigin'
 import { registerAppServiceWorker, watchServiceWorkerController } from '@/lib/serviceWorkerLifecycle'
 import '@fontsource-variable/nunito'
@@ -53,7 +56,7 @@ function boot() {
   // surfaces as "Cannot read properties of null (reading 'useState')" inside the
   // root providers. So in development we never register — and we actively tear
   // down any worker and cache left behind by an earlier session.
-  if ('serviceWorker' in navigator) {
+  if (!isNativeApp() && 'serviceWorker' in navigator) {
     if (import.meta.env.DEV) {
       navigator.serviceWorker
         .getRegistrations()
@@ -85,6 +88,8 @@ function boot() {
   }
 }
 
+async function start() {
+  await bootstrapNative();
 if (!enforceCanonicalOrigin()) {
   // A redirect would have returned true. Reaching here means either the page is
   // already on the canonical origin, or we have just been bounced back by the
@@ -102,3 +107,17 @@ if (!enforceCanonicalOrigin()) {
   }
   boot();
 }
+
+}
+void start().catch(() => {
+  const root = document.getElementById('root');
+  if (!root) return;
+  root.replaceChildren();
+  const text = document.createElement('p'); text.textContent = msg('FE_ANDROID_SESSION_UNAVAILABLE', 'Holy Grills could not open. Retry, or sign in again.');
+  const retry = document.createElement('button'); retry.textContent = msg('FE_ANDROID_RETRY', 'Retry'); retry.onclick = () => window.location.reload();
+  const reset = document.createElement('button'); reset.textContent = msg('FE_ANDROID_SIGN_IN_AGAIN', 'Sign in again');
+  reset.onclick = () => { void resetNativeSession().then(() => window.location.reload()); };
+  root.append(text, retry);
+  if (isNativeApp()) root.append(reset);
+  if (isNativeApp()) import('@capacitor/splash-screen').then(({ SplashScreen }) => SplashScreen.hide()).catch(() => {});
+});

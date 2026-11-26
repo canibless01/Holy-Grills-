@@ -1,3 +1,4 @@
+import { launchPayment } from '@/native/payments';
 import { useCheckoutStore } from '@/hooks/useCheckoutStore';
 import { useStorePickup } from '@/hooks/useStorePickup';
 import { rememberPaymentCart, settlePaidCart } from '@/lib/paidCart';
@@ -777,7 +778,7 @@ export default function Checkout() {
         if (payment.payment_status !== 'paid') {
           if (!isAllowedPaymentUrl(payment.authorization_url)) throw new Error(msg('FE_ORDER_PAYMENT_INVALID_LINK', 'The payment link could not be verified. Please retry.'));
           // DON'T clear cart yet - user might navigate back from payment
-          window.location.assign(payment.authorization_url);
+          await launchPayment(payment.authorization_url, `/orders/${order.id}?payment_return=1${order.claim_token ? '&claim_token=' + encodeURIComponent(order.claim_token) : ''}`);
           return;
         }
         order.payment_status = 'paid';

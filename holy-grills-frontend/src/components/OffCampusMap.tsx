@@ -1,3 +1,5 @@
+import { isNativeApp } from '@/native/platform';
+import { nativeCurrentPosition } from '@/native/device';
 import { useEffect, useRef, useState } from 'react';
 import { LocateFixed, Search } from 'lucide-react';
 import { loadGoogleMaps } from '@/lib/googleMaps';
@@ -116,8 +118,15 @@ export default function OffCampusMap({ gates = [], pin, onPinChange, onGateSelec
   };
   const useLocation = () => {
     setGeoError('');
-    if (!navigator.geolocation) { setGeoError('GPS is unavailable. Choose a gate and enter your address.'); return; }
+    if (!isNativeApp() && !navigator.geolocation) { setGeoError('GPS is unavailable. Choose a gate and enter your address.'); return; }
     setLocating(true);
+    if (isNativeApp()) {
+      nativeCurrentPosition({ enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }).then(position => {
+        callbacks.current.onPinChange?.({ lat: position.coords.latitude, lng: position.coords.longitude }); map.current?.setZoom(16);
+      }).catch(() => setGeoError('Location is unavailable. Allow location for Holy Grills in Android settings, or search for your address.'))
+        .finally(() => setLocating(false));
+      return;
+    }
     navigator.geolocation.getCurrentPosition(position => {
       setLocating(false); callbacks.current.onPinChange?.({ lat: position.coords.latitude, lng: position.coords.longitude }); map.current?.setZoom(16);
     }, failure => {

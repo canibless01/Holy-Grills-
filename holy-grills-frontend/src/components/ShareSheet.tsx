@@ -1,3 +1,4 @@
+import { shareNative } from '@/native/device';
 import { resolveShareTemplate, resolveShareCaption } from '@/lib/shareTemplates';
 import { useCampus } from '@/lib/campusContext';
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -180,6 +181,7 @@ export default function ShareSheet({
   const nativeShare = async () => {
     recordOrderShare('native');
     try {
+      if (await shareNative(payload.headline || 'Holy Grills', shareText, link)) return;
       if (blob && navigator.canShare && navigator.canShare({ files: [new File([blob], 'holygrills-share.png', { type: 'image/png' })] })) {
         await navigator.share({ files: [new File([blob], 'holygrills-share.png', { type: 'image/png' })], title: payload.headline || 'Holy Grills', text: shareText, url: link });
         return;
