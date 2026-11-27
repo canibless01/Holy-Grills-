@@ -464,10 +464,10 @@ def claim_pwa_push_bonus():
 @challenges_bp.route("/push-registered", methods=["POST"])
 @require_auth
 def claim_registered_push():
-    """The OneSignal flow must have registered a web token for this user first."""
+    """Require this authenticated account's registered web or Android subscription."""
     db = get_user_client()
-    tokens = db.table("device_tokens").select("id").eq("user_id", g.user_id).eq("platform", "web").limit(1).execute() or []
-    if not tokens:
+    from app.services.push_registration import has_registered_push
+    if not has_registered_push(db, g.user_id):
         return jsonify({"error": MSG.PWA_PUSH_REGISTRATION_REQUIRED}), 400
     milestones = db.table("milestones").select("id").eq("trigger_type", "push_subscribe").eq("is_active", True).limit(1).execute() or []
     if not milestones:

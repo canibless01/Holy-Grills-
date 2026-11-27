@@ -230,9 +230,8 @@ def check_and_award_milestone(user_id: str, milestone_id: str) -> dict:
         if not check_and_award_pwa_push_bonus(user_id)["eligible"]:
             raise ValueError(MSG.PWA_BONUS_REQUIREMENTS)
     elif trigger_type == "push_subscribe":
-        tokens = (db.table("device_tokens").select("id").eq("user_id", user_id)
-                  .eq("platform", "web").limit(1).execute()) or []
-        if not tokens:
+        from app.services.push_registration import has_registered_push
+        if not has_registered_push(db, user_id):
             raise ValueError(MSG.PWA_PUSH_REGISTRATION_REQUIRED)
 
     # Resolve reward amount for system-verified triggers from system_settings
