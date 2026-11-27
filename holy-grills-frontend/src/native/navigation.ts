@@ -9,7 +9,7 @@ export function nativeRoute(raw: unknown): string | null {
   const hosts = new Set(['holygrills.online', 'www.holygrills.online', 'localhost']);
   try { if (APP_CONFIG.domain) hosts.add(new URL(APP_CONFIG.domain).hostname); } catch { /* invalid config is not trusted */ }
   if (!(url.protocol === 'https:' && hosts.has(url.hostname)) && !(url.protocol === 'holygrills:' && url.hostname === 'app')) return null;
-  if (!/^\/(?:$|(?:r|signup|newsletter|android|cart|checkout|order-confirmation|addresses|notifications|notification-preferences|order-locks|hp-education|hall-of-fame|catering|faq|contact|terms|our-story|menu)(?:\/|$)|dashboard(?:\/|$)|orders(?:\/|$)|track-orders(?:\/|$)|wallet(?:\/|$)|rewards(?:\/|$)|profile(?:\/|$)|events(?:\/|$)|marketplace(?:\/|$)|register(?:\/|$)|login(?:\/|$)|reset-password(?:\/|$)|referrals(?:\/|$)|leaderboard(?:\/|$)|squads(?:\/|$)|streak(?:\/|$))/.test(url.pathname)) return null;
+  if (!/^\/(?:$|(?:admin|community-manager|event-manager|kitchen|rider|r|signup|newsletter|android|cart|checkout|order-confirmation|addresses|notifications|notification-preferences|order-locks|hp-education|hall-of-fame|catering|faq|contact|terms|our-story|menu)(?:\/|$)|dashboard(?:\/|$)|orders(?:\/|$)|track-orders(?:\/|$)|wallet(?:\/|$)|rewards(?:\/|$)|profile(?:\/|$)|events(?:\/|$)|marketplace(?:\/|$)|register(?:\/|$)|login(?:\/|$)|reset-password(?:\/|$)|referrals(?:\/|$)|leaderboard(?:\/|$)|squads(?:\/|$)|streak(?:\/|$))/.test(url.pathname)) return null;
   return url.pathname + url.search + url.hash;
 }
 let pendingRoute: { path: string; paymentReturn: boolean } | null = null;

@@ -8,15 +8,15 @@ const temp=await mkdtemp(join(tmpdir(),'hg-native-'));
 const root=process.cwd();
 try{
  const entry=join(temp,'entry.ts');
- await writeFile(entry,['secureSession','navigation','payments','apiFetch','push','devicePlatform','releaseManifest','device','refreshPage'].map(name=>`export * from ${JSON.stringify(resolve('src/native/'+name+'.ts'))};`).join('\n')+`\nexport * from ${JSON.stringify(resolve('src/lib/storage.ts'))};`);
+ await writeFile(entry,['secureSession','navigation','payments','apiFetch','push','devicePlatform','releaseManifest','device','refreshPage','publicLinks'].map(name=>`export * from ${JSON.stringify(resolve('src/native/'+name+'.ts'))};`).join('\n')+`\nexport * from ${JSON.stringify(resolve('src/lib/storage.ts'))};`);
  const output=join(temp,'test.mjs');
  await build({entryPoints:[entry],bundle:true,platform:'node',format:'esm',outfile:output,plugins:[{name:'native-boundaries',setup(b){
   b.onResolve({filter:/^@capacitor\/|^@onesignal\//},({path})=>({path,namespace:'fixture'}));
   b.onResolve({filter:/^@\//},({path})=>['@/config/app.config','@/lib/liveApi'].includes(path)?{path,namespace:'fixture'}:{path:resolve('src',path.slice(2))+'.ts'});
   b.onLoad({filter:/.*/,namespace:'fixture'},({path})=>({contents:
-   path==='@capacitor/core'?`export const Capacitor={isNativePlatform:()=>globalThis.__native};export const registerPlugin=()=>globalThis.__vault;export const CapacitorHttp={request:options=>globalThis.__http(options)};`:
+   path==='@capacitor/core'?`export const Capacitor={isNativePlatform:()=>globalThis.__native};export const registerPlugin=name=>name==='HolyGrillsDocuments'?globalThis.__documents:globalThis.__vault;export const CapacitorHttp={request:options=>globalThis.__http(options)};`:
    path==='@capacitor/geolocation'?`export const Geolocation={getCurrentPosition:options=>globalThis.__gps(options)};`:
-   path==='@capacitor/share'?`export const Share={share:async()=>{}};`:
+   path==='@capacitor/share'?`export const Share={share:async value=>{globalThis.__shared=value}};`:
    path==='@capacitor/browser'?`export const Browser={open:options=>globalThis.__browser.push(options)};`:
    path==='@onesignal/capacitor-plugin'?`export default globalThis.__sdk;`:
    path==='@/config/app.config'?`export default {domain:'https://holygrills.online',onesignal:{appId:'471bd695-2342-4521-aa0f-8c93d7ce805f'}};`:
@@ -24,6 +24,8 @@ try{
   }));
  }}]});
  const store=()=>{const map=new Map();return{getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,String(v)),removeItem:k=>map.delete(k),clear:()=>map.clear()}};
+ globalThis.__documents={prepareShare:async value=>{globalThis.__shareFile=value;return{uri:'content://com.holygrills.app.fileprovider/card.png'}}};
+ globalThis.FileReader=class{readAsDataURL(blob){blob.arrayBuffer().then(b=>{this.result='data:'+blob.type+';base64,'+Buffer.from(b).toString('base64');this.onload()})}};
  globalThis.localStorage=store();globalThis.sessionStorage=store();globalThis.window={localStorage,sessionStorage,location:{origin:'https://localhost',assign:url=>globalThis.__assigned=url},dispatchEvent:()=>{}};
  globalThis.__native=true;globalThis.__browser=[];let saved={access:'access-A',refresh:'refresh-A'},writes=[];
  globalThis.__vault={load:async()=>saved,save:async value=>{await new Promise(r=>setTimeout(r,3));saved={...value};writes.push(saved)},clear:async()=>{saved={};writes.push({})}};
@@ -46,7 +48,7 @@ try{
  m.localStore.removeItem('hg_access_token');m.localStore.removeItem('hg_refresh_token');await m.flushNativeSession();assert.deepEqual(saved,{});
  localStorage.setItem('hg_remember','0');m.sessionStore.setItem('hg_access_token','session-only');await m.flushNativeSession();assert.deepEqual(saved,{});assert.equal(m.sessionStore.getItem('hg_access_token'),'session-only');
  console.log('PASS vault bootstrap, no plaintext JWTs, atomic token rotation, serialized logout and non-remembered sessions');
- for(const input of ['https://evil.test/orders/1','javascript:alert(1)','//evil.test','https://holygrills.online.evil.test/orders','https://holygrills.online/admin','https://u:p@holygrills.online/orders','holygrills://evil/orders'])assert.equal(m.nativeRoute(input),null,input);
+ for(const input of ['https://evil.test/orders/1','javascript:alert(1)','//evil.test','https://holygrills.online.evil.test/orders','https://holygrills.online/not-an-app-route','https://u:p@holygrills.online/orders','holygrills://evil/orders'])assert.equal(m.nativeRoute(input),null,input);
  assert.equal(m.nativeRoute('https://holygrills.online/track-orders?order_number=X&claim_token=secret'),'/track-orders?order_number=X&claim_token=secret');
  assert.equal(m.nativeRoute('holygrills://app/orders/1?payment_return=1'),'/orders/1?payment_return=1');
  assert.equal(m.validateAndroidRelease({available:true,version:'1.0.1',versionCode:2,sha256:'a'.repeat(64),url:'https://raw.githubusercontent.com/canibless01/Holy-Grills-/'+'b'.repeat(40)+'/Holy-Grills.apk'})?.versionCode,2);
@@ -54,6 +56,17 @@ try{
  assert.equal(m.validateAndroidRelease({available:true,version:'1.0.1',versionCode:2,sha256:'a'.repeat(64),url:'https://raw.githubusercontent.com/canibless01/Holy-Grills-/main/mutable.apk'}),null);
  let reloads=0;window.location.reload=()=>reloads++;await m.refreshPage();assert.equal(reloads,1);globalThis.__native=false;await m.refreshPage();assert.equal(reloads,2);globalThis.__native=true;
  console.log('PASS explicit page reload preserves native session flushing and leaves web behavior unchanged');
+ const realNow=Date.now;let manifestTime=1000,manifestFetches=0;Date.now=()=>manifestTime;globalThis.__native=false;
+ globalThis.fetch=async()=>{manifestFetches++;return new Response(JSON.stringify({available:true,version:'1.0.2',versionCode:3,sha256:'a'.repeat(64),url:'https://holygrills.online/Holy-Grills.apk'}))};
+ await Promise.all([m.loadAndroidRelease(),m.loadAndroidRelease()]);assert.equal(manifestFetches,1);
+ manifestTime+=300001;await m.loadAndroidRelease();assert.equal(manifestFetches,2);Date.now=realNow;globalThis.__native=true;
+ console.log('PASS shared manifest cache expires so long-running apps can discover new releases');
+ assert.equal(m.publicSiteUrl('/register?ref=FRIEND'),'https://holygrills.online/register?ref=FRIEND');
+ assert.equal(m.publicShareUrl('https://localhost/orders/3'),'https://holygrills.online/orders/3');
+ await m.shareNative('Order','With your people','https://localhost/orders/3');assert.equal(__shared.url,'https://holygrills.online/orders/3');
+ await m.shareNative('Reward','Your people','https://localhost/',new Blob(['pixel'],{type:'image/png'}));assert.equal(__shareFile.mime,'image/png');assert.deepEqual(__shared.files,['content://com.holygrills.app.fileprovider/card.png']);
+ assert.equal(m.nativeRoute('https://holygrills.online/admin?tab=ambassadors'),'/admin?tab=ambassadors');
+ console.log('PASS native external shares use public URLs and staff deep links retain existing route authorization');
  let route,verificationReturn;m.deliverNativeRoute('https://holygrills.online/orders/2');m.listenNativeRoutes((path,verify)=>{route=path;verificationReturn=verify});assert.equal(route,'/orders/2');
  await m.launchPayment('https://checkout.paystack.com/token','/orders/3?payment_return=1');assert.equal(__browser.length,1);assert.equal(m.resumeNativePayment(),true);assert.equal(route,'/orders/3?payment_return=1');assert.equal(verificationReturn,true);assert.equal(m.resumeNativePayment(),false);
  await assert.rejects(()=>m.launchPayment('https://evil.test/pay','/orders/3'));

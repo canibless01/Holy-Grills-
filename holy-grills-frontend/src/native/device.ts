@@ -1,6 +1,7 @@
 import { Geolocation } from '@capacitor/geolocation';
 import { Share } from '@capacitor/share';
 import { isNativeApp } from './platform';
+import { publicShareUrl } from './publicLinks';
 
 export async function nativeCurrentPosition(options: PositionOptions = {}) {
   let position;
@@ -14,8 +15,9 @@ export async function nativeCurrentPosition(options: PositionOptions = {}) {
   }
   return { coords: position.coords, timestamp: position.timestamp };
 }
-export async function shareNative(title: string, text: string, url: string) {
+export async function shareNative(title: string, text: string, url: string, image?: Blob) {
   if (!isNativeApp()) return false;
-  await Share.share({ title, text, url, dialogTitle: title });
+  const files = image ? [await (await import('./download')).prepareNativeShareImage(image)] : undefined;
+  await Share.share({ title, text, url: publicShareUrl(url), files, dialogTitle: title });
   return true;
 }

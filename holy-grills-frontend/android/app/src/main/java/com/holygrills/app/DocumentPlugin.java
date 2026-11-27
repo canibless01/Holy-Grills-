@@ -11,10 +11,29 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.OutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.util.UUID;
+import androidx.core.content.FileProvider;
 
 /** Android's Save As picker grants only the document selected by the user. */
 @CapacitorPlugin(name = "HolyGrillsDocuments")
 public class DocumentPlugin extends Plugin {
+    @PluginMethod public void prepareShare(PluginCall call) {
+        String data = call.getString("data", ""), mime = call.getString("mime", "");
+        if (data.isEmpty() || data.length() > 28000000 || !(mime.equals("image/png") || mime.equals("image/jpeg"))) { call.reject("Invalid share image"); return; }
+        try {
+            File directory = new File(getContext().getCacheDir(), "holy-grills-shares");
+            if (!directory.exists() && !directory.mkdirs()) { call.reject("Share storage unavailable"); return; }
+            File[] older = directory.listFiles();
+            if (older != null) for (File file : older) if (file.lastModified() < System.currentTimeMillis() - 86400000L) file.delete();
+            File image = new File(directory, UUID.randomUUID().toString() + (mime.equals("image/png") ? ".png" : ".jpg"));
+            try (OutputStream stream = new FileOutputStream(image)) { stream.write(Base64.decode(data, Base64.DEFAULT)); }
+            JSObject result = new JSObject();
+            result.put("uri", FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", image).toString());
+            call.resolve(result);
+        } catch (Exception ignored) { call.reject("Share image could not be prepared"); }
+    }
     @PluginMethod public void save(PluginCall call) {
         String data = call.getString("data", "");
         if (data.isEmpty() || data.length() > 28000000) { call.reject("Invalid document"); return; }

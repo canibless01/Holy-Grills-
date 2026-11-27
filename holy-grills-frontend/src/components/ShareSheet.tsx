@@ -1,3 +1,4 @@
+import { publicSiteUrl } from '@/native/publicLinks';
 import { shareNative } from '@/native/device';
 import { resolveShareTemplate, resolveShareCaption } from '@/lib/shareTemplates';
 import { useCampus } from '@/lib/campusContext';
@@ -72,7 +73,7 @@ export default function ShareSheet({
   const [recorded, setRecorded] = useState(false);
 
   const caption = templateCaption ?? payload.caption ?? '';
-  const link = payload.link || (typeof window !== 'undefined' ? window.location.origin : '');
+  const link = payload.link || publicSiteUrl();
   const shareText = `${payload.headline ? payload.headline + ' · ' : ''}${caption}`;
 
   // Compose the shareable image onto a canvas: draw the base template, then
@@ -181,7 +182,7 @@ export default function ShareSheet({
   const nativeShare = async () => {
     recordOrderShare('native');
     try {
-      if (await shareNative(payload.headline || 'Holy Grills', shareText, link)) return;
+      if (await shareNative(payload.headline || 'Holy Grills', shareText, link, blob)) return;
       if (blob && navigator.canShare && navigator.canShare({ files: [new File([blob], 'holygrills-share.png', { type: 'image/png' })] })) {
         await navigator.share({ files: [new File([blob], 'holygrills-share.png', { type: 'image/png' })], title: payload.headline || 'Holy Grills', text: shareText, url: link });
         return;

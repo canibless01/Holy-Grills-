@@ -1,4 +1,4 @@
-import APP_CONFIG from '@/config/app.config';
+import { publicSiteUrl } from './publicLinks';
 import { isNativeApp } from './platform';
 import { isAllowedPaymentUrl } from '@/lib/safeNavigation';
 import { nativeRoute, deliverNativeRoute } from './navigation';
@@ -25,7 +25,7 @@ export function resumeNativePayment() {
 }
 
 export function paymentCallback(path: string) {
-  return new URL(path, isNativeApp() ? APP_CONFIG.domain : window.location.origin).href;
+  return publicSiteUrl(path);
 }
 
 export function clearNativePayment() { localStorage.removeItem(KEY); }

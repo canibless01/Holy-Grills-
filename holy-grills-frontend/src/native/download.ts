@@ -1,7 +1,7 @@
 import { registerPlugin } from '@capacitor/core';
 import { isNativeApp } from './platform';
 
-const documents = registerPlugin<{ save(options: { data: string; name: string; mime: string }): Promise<{ saved?: boolean; cancelled?: boolean }> }>('HolyGrillsDocuments');
+const documents = registerPlugin<{ save(options: { data: string; name: string; mime: string }): Promise<{ saved?: boolean; cancelled?: boolean }>; prepareShare(options: { data: string; mime: string }): Promise<{ uri: string }> }>('HolyGrillsDocuments');
 
 /** Save/share a generated document through Android's chooser, no broad storage access. */
 export async function saveNativeBlobUrl(url: string, name: string) {
@@ -14,4 +14,12 @@ export async function saveNativeBlobUrl(url: string, name: string) {
   });
   await documents.save({ data, name, mime: blob.type || 'application/octet-stream' });
   return true;
+}
+
+export async function prepareNativeShareImage(blob: Blob) {
+  if (!['image/png', 'image/jpeg'].includes(blob.type) || blob.size > 20 * 1024 * 1024) throw new Error('Invalid share image');
+  const data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1]); reader.onerror = reject; reader.readAsDataURL(blob);
+  });
+  return (await documents.prepareShare({ data, mime: blob.type })).uri;
 }

@@ -39,6 +39,11 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="holygrills.online" />
                 <data android:path="/" />
+                <data android:pathPrefix="/admin" />
+                <data android:pathPrefix="/community-manager" />
+                <data android:pathPrefix="/event-manager" />
+                <data android:pathPrefix="/kitchen" />
+                <data android:pathPrefix="/rider" />
                 <data android:pathPrefix="/orders" />
                 <data android:pathPrefix="/track-orders" />
                 <data android:pathPrefix="/order-confirmation" />

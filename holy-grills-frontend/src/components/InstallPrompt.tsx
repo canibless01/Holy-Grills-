@@ -73,7 +73,7 @@ function WebInstallPrompt() {
 
   const handleInstall = async () => {
     if (busy) return;
-    if (apk && !isIOS) { window.location.assign(apk.url); return; }
+    if (apk && !isIOS) { localStore.setItem(DISMISS_KEY, String(Date.now())); setShow(false); window.location.assign(apk.url); return; }
     if (isIOS) { startTransition(() => { setShow(false); setShowIOS(true); }); return; }
     setBusy(true); setError(false);
     const result = await triggerInstall();

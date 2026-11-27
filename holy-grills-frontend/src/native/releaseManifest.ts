@@ -5,7 +5,7 @@ export type AndroidRelease = { available: true; version: string; versionCode: nu
 export function validateAndroidRelease(value: unknown): AndroidRelease | null {
   if (!value || typeof value !== 'object') return null;
   const release = value as Record<string, unknown>;
-  if (release.available !== true || typeof release.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(release.version) || !Number.isInteger(release.versionCode) || Number(release.versionCode) < 1
+  if (release.available !== true || typeof release.version !== 'string' || !/^\d+\.\d+\.\d+(?:\+\d+(?:\.\d+)?)?$/.test(release.version) || !Number.isInteger(release.versionCode) || Number(release.versionCode) < 1
       || typeof release.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(release.sha256) || typeof release.url !== 'string') return null;
   let url: URL;
   try { url = new URL(release.url); } catch { return null; }
@@ -15,8 +15,12 @@ export function validateAndroidRelease(value: unknown): AndroidRelease | null {
   return trusted ? release as AndroidRelease : null;
 }
 let pending: Promise<AndroidRelease | null> | null = null;
+let loadedAt = -Infinity;
 export function loadAndroidRelease() {
-  if (!pending) pending = apiFetch(new URL('/android-release.json', isNativeApp() ? (APP_CONFIG.domain || 'https://holygrills.online') : window.location.origin).href)
+  if (!pending || Date.now() - loadedAt >= 300000 || Date.now() < loadedAt) {
+    loadedAt = Date.now();
+    pending = apiFetch(new URL('/android-release.json', isNativeApp() ? (APP_CONFIG.domain || 'https://holygrills.online') : window.location.origin).href)
     .then(response => response.ok ? response.json() : null).then(validateAndroidRelease).catch(() => null);
+  }
   return pending;
 }

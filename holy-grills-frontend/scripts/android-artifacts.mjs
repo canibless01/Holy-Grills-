@@ -19,6 +19,9 @@ if(signer){
  }
 
  mkdirSync('android-artifacts',{recursive:true});
+ const version=badging.match(/versionName='([^']+)'/)?.[1],versionCode=Number(badging.match(/versionCode='(\d+)'/)?.[1]);
+ if(!version||!Number.isInteger(versionCode)||versionCode<1)throw Error('Cannot read APK version');
+ writeFileSync('android-artifacts/package.json',JSON.stringify({packageName,version,versionCode,sha256:sha},null,2)+'\n');
  writeFileSync('android-artifacts/assetlinks.json',JSON.stringify([{relation:['delegate_permission/common.handle_all_urls'],target:{namespace:'android_app',package_name:packageName,sha256_cert_fingerprints:[formattedFingerprint]}}],null,2)+'\n');
 }
 console.log('APK checksum written. App-links association generated only from a verified signing certificate.');

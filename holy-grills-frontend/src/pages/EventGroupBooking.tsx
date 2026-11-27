@@ -1,3 +1,4 @@
+import { publicSiteUrl } from '@/native/publicLinks';
 import { launchPayment } from '@/native/payments';
 import { sessionStore } from '@/lib/storage';
 import { useEffect, useRef, useState } from 'react';
@@ -60,7 +61,7 @@ export default function EventGroupBooking() {
   };
 
   const copy = async () => {
-    try { const url = new URL(window.location.pathname, window.location.origin); url.searchParams.set('access', group.access_token); await navigator.clipboard.writeText(url.toString()); setCopied(true); }
+    try { const url = new URL(publicSiteUrl(window.location.pathname)); url.searchParams.set('access', group.access_token); await navigator.clipboard.writeText(url.toString()); setCopied(true); }
     catch { setError(msg('FE_EVENT_GROUP_COPY_FAILED', 'The private link could not be copied. Keep this page open and retry.')); }
   };
   const confirmed = (group?.tickets || []).filter(ticket => ['paid', 'not_required'].includes(ticket.payment_status) && ['confirmed', 'checked_in'].includes(ticket.status));
