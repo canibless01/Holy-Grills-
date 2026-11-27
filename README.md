@@ -1,9 +1,7 @@
-# Holy Grills Android acceptance build
+# Holy Grills Android downloads
 
-Version 1.0.1 (build 2), package `com.holygrills.app`, signed with the permanent Holy Grills release identity. Source: `android-app`, commit `613bb61`. This branch hosts versioned APKs because the current connection cannot upload release assets.
+Latest verified permanent-key build: **1.0.2 (build 3)**, package `com.holygrills.app`. Source and release automation are maintained in PR #93, then main. The earlier 1.0.1 owner-acceptance file remains versioned.
 
-This APK is for owner acceptance, not an activated customer download. It installs as **Holy Grills**, separately from the earlier **Holy Grills (Test)** package.
+Includes native Maps/GPS recovery, pull-to-refresh, shared install/push rewards, branded notifications, public referral/order share URLs, image sharing and daily/resume update checks. The permanent signing key is kept separately; no private signing key or passwords are in these APKs.
 
-Includes native pull-to-refresh, bounded read recovery, Maps loading/retry/GPS fallback, native reward actions and branded notification artwork. The Maps key must allow `https://localhost/*`. Google Maps/GPS need physical-device confirmation. Backend Android reward compatibility and HTTPS App Links require deployment from PR #93. A completed Paystack card challenge/return still needs acceptance.
-
-The APK contains no signing private key or signing passwords. Keep the separate owner signing backup private. Customer installation/update banners remain controlled by the website release manifest.
+Android website installations use a versioned download selected by the website manifest. Subsequent frontend changes on main produce signed GitHub Releases; the website manifest and installed-app update notice follow that release.
