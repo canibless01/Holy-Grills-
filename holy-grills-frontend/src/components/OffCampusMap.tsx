@@ -1,5 +1,6 @@
 import { isNativeApp } from '@/native/platform';
 import { nativeCurrentPosition } from '@/native/device';
+import { refreshPage } from '@/native/refreshPage';
 import { useEffect, useRef, useState } from 'react';
 import { LocateFixed, Search } from 'lucide-react';
 import { loadGoogleMaps, mapsDeadline } from '@/lib/googleMaps';
@@ -28,6 +29,7 @@ export default function OffCampusMap({ gates = [], pin, onPinChange, onGateSelec
   const callbacks = useRef({ onPinChange, onGateSelect });
   callbacks.current = { onPinChange, onGateSelect };
   const [loadingMap, setLoadingMap] = useState(true);
+  const [reloadRequired, setReloadRequired] = useState(false);
   const [maps, setMaps] = useState<any>(null), [error, setError] = useState(''), [revision, setRevision] = useState(0);
   const [query, setQuery] = useState(''), [suggestions, setSuggestions] = useState<any[]>([]);
   const [searching, setSearching] = useState(false), [searchError, setSearchError] = useState('');
@@ -40,7 +42,7 @@ export default function OffCampusMap({ gates = [], pin, onPinChange, onGateSelec
   useEffect(() => {
     let alive = true;
     let tileTimer: ReturnType<typeof setTimeout>;
-    const fail = (failure?: Error) => { if (alive) { setLoadingMap(false); setError(msg(['maps_not_configured', 'maps_authentication'].includes(failure?.message || '') ? 'FE_MAP_CONFIGURATION_ERROR' : 'FE_MAP_LOAD_ERROR', ['maps_not_configured', 'maps_authentication'].includes(failure?.message || '') ? 'Maps setup could not be verified. Use GPS or choose a gate for pickup while we resolve it.' : 'The map could not load. Retry, use GPS for home delivery, or choose a gate for pickup.')); } };
+    const fail = (failure?: Error) => { if (alive) { setReloadRequired(['maps_not_configured', 'maps_authentication'].includes(failure?.message || '')); setLoadingMap(false); setError(msg(['maps_not_configured', 'maps_authentication'].includes(failure?.message || '') ? 'FE_MAP_CONFIGURATION_ERROR' : 'FE_MAP_LOAD_ERROR', ['maps_not_configured', 'maps_authentication'].includes(failure?.message || '') ? 'Maps setup could not be verified. Use GPS or choose a gate for pickup while we resolve it.' : 'The map could not load. Retry, use GPS for home delivery, or choose a gate for pickup.')); } };
     const authenticationError = () => fail(new Error('maps_authentication'));
     window.addEventListener('hg:maps-auth-error', authenticationError);
     setError(''); setMaps(null); setLoadingMap(true);
@@ -161,7 +163,7 @@ export default function OffCampusMap({ gates = [], pin, onPinChange, onGateSelec
       </ul>}
       {searchError && <p role="status" className="text-xs text-destructive mt-1">{searchError}</p>}
     </div>
-    {error && <div role="status" className="p-3 rounded-xl border border-border text-sm">{error}<button type="button" onClick={() => setRevision(value => value + 1)} disabled={loadingMap} className="block mt-2 font-bold text-primary underline">{msg('FE_MAP_RETRY', 'Retry map')}</button></div>}
+    {error && <div role="status" className="p-3 rounded-xl border border-border text-sm">{error}<button type="button" onClick={async () => { if (!reloadRequired) { setRevision(value => value + 1); return; } setLoadingMap(true); try { await refreshPage(); } catch { setLoadingMap(false); } }} disabled={loadingMap} className="block mt-2 font-bold text-primary underline">{reloadRequired ? msg('FE_MAP_RELOAD_PAGE', 'Reload page') : msg('FE_MAP_RETRY', 'Retry map')}</button></div>}
     <div className="relative">
       {loadingMap && <p role="status" className="absolute bottom-3 left-3 z-10 rounded-xl bg-card p-3 text-sm shadow">{msg('FE_MAP_LOADING', 'Loading map…')}</p>}
       <div ref={element} role="region" aria-label="Choose your delivery pin on Google Maps" className="h-[340px] sm:h-[380px] w-full rounded-2xl overflow-hidden bg-muted" />

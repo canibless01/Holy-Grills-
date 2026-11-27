@@ -8,7 +8,7 @@ const temp=await mkdtemp(join(tmpdir(),'hg-native-'));
 const root=process.cwd();
 try{
  const entry=join(temp,'entry.ts');
- await writeFile(entry,['secureSession','navigation','payments','apiFetch','push','devicePlatform','releaseManifest','device'].map(name=>`export * from ${JSON.stringify(resolve('src/native/'+name+'.ts'))};`).join('\n')+`\nexport * from ${JSON.stringify(resolve('src/lib/storage.ts'))};`);
+ await writeFile(entry,['secureSession','navigation','payments','apiFetch','push','devicePlatform','releaseManifest','device','refreshPage'].map(name=>`export * from ${JSON.stringify(resolve('src/native/'+name+'.ts'))};`).join('\n')+`\nexport * from ${JSON.stringify(resolve('src/lib/storage.ts'))};`);
  const output=join(temp,'test.mjs');
  await build({entryPoints:[entry],bundle:true,platform:'node',format:'esm',outfile:output,plugins:[{name:'native-boundaries',setup(b){
   b.onResolve({filter:/^@capacitor\/|^@onesignal\//},({path})=>({path,namespace:'fixture'}));
@@ -52,6 +52,8 @@ try{
  assert.equal(m.validateAndroidRelease({available:true,version:'1.0.1',versionCode:2,sha256:'a'.repeat(64),url:'https://raw.githubusercontent.com/canibless01/Holy-Grills-/'+'b'.repeat(40)+'/Holy-Grills.apk'})?.versionCode,2);
  assert.equal(m.validateAndroidRelease({available:true,version:'1.0.1',versionCode:2,sha256:'a'.repeat(64),url:'https://raw.githubusercontent.com/someone/other/'+'b'.repeat(40)+'/evil.apk'}),null);
  assert.equal(m.validateAndroidRelease({available:true,version:'1.0.1',versionCode:2,sha256:'a'.repeat(64),url:'https://raw.githubusercontent.com/canibless01/Holy-Grills-/main/mutable.apk'}),null);
+ let reloads=0;window.location.reload=()=>reloads++;await m.refreshPage();assert.equal(reloads,1);globalThis.__native=false;await m.refreshPage();assert.equal(reloads,2);globalThis.__native=true;
+ console.log('PASS explicit page reload preserves native session flushing and leaves web behavior unchanged');
  let route,verificationReturn;m.deliverNativeRoute('https://holygrills.online/orders/2');m.listenNativeRoutes((path,verify)=>{route=path;verificationReturn=verify});assert.equal(route,'/orders/2');
  await m.launchPayment('https://checkout.paystack.com/token','/orders/3?payment_return=1');assert.equal(__browser.length,1);assert.equal(m.resumeNativePayment(),true);assert.equal(route,'/orders/3?payment_return=1');assert.equal(verificationReturn,true);assert.equal(m.resumeNativePayment(),false);
  await assert.rejects(()=>m.launchPayment('https://evil.test/pay','/orders/3'));

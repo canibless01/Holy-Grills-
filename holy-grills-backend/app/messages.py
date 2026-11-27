@@ -4513,6 +4513,7 @@ class MSG:
     FE_MAP_CONFIGURATION_ERROR = "Maps setup could not be verified. Use GPS or choose a gate for pickup while we resolve it."
     FE_MAP_LOAD_ERROR = "The map could not load. Retry, use GPS for home delivery, or choose a gate for pickup."
     FE_MAP_LOADING = "Loading map…"
+    FE_MAP_RELOAD_PAGE = "Reload page"
 
 
 M = MSG

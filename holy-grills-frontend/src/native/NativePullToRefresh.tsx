@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { installPullRefresh } from './pullRefresh';
-import { flushNativeSession } from './secureSession';
+import { refreshPage } from './refreshPage';
 import { msg } from '@/lib/messages';
 
 export default function NativePullToRefresh() {
@@ -11,8 +11,7 @@ export default function NativePullToRefresh() {
     try {
       // Explicit user refresh, like browser pull-to-refresh. Never retry an
       // order/payment POST. Persist the native session before restarting reads.
-      await flushNativeSession();
-      window.location.reload();
+      await refreshPage();
     } catch { setBusy(false); setFailed(true); }
   }), []);
   if (!distance && !busy && !failed) return null;
