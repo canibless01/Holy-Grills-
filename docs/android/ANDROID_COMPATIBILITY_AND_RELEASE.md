@@ -121,3 +121,26 @@ The first hosted Android run exposed an obsolete default SDK package (`tools`) i
 - Source remains on `android-app`, draft PR https://github.com/canibless01/Holy-Grills-/pull/93 . Main has not been changed by this Android integration.
 - The frontend CI smoke step exposed a pre-existing test mismatch: its JSON-LD regex only accepted a bare script tag, whereas current main prerenders named business/website blocks. The smoke assertion now explicitly selects and parses the business block, preserving the Restaurant-type check. The complete local served-output smoke suite passes.
 - The local test APK is separately available as `/workspace/android-delivery/Holy-Grills-1.0.0-internal.apk`, with its SHA256 companion. Do not confuse debug-build checks with a signed customer release or native push/device acceptance.
+
+## Device feedback and recovery fixes — 27 November 2026
+
+User-reported acceptance: APK installation, on-campus use, remembered login, native push receipt and browser-X return to the unpaid-order page work. Off-campus map loading and network recovery failed on the test build. A completed Paystack card payment, GPS accuracy and automatic verified HTTPS return are still separate acceptance items.
+
+The next build (versionCode 2, versionName 1.0.1) adds:
+
+- Mandatory Maps browser-key configuration at build time, including debug CI. A missing key now fails the build instead of producing a broken map. The key must allow the WebView origin `https://localhost/*`. A new APK is required to replace a missing compiled key.
+- Shared SDK retry after a real network failure, explicit missing/authentication errors, visible map loading, bounded library/Places/tiles waits and indoor GPS fallback. Retry recreates the map while retaining the delivery pin and checkout inputs. It cannot repair an invalid key or Google Cloud restrictions.
+- Native GET defaults allow 30 seconds. Explicit page deadlines are passed through to the native transport. Only GET/HEAD transient failures retry once; order, charge, wallet and reward writes are never automatically replayed. Web transport/deadlines stay unchanged.
+- Native pull-to-refresh at the top of a page, excluding maps, controls, dialogs and scrolling/pinch gestures. This is an explicit full page refresh, like the browser gesture: secure-session writes are flushed first; persisted account/cart data restore normally. Unsubmitted form selections can reset, as with a browser reload.
+- Android install/push challenge actions reuse the existing lifetime milestone IDs, settings and atomic receipts. Both the dedicated push endpoint and generic milestone eligibility recognise the authenticated account's Android subscription, preserving the existing web path and preventing another account's subscription from unlocking a reward. No schema or reward-amount changes.
+- Bundled full-colour notification large icon plus native provider icon/accent fields. Android controls the small status-bar icon and renders it monochrome.
+
+The UI/assets are bundled in the APK and ordinary WebView image/HTTP caching applies. Existing short-lived catalogue/read sharing stays enabled; financial balances and order state are not made into persistent offline snapshots.
+
+Paystack runs in a secure external browser tab. The page's own Cancel button cannot be scripted to close that tab. Its X/back control returns to server-side payment verification; cancellation never marks an order paid. Automatic HTTPS returns depend on the permanent release signature and verified App Links.
+
+A permanent RSA-3072 PKCS12 signing identity and private backup were generated outside the repository at the user's request. No key, password or private backup is committed. The owner must retain the backup and configure the four signing values in Actions before customer distribution. This signing identity is distinct from login persistence. Temporary debug builds may need uninstall/reinstall when their signing certificate changes; the permanent release package/key avoids that for future customer updates.
+
+Automated verification: native adapter/recovery tests cover bounded retry/no-write-replay, GPS fallback, pull gesture guards, shared map loading/retry/deadline/authentication errors; 33 targeted backend tests cover registered-device ownership, authenticated claims, replay receipts, generic completion gates and notification branding. Web production build and served-output smoke pass. Actual new-build GPS/maps/notification artwork remain device acceptance, not inferred from those tests.
+
+The permanent-key signed candidate compiled successfully and its APK certificate matches the generated private keystore. Package: `com.holygrills.app`; version 1.0.1, build 2. Both notification icon resources are present in the compiled Android resource table. The public certificate-derived association is prepared in `holy-grills-frontend/public/.well-known/assetlinks.json`; it is not a private key. It must be deployed at the canonical HTTPS origin before device App Links verification. This candidate has not been publicly distributed, and the owner backup/Actions-secret confirmation remains pending.

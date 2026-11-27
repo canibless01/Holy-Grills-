@@ -4506,6 +4506,14 @@ class MSG:
     FE_ANDROID_SESSION_UNAVAILABLE = "Holy Grills could not open. Retry, or sign in again."
     FE_ANDROID_SIGN_IN_AGAIN = "Sign in again"
     FE_ANDROID_RETRY = "Retry"
+    FE_ANDROID_REFRESH_FAILED = "Refresh could not start. Please try again."
+    FE_ANDROID_REFRESHING = "Refreshing…"
+    FE_ANDROID_RELEASE_REFRESH = "Release to refresh"
+    FE_ANDROID_PULL_REFRESH = "Pull to refresh"
+    FE_MAP_CONFIGURATION_ERROR = "Maps setup could not be verified. Use GPS or choose a gate for pickup while we resolve it."
+    FE_MAP_LOAD_ERROR = "The map could not load. Retry, use GPS for home delivery, or choose a gate for pickup."
+    FE_MAP_LOADING = "Loading map…"
+
 
 M = MSG
 

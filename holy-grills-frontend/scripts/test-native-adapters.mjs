@@ -8,13 +8,15 @@ const temp=await mkdtemp(join(tmpdir(),'hg-native-'));
 const root=process.cwd();
 try{
  const entry=join(temp,'entry.ts');
- await writeFile(entry,['secureSession','navigation','payments','apiFetch','push','devicePlatform','releaseManifest'].map(name=>`export * from ${JSON.stringify(resolve('src/native/'+name+'.ts'))};`).join('\n')+`\nexport * from ${JSON.stringify(resolve('src/lib/storage.ts'))};`);
+ await writeFile(entry,['secureSession','navigation','payments','apiFetch','push','devicePlatform','releaseManifest','device'].map(name=>`export * from ${JSON.stringify(resolve('src/native/'+name+'.ts'))};`).join('\n')+`\nexport * from ${JSON.stringify(resolve('src/lib/storage.ts'))};`);
  const output=join(temp,'test.mjs');
  await build({entryPoints:[entry],bundle:true,platform:'node',format:'esm',outfile:output,plugins:[{name:'native-boundaries',setup(b){
   b.onResolve({filter:/^@capacitor\/|^@onesignal\//},({path})=>({path,namespace:'fixture'}));
   b.onResolve({filter:/^@\//},({path})=>['@/config/app.config','@/lib/liveApi'].includes(path)?{path,namespace:'fixture'}:{path:resolve('src',path.slice(2))+'.ts'});
   b.onLoad({filter:/.*/,namespace:'fixture'},({path})=>({contents:
    path==='@capacitor/core'?`export const Capacitor={isNativePlatform:()=>globalThis.__native};export const registerPlugin=()=>globalThis.__vault;export const CapacitorHttp={request:options=>globalThis.__http(options)};`:
+   path==='@capacitor/geolocation'?`export const Geolocation={getCurrentPosition:options=>globalThis.__gps(options)};`:
+   path==='@capacitor/share'?`export const Share={share:async()=>{}};`:
    path==='@capacitor/browser'?`export const Browser={open:options=>globalThis.__browser.push(options)};`:
    path==='@onesignal/capacitor-plugin'?`export default globalThis.__sdk;`:
    path==='@/config/app.config'?`export default {domain:'https://holygrills.online',onesignal:{appId:'471bd695-2342-4521-aa0f-8c93d7ce805f'}};`:
@@ -55,6 +57,20 @@ try{
  let http;globalThis.__http=async request=>{http=request;return{status:200,data:{ok:true},headers:{'Content-Type':'application/json'}}};
  const res=await m.apiFetch('https://holygrills-production.up.railway.app/api/test',{method:'POST',headers:{Authorization:'Bearer private-token','Content-Type':'application/json'},body:'{"value":2}'});assert.deepEqual(await res.json(),{ok:true});assert.deepEqual(http.data,{value:2});assert.equal(http.headers.authorization,'Bearer private-token');
  await assert.rejects(()=>m.apiFetch('http://insecure.test/api'));const controller=new AbortController();controller.abort();await assert.rejects(()=>m.apiFetch('https://holygrills.online/api',{signal:controller.signal}));console.log('PASS existing JSON/bearer API over native HTTPS, no insecure URLs and aborted-request rejection');
+ let attempts=0;globalThis.__http=async options=>{attempts++;assert.equal(options.readTimeout,90000);if(attempts===1)throw Error('offline');return {status:200,data:'{}',headers:{}}};
+ await m.apiFetch('https://holygrills.online/api/menu',{},90000);assert.equal(attempts,2);
+ attempts=0;globalThis.__http=async()=>{attempts++;return {status:503,data:'{}',headers:{}}};
+ assert.equal((await m.apiFetch('https://holygrills.online/api/menu')).status,503);assert.equal(attempts,2);
+ attempts=0;globalThis.__http=async()=>{attempts++;if(attempts===1)throw Error('offline');return {status:503,data:'{}',headers:{}}};
+ assert.equal((await m.apiFetch('https://holygrills.online/api/menu')).status,503);assert.equal(attempts,2);
+ attempts=0;globalThis.__http=async()=>{attempts++;throw Error('offline')};
+ await assert.rejects(()=>m.apiFetch('https://holygrills.online/api/orders',{method:'POST'}));assert.equal(attempts,1);
+ console.log('PASS native caller deadlines, at most one transient read retry, no order/charge replay');
+ let fixes=[];globalThis.__gps=async options=>{fixes.push(options);if(options.enableHighAccuracy)throw Object.assign(Error('timed out'),{code:'OS-PLUG-GLOC-0010'});return {coords:{latitude:7.3,longitude:5.1},timestamp:1}};
+ assert.equal((await m.nativeCurrentPosition({enableHighAccuracy:true})).coords.latitude,7.3);assert.deepEqual(fixes.map(f=>f.enableHighAccuracy),[true,false]);
+ fixes=[];globalThis.__gps=async options=>{fixes.push(options);throw Object.assign(Error('denied'),{code:'OS-PLUG-GLOC-0003'})};
+ await assert.rejects(()=>m.nativeCurrentPosition({enableHighAccuracy:true}),/denied/);assert.equal(fixes.length,1);
+ console.log('PASS indoor GPS fallback and no permission-denial retry loop');
  globalThis.__sdkUser='persisted-previous-account';await m.nativePushReady(null);assert.equal(__sdkUser,null);
  const a=m.nativePushReady('A');await aStarted;const logout=m.nativePushLogout();const b=m.nativePushReady('B');loginAResolve();await Promise.all([a,logout,b]);assert.deepEqual(logins,['A','B']);assert.equal(__registered.length,0);assert.equal(__sdkUser,'B');
  assert.equal(await m.nativePushPermission(),true);assert.equal(__registered.length,1);assert.equal(__registered[0].user,'B');assert.equal(__registered[0].platform,'android');assert.equal(__prefs.length,1);

@@ -51,7 +51,7 @@
     "android:release": "node scripts/android-release-check.mjs && npm run android:sync && cd android && ./gradlew assembleRelease",
     "build:android:debug": "node scripts/build-android.mjs --debug",
     "android:assets": "node scripts/android-assets.mjs",
-    "test:native": "node scripts/test-native-adapters.mjs"
+    "test:native": "node scripts/test-native-adapters.mjs && node scripts/test-android-recovery.mjs"
   },
   "dependencies": {
     "@capacitor/android": "8.6.3",

@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.holygrills.app",
+      "sha256_cert_fingerprints": [
+        "6A:56:FF:4D:76:01:90:9B:A1:CA:41:0D:4F:EF:81:E1:1B:A8:DC:A2:43:90:5F:BF:3A:59:E6:1A:9D:0D:D1:07"
+      ]
+    }
+  }
+]

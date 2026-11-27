@@ -1,4 +1,5 @@
 import NativeUpdateNotice from './NativeUpdateNotice';
+import NativePullToRefresh from './NativePullToRefresh';
 import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { isNativeApp } from './platform';
@@ -37,5 +38,5 @@ export default function NativeNavigation() {
     });
     return () => { removed = true; void listener?.remove(); };
   }, [navigate, location.pathname]);
-  return isNativeApp() ? <NativeUpdateNotice /> : null;
+  return isNativeApp() ? <><NativePullToRefresh /><NativeUpdateNotice /></> : null;
 }

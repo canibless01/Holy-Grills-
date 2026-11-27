@@ -1,3 +1,5 @@
+import { isNativeApp } from '@/native/platform';
+import { requestPushPermission, isPushSupported, isPushRegistered } from '@/lib/onesignal';
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/apiClient';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
@@ -11,7 +13,7 @@ export default function InstallPushBonuses() {
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [installed, setInstalled] = useState(isStandalone);
+  const [installed, setInstalled] = useState(() => isNativeApp() || isStandalone());
   const [installAvailable, setInstallAvailable] = useState(hasInstallPrompt);
   const reload = async () => {
     const updated = await apiClient.get('/challenges/pwa-push-bonus-status');
@@ -40,7 +42,7 @@ export default function InstallPushBonuses() {
     try {
       if (!status) { await reload(); return; }
       if (!status.pwa_install) {
-        if (!installed && !isStandalone()) {
+        if (!isNativeApp() && !installed && !isStandalone()) {
           if (!hasInstallPrompt()) throw new Error('Open your browser menu and choose Install app or Add to Home Screen, then open the installed app to continue.');
           const choice = await triggerInstall();
           setInstallAvailable(hasInstallPrompt());
@@ -50,8 +52,13 @@ export default function InstallPushBonuses() {
         }
         await apiClient.post('/challenges/pwa-installed');
       } else if (!status.push_subscribe) {
-        if (!isWebPushSupported()) throw new Error('Push alerts are unavailable in this browser. Open the installed app in a supported browser.');
-        if (!await subscribeToWebPush(user?.id ?? null)) throw new Error('Push permission was not granted. You can retry or update site permissions.');
+        if (isNativeApp()) {
+          await (await import('@/native/push')).nativePushReady(user?.id ?? null);
+          if (!isPushRegistered() && !await requestPushPermission()) throw new Error('Push permission was not granted. Allow notifications in Android settings, then retry.');
+        } else {
+          if (!isWebPushSupported()) throw new Error('Push alerts are unavailable in this browser. Open the installed app in a supported browser.');
+          if (!await subscribeToWebPush(user?.id ?? null)) throw new Error('Push permission was not granted. You can retry or update site permissions.');
+        }
         await apiClient.post('/challenges/push-registered');
       } else if (!status.bonus_completed) {
         await apiClient.post('/challenges/pwa-push-bonus');
@@ -63,5 +70,5 @@ export default function InstallPushBonuses() {
   };
 
   return <StreakPwaBonus pwaStatus={status} onAction={action} busy={busy} error={error}
-    installed={installed} installAvailable={installAvailable} pushSupported={isWebPushSupported()} />;
+    installed={installed} installAvailable={installAvailable} pushSupported={isNativeApp() ? isPushSupported() : isWebPushSupported()} />;
 }

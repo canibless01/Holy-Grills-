@@ -17,4 +17,5 @@ const size=72;
 const {data,info}=await sharp('public/icons/icon-512.png').resize(size).ensureAlpha().raw().toBuffer({resolveWithObject:true});
 for(let i=0;i<data.length;i+=info.channels){const alpha=Math.max(0,Math.min(255,(data[i+1]-35)*2));data[i]=255;data[i+1]=255;data[i+2]=255;data[i+3]=alpha;}
 await sharp(data,{raw:{width:size,height:size,channels:4}}).png().toFile(`${root}/drawable/ic_stat_onesignal_default.png`);
+await sharp('public/icons/icon-512.png').resize(256).png().toFile(`${root}/drawable/ic_onesignal_large_icon_default.png`);
 console.log('Android launcher and monochrome notification assets generated from the existing brand mark');

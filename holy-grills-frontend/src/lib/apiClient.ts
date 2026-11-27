@@ -1,4 +1,5 @@
 import { apiFetch } from '@/native/apiFetch';
+import { isNativeApp } from '@/native/platform';
 // HolyGrill Live API Client — calls the real backend at https://holygrills-production.up.railway.app
 import { localStore, sessionStore } from '@/lib/storage';
 import { queryClientInstance } from '@/lib/query-client';
@@ -187,7 +188,8 @@ export function getPublicCampusScope() {
 }
 
 async function request(path: string, options: RequestOptions = {}) {
-  const { timeoutMs = 12000, ...fetchOptions } = options;
+  const { timeoutMs: requestedTimeout, ...fetchOptions } = options;
+  const timeoutMs = requestedTimeout ?? (isNativeApp() && (!options.method || options.method === 'GET') ? 30000 : 12000);
   const storedToken = getToken();
   const parsedPath = new URL(path, 'https://app.invalid');
   const publicMenu = parsedPath.pathname === '/menu/items' && parsedPath.searchParams.get('available_only') === 'true'
@@ -229,7 +231,7 @@ async function request(path: string, options: RequestOptions = {}) {
 
   let res;
   try {
-    res = await apiFetch(`${BASE_URL}${path}`, { ...fetchOptions, headers, signal: controller.signal });
+    res = await apiFetch(`${BASE_URL}${path}`, { ...fetchOptions, headers, signal: controller.signal }, timeoutMs);
   } catch (e) {
     clearTimeout(timeoutId);
     options.signal?.removeEventListener('abort', abortFromCaller);
