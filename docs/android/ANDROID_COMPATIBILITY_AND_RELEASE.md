@@ -22,7 +22,7 @@ This work is isolated on `android-app`, starting at main commit `7c1a844`. It bu
 
 Safari does not expose a website API that opens its browser toolbar Share menu and finishes Add to Home Screen. The iOS button opens the visual guide; the customer makes those final Safari taps. An iPhone cannot install an APK. Existing iPhone PWA accounts/orders/wallet/rewards remain shared with the platform; installed web push requires iOS 16.4+ and permission. Native iOS would need a separately signed iOS build and Apple's distribution requirements, not this APK.
 
-`public/android-release.json` currently has `available:false`. This intentionally prevents an untested/debug APK from appearing as a customer release. On release, publish:
+`public/android-release.json` stays unavailable until the verified signed main workflow publishes its release pointer. The publisher writes this shape:
 
 ```json
 {
@@ -34,7 +34,7 @@ Safari does not expose a website API that opens its browser toolbar Share menu a
 }
 ```
 
-APK hosting uses a versioned release URL. Images remain on Cloudinary. No production APK or download button is activated by this development branch alone.
+APK hosting uses a versioned release URL. Images remain on Cloudinary. The development branch alone does not activate downloads; merging to main starts the signed publication workflow.
 
 ## Build and internal installation
 
@@ -58,7 +58,7 @@ The manual/push Android GitHub Actions workflow produces downloadable build arti
 
 ## Permanent signing and customer release
 
-Production package is proposed as `com.holygrills.app`; confirm it before the first public release. The permanent signing identity must be backed up securely and reused for every future update.
+The production package is `com.holygrills.app`. The permanent signing identity must be backed up securely and reused for every future update.
 
 Generate a keystore privately, for example with the JDK's interactive `keytool` (password prompts, no passwords in command history):
 
@@ -76,7 +76,7 @@ GitHub Actions release choice needs repository secrets:
 - `HG_ANDROID_KEY_PASSWORD`
 - `HG_ANDROID_GOOGLE_MAPS_API_KEY`
 
-The workflow decodes signing material only into the runner's temporary directory and does not print it. It uploads the signed APK, SHA256 and certificate-derived `assetlinks.json` as workflow artifacts. It does not automatically publish to customers.
+The workflow decodes signing material only into the runner's temporary directory and does not print it. It uploads the signed APK, SHA256 and certificate-derived `assetlinks.json` as workflow artifacts. Successful push builds on main also publish the signed release and website pointer, as detailed below.
 
 Publish the **release** certificate association at `https://holygrills.online/.well-known/assetlinks.json`, then verify Android App Links with adb. Do not publish the debug signing association as the production identity. Without verified HTTPS association, closing the payment browser tab still resumes existing server verification, but automatic browser → app callback dispatch needs device acceptance. Custom scheme `holygrills://app/orders/...` also supports controlled app-link testing; it is not proof of domain association.
 
@@ -98,7 +98,7 @@ Device/provider tests must be reported separately. Do not infer any of these fro
 8. iPhone Safari Add to Home Screen, no Android APK CTA, and installed-web push on an eligible iPhone.
 9. Permanent release signature, verified HTTPS App Links, APK download/install and a same-key version upgrade.
 
-No real customer account, order, wallet movement or database cleanup is part of these build tests. Main and the live site remain separate until the Android work is reviewed and intentionally released.
+No real customer account, order, wallet movement or database cleanup is part of these build tests. The public release is intentionally activated through the main workflow; the acceptance limits above remain explicit.
 
 ## Verification record — 26 November 2026
 
