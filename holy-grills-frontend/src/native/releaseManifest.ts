@@ -10,7 +10,8 @@ export function validateAndroidRelease(value: unknown): AndroidRelease | null {
   let url: URL;
   try { url = new URL(release.url); } catch { return null; }
   if (url.protocol !== 'https:' || url.username || url.password || !url.pathname.endsWith('.apk')) return null;
-  const trusted = url.hostname === 'holygrills.online' || (url.hostname === 'github.com' && url.pathname.startsWith('/canibless01/Holy-Grills-/releases/download/'));
+  const trusted = url.hostname === 'holygrills.online' || (url.hostname === 'github.com' && url.pathname.startsWith('/canibless01/Holy-Grills-/releases/download/'))
+    || (url.hostname === 'raw.githubusercontent.com' && /^\/canibless01\/Holy-Grills-\/[a-f0-9]{40}\//i.test(url.pathname));
   return trusted ? release as AndroidRelease : null;
 }
 let pending: Promise<AndroidRelease | null> | null = null;

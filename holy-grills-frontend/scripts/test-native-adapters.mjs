@@ -49,6 +49,9 @@ try{
  for(const input of ['https://evil.test/orders/1','javascript:alert(1)','//evil.test','https://holygrills.online.evil.test/orders','https://holygrills.online/admin','https://u:p@holygrills.online/orders','holygrills://evil/orders'])assert.equal(m.nativeRoute(input),null,input);
  assert.equal(m.nativeRoute('https://holygrills.online/track-orders?order_number=X&claim_token=secret'),'/track-orders?order_number=X&claim_token=secret');
  assert.equal(m.nativeRoute('holygrills://app/orders/1?payment_return=1'),'/orders/1?payment_return=1');
+ assert.equal(m.validateAndroidRelease({available:true,version:'1.0.1',versionCode:2,sha256:'a'.repeat(64),url:'https://raw.githubusercontent.com/canibless01/Holy-Grills-/'+'b'.repeat(40)+'/Holy-Grills.apk'})?.versionCode,2);
+ assert.equal(m.validateAndroidRelease({available:true,version:'1.0.1',versionCode:2,sha256:'a'.repeat(64),url:'https://raw.githubusercontent.com/someone/other/'+'b'.repeat(40)+'/evil.apk'}),null);
+ assert.equal(m.validateAndroidRelease({available:true,version:'1.0.1',versionCode:2,sha256:'a'.repeat(64),url:'https://raw.githubusercontent.com/canibless01/Holy-Grills-/main/mutable.apk'}),null);
  let route,verificationReturn;m.deliverNativeRoute('https://holygrills.online/orders/2');m.listenNativeRoutes((path,verify)=>{route=path;verificationReturn=verify});assert.equal(route,'/orders/2');
  await m.launchPayment('https://checkout.paystack.com/token','/orders/3?payment_return=1');assert.equal(__browser.length,1);assert.equal(m.resumeNativePayment(),true);assert.equal(route,'/orders/3?payment_return=1');assert.equal(verificationReturn,true);assert.equal(m.resumeNativePayment(),false);
  await assert.rejects(()=>m.launchPayment('https://evil.test/pay','/orders/3'));
