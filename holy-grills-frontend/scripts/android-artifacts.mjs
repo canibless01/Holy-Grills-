@@ -12,7 +12,13 @@ if(signer){
  const packageName=badging.match(/package: name='([^']+)'/)?.[1];if(!packageName)throw Error('Cannot read APK package ID');
  const fingerprint=output.match(/certificate SHA-256 digest: ([a-f0-9]+)/i)?.[1];
  if(!fingerprint)throw Error('No signing certificate found');
+ const formattedFingerprint=fingerprint.match(/../g).join(':').toUpperCase();
+ if(packageName==='com.holygrills.app'){
+   const identity=JSON.parse(readFileSync('public/.well-known/assetlinks.json','utf8'));
+   if(!identity.some(row=>row.target?.package_name===packageName&&row.target?.sha256_cert_fingerprints?.includes(formattedFingerprint)))throw Error('Release signing certificate does not match the permanent app identity. Check the signing secrets; do not publish this APK.');
+ }
+
  mkdirSync('android-artifacts',{recursive:true});
- writeFileSync('android-artifacts/assetlinks.json',JSON.stringify([{relation:['delegate_permission/common.handle_all_urls'],target:{namespace:'android_app',package_name:packageName,sha256_cert_fingerprints:[fingerprint.match(/../g).join(':').toUpperCase()]}}],null,2)+'\n');
+ writeFileSync('android-artifacts/assetlinks.json',JSON.stringify([{relation:['delegate_permission/common.handle_all_urls'],target:{namespace:'android_app',package_name:packageName,sha256_cert_fingerprints:[formattedFingerprint]}}],null,2)+'\n');
 }
 console.log('APK checksum written. App-links association generated only from a verified signing certificate.');
