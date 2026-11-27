@@ -72,7 +72,9 @@ for (const route of PRERENDER_ROUTES) {
   const title = (body.match(/<title>([^<]*)<\/title>/) || [])[1] || '';
   const canonical = (body.match(/<link rel="canonical" href="([^"]*)"/) || [])[1] || '';
   const ogImage = (body.match(/<meta property="og:image" content="([^"]*)"/) || [])[1] || '';
-  const ld = body.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+  // Prerender emits named business and website blocks; verify the business block
+  // regardless of attribute order instead of requiring an attribute-free tag.
+  const ld = body.match(/<script\b(?=[^>]*\btype="application\/ld\+json")(?=[^>]*\bdata-seo-jsonld="business")[^>]*>([\s\S]*?)<\/script>/i);
 
   check(status === 200, `${route} HTTP 200`, String(status));
   // A Suspense fallback or an empty shell would be a few hundred bytes at most;

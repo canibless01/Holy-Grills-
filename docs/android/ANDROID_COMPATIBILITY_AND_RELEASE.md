@@ -113,3 +113,11 @@ No real customer account, order, wallet movement or database cleanup is part of 
 The internal APK is a debug-signed testing build. It is not the customer release, and its signing key must not become the permanent production identity.
 
 The first hosted Android run exposed an obsolete default SDK package (`tools`) in the setup action. The workflow now explicitly installs platform-tools, Android 36 and build-tools 36.0.0. Direct GitHub release-asset upload was rejected with HTTP 401 by the current connection; no release asset was published. The local internal APK and workflow artifacts are separate delivery paths.
+
+## Hosted build handoff — 27 November 2026
+
+- Android GitHub Actions run passed: https://github.com/canibless01/Holy-Grills-/actions/runs/45884915246
+- Internal debug artifact (GitHub sign-in required, retained for 14 days): https://github.com/canibless01/Holy-Grills-/actions/runs/45884915246/artifacts/15149221241 . Download the ZIP and extract the APK. This is a CI test build; Maps key configuration/acceptance still requires confirmation.
+- Source remains on `android-app`, draft PR https://github.com/canibless01/Holy-Grills-/pull/93 . Main has not been changed by this Android integration.
+- The frontend CI smoke step exposed a pre-existing test mismatch: its JSON-LD regex only accepted a bare script tag, whereas current main prerenders named business/website blocks. The smoke assertion now explicitly selects and parses the business block, preserving the Restaurant-type check. The complete local served-output smoke suite passes.
+- The local test APK is separately available as `/workspace/android-delivery/Holy-Grills-1.0.0-internal.apk`, with its SHA256 companion. Do not confuse debug-build checks with a signed customer release or native push/device acceptance.
