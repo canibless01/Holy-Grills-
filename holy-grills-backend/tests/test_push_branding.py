@@ -11,6 +11,9 @@ def test_push_has_identifiable_title_color_icon_and_transparent_status_mark():
     assert payload['contents']['en']=='A new day'
     assert payload['chrome_web_icon']=='https://holygrills.online/icons/icon-192.png'
     assert payload['firefox_icon']==payload['chrome_web_icon']
+    assert payload['large_icon']==payload['chrome_web_icon']
+    assert payload['small_icon']=='ic_stat_onesignal_default'
+    assert payload['android_accent_color']=='FFE01616'
     assert payload['chrome_web_badge']=='https://holygrills.online/brand/icon-mark.png'
     assert payload['idempotency_key']=='original-key'
     assert payload['include_aliases']=={'external_id':['owner']}

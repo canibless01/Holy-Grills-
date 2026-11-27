@@ -1223,6 +1223,9 @@ def _prepare_notification_push(user_id, title, body, action_url, urgency=None, p
     if icon:
         payload['chrome_web_icon'] = icon
         payload['firefox_icon'] = icon
+        payload['large_icon'] = icon
+    payload['small_icon'] = 'ic_stat_onesignal_default'
+    payload['android_accent_color'] = 'FFE01616'
     badge = _push_action_url('/brand/icon-mark.png')
     if badge:
         payload['chrome_web_badge'] = badge
