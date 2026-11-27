@@ -12,6 +12,7 @@ import pluginUnusedImports from "eslint-plugin-unused-imports";
 import tseslint from "typescript-eslint";
 
 export default [
+  { ignores: ["android/**", "dist-android/**", "dist/**", "dist-ssr/**", "android-artifacts/**"] },
   {
     files: [
       "src/**/*.{ts,tsx}",

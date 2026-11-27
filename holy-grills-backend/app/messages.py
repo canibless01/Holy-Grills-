@@ -4486,6 +4486,36 @@ class MSG:
     AMBASSADOR_MAIL_LINK = "Your ambassador space: {url}"
     AMBASSADOR_MAIL_PREFERENCES = "Manage report emails with your email and promotions preferences in Profile → Notifications."
 
+    FE_IOS_INSTALL_TITLE = "Holy Grills on your home screen"
+    FE_IOS_INSTALL_ACTION = "Add to Home Screen"
+    FE_IOS_INSTALL_GUIDE_ACTION = "Show me how"
+
+    # Android distribution and upgrade copy.
+    FE_ANDROID_DOWNLOAD_TITLE = "Holy Grills for Android"
+    FE_ANDROID_DOWNLOAD_SUBTITLE = "Your people. Your plates. One tap closer."
+    FE_ANDROID_DOWNLOAD_CTA = "Download APK"
+    FE_ANDROID_DOWNLOAD_HELP = "Use your existing account for your menu, orders, wallet and rewards."
+    FE_ANDROID_DOWNLOAD_CHECKING = "Checking availability…"
+    FE_ANDROID_DOWNLOAD_VERSION = "Android APK · Version {version}"
+    FE_ANDROID_DOWNLOAD_INSTALL = "After downloading, open the APK and follow Android’s installation steps. If asked, allow installation from the browser or Files app you used."
+    FE_ANDROID_DOWNLOAD_PENDING = "The Android app is being prepared. You can keep using Holy Grills here in your browser."
+    FE_ANDROID_IPHONE_HELP = "On iPhone, open Holy Grills in Safari, tap Share, then Add to Home Screen. APK files are for Android only."
+    FE_ANDROID_UPDATE_READY = "A new Holy Grills update is ready"
+    FE_ANDROID_UPDATE_DOWNLOAD = "Download update"
+
+    FE_ANDROID_SESSION_UNAVAILABLE = "Holy Grills could not open. Retry, or sign in again."
+    FE_ANDROID_SIGN_IN_AGAIN = "Sign in again"
+    FE_ANDROID_RETRY = "Retry"
+    FE_ANDROID_REFRESH_FAILED = "Refresh could not start. Please try again."
+    FE_ANDROID_REFRESHING = "Refreshing…"
+    FE_ANDROID_RELEASE_REFRESH = "Release to refresh"
+    FE_ANDROID_PULL_REFRESH = "Pull to refresh"
+    FE_MAP_CONFIGURATION_ERROR = "Maps setup could not be verified. Use GPS or choose a gate for pickup while we resolve it."
+    FE_MAP_LOAD_ERROR = "The map could not load. Retry, use GPS for home delivery, or choose a gate for pickup."
+    FE_MAP_LOADING = "Loading map…"
+    FE_MAP_RELOAD_PAGE = "Reload page"
+
+
 M = MSG
 
 

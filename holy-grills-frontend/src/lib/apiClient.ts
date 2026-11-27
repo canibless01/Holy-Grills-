@@ -1,3 +1,5 @@
+import { apiFetch } from '@/native/apiFetch';
+import { isNativeApp } from '@/native/platform';
 // HolyGrill Live API Client — calls the real backend at https://holygrills-production.up.railway.app
 import { localStore, sessionStore } from '@/lib/storage';
 import { queryClientInstance } from '@/lib/query-client';
@@ -83,7 +85,7 @@ async function performRefresh() {
   const doFetch = () => new Promise((resolve, reject) => {
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), 12000);
-    fetch(`${BASE_URL}/auth/refresh`, {
+    apiFetch(`${BASE_URL}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refresh }),
@@ -186,7 +188,8 @@ export function getPublicCampusScope() {
 }
 
 async function request(path: string, options: RequestOptions = {}) {
-  const { timeoutMs = 12000, ...fetchOptions } = options;
+  const { timeoutMs: requestedTimeout, ...fetchOptions } = options;
+  const timeoutMs = requestedTimeout ?? (isNativeApp() && (!options.method || options.method === 'GET') ? 30000 : 12000);
   const storedToken = getToken();
   const parsedPath = new URL(path, 'https://app.invalid');
   const publicMenu = parsedPath.pathname === '/menu/items' && parsedPath.searchParams.get('available_only') === 'true'
@@ -228,7 +231,7 @@ async function request(path: string, options: RequestOptions = {}) {
 
   let res;
   try {
-    res = await fetch(`${BASE_URL}${path}`, { ...fetchOptions, headers, signal: controller.signal });
+    res = await apiFetch(`${BASE_URL}${path}`, { ...fetchOptions, headers, signal: controller.signal }, timeoutMs);
   } catch (e) {
     clearTimeout(timeoutId);
     options.signal?.removeEventListener('abort', abortFromCaller);
@@ -296,7 +299,7 @@ async function requestRaw(path: string, options: RequestOptions = {}) {
 
   let res;
   try {
-    res = await fetch(`${BASE_URL}${path}`, { ...options, headers, signal: controller.signal });
+    res = await apiFetch(`${BASE_URL}${path}`, { ...options, headers, signal: controller.signal });
   } catch (e) {
     clearTimeout(timeoutId);
     if (e.name === 'AbortError') throw new ApiError(0, 'Request timed out — the server may be starting up. Try again in a moment.');
@@ -389,7 +392,7 @@ export const apiClient = {
 
 // Auth helper — login and store tokens
 export async function login(email: string, password: string) {
-  const res = await fetch(`${BASE_URL}/auth/login`, {
+  const res = await apiFetch(`${BASE_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),

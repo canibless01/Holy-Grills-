@@ -1,6 +1,10 @@
+import { isNativeApp } from '@/native/platform';
+import { nativeCurrentPosition } from '@/native/device';
+import { refreshPage } from '@/native/refreshPage';
 import { useEffect, useRef, useState } from 'react';
 import { LocateFixed, Search } from 'lucide-react';
-import { loadGoogleMaps } from '@/lib/googleMaps';
+import { loadGoogleMaps, mapsDeadline } from '@/lib/googleMaps';
+import { msg } from '@/lib/messages';
 import { formatKm, etaLabel } from '@/lib/deliveryUtils';
 import type { DeliveryGate } from '@/types/delivery';
 
@@ -24,6 +28,8 @@ export default function OffCampusMap({ gates = [], pin, onPinChange, onGateSelec
   const gateMarkers = useRef<any[]>([]), session = useRef<any>(null), generation = useRef(0);
   const callbacks = useRef({ onPinChange, onGateSelect });
   callbacks.current = { onPinChange, onGateSelect };
+  const [loadingMap, setLoadingMap] = useState(true);
+  const [reloadRequired, setReloadRequired] = useState(false);
   const [maps, setMaps] = useState<any>(null), [error, setError] = useState(''), [revision, setRevision] = useState(0);
   const [query, setQuery] = useState(''), [suggestions, setSuggestions] = useState<any[]>([]);
   const [searching, setSearching] = useState(false), [searchError, setSearchError] = useState('');
@@ -35,9 +41,13 @@ export default function OffCampusMap({ gates = [], pin, onPinChange, onGateSelec
 
   useEffect(() => {
     let alive = true;
-    setError('');
+    let tileTimer: ReturnType<typeof setTimeout>;
+    const fail = (failure?: Error) => { if (alive) { setReloadRequired(['maps_not_configured', 'maps_authentication'].includes(failure?.message || '')); setLoadingMap(false); setError(msg(['maps_not_configured', 'maps_authentication'].includes(failure?.message || '') ? 'FE_MAP_CONFIGURATION_ERROR' : 'FE_MAP_LOAD_ERROR', ['maps_not_configured', 'maps_authentication'].includes(failure?.message || '') ? 'Maps setup could not be verified. Use GPS or choose a gate for pickup while we resolve it.' : 'The map could not load. Retry, use GPS for home delivery, or choose a gate for pickup.')); } };
+    const authenticationError = () => fail(new Error('maps_authentication'));
+    window.addEventListener('hg:maps-auth-error', authenticationError);
+    setError(''); setMaps(null); setLoadingMap(true);
     loadGoogleMaps().then(async api => {
-      const { Map } = await api.importLibrary('maps');
+      const { Map } = await mapsDeadline<any>(api.importLibrary('maps'));
       if (!alive || !element.current) return;
       map.current = new Map(element.current, { center: pin || initial, zoom: pin ? 16 : 14, mapTypeId: 'roadmap',
         streetViewControl: false, mapTypeControl: false, fullscreenControl: false, clickableIcons: false, gestureHandling: 'cooperative',
@@ -45,10 +55,13 @@ export default function OffCampusMap({ gates = [], pin, onPinChange, onGateSelec
       map.current.addListener('click', (event: any) => {
         if (event.latLng) callbacks.current.onPinChange?.({ lat: event.latLng.lat(), lng: event.latLng.lng() });
       });
+      api.event.addListenerOnce(map.current, 'tilesloaded', () => { clearTimeout(tileTimer); if (alive) { setError(''); setLoadingMap(false); } });
+      tileTimer = setTimeout(() => fail(new Error('maps_timeout')), 20000);
       setMaps(api);
-    }).catch(() => { if (alive) setError('The map is unavailable. Try GPS for home delivery, or choose a gate for pickup at that gate.'); });
+    }).catch(fail);
     return () => {
-      alive = false; generation.current++;
+      alive = false; generation.current++; clearTimeout(tileTimer);
+      window.removeEventListener('hg:maps-auth-error', authenticationError);
       const api = (window as any).google?.maps;
       if (map.current) api?.event?.clearInstanceListeners(map.current);
       marker.current?.setMap(null); marker.current = null;
@@ -91,10 +104,10 @@ export default function OffCampusMap({ gates = [], pin, onPinChange, onGateSelec
     setSearchError(''); setSearching(true);
     const timer = setTimeout(async () => {
       try {
-        const places = await maps.importLibrary('places');
+        const places = await mapsDeadline<any>(maps.importLibrary('places'));
         session.current ||= new places.AutocompleteSessionToken();
-        const response = await places.AutocompleteSuggestion.fetchAutocompleteSuggestions({ input: query.trim(),
-          sessionToken: session.current, includedRegionCodes: ['ng'], locationRestriction: localBounds });
+        const response = await mapsDeadline<any>(places.AutocompleteSuggestion.fetchAutocompleteSuggestions({ input: query.trim(),
+          sessionToken: session.current, includedRegionCodes: ['ng'], locationRestriction: localBounds }));
         if (generation.current === version) setSuggestions(response.suggestions || []);
       } catch { if (generation.current === version) setSearchError('Search is unavailable. Tap the map or use GPS instead.'); }
       finally { if (generation.current === version) setSearching(false); }
@@ -107,7 +120,7 @@ export default function OffCampusMap({ gates = [], pin, onPinChange, onGateSelec
     setSearching(true); setSuggestions([]);
     try {
       const place = suggestion.placePrediction.toPlace();
-      await place.fetchFields({ fields: ['location', 'formattedAddress'] });
+      await mapsDeadline(place.fetchFields({ fields: ['location', 'formattedAddress'] }));
       if (generation.current !== version || !place.location) return;
       callbacks.current.onPinChange?.({ lat: place.location.lat(), lng: place.location.lng() });
       setQuery(''); session.current = null; map.current?.setZoom(16);
@@ -116,8 +129,15 @@ export default function OffCampusMap({ gates = [], pin, onPinChange, onGateSelec
   };
   const useLocation = () => {
     setGeoError('');
-    if (!navigator.geolocation) { setGeoError('GPS is unavailable. Choose a gate and enter your address.'); return; }
+    if (!isNativeApp() && !navigator.geolocation) { setGeoError('GPS is unavailable. Choose a gate and enter your address.'); return; }
     setLocating(true);
+    if (isNativeApp()) {
+      nativeCurrentPosition({ enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }).then(position => {
+        callbacks.current.onPinChange?.({ lat: position.coords.latitude, lng: position.coords.longitude }); map.current?.setZoom(16);
+      }).catch(() => setGeoError('Location is unavailable. Allow location for Holy Grills in Android settings, or search for your address.'))
+        .finally(() => setLocating(false));
+      return;
+    }
     navigator.geolocation.getCurrentPosition(position => {
       setLocating(false); callbacks.current.onPinChange?.({ lat: position.coords.latitude, lng: position.coords.longitude }); map.current?.setZoom(16);
     }, failure => {
@@ -143,8 +163,9 @@ export default function OffCampusMap({ gates = [], pin, onPinChange, onGateSelec
       </ul>}
       {searchError && <p role="status" className="text-xs text-destructive mt-1">{searchError}</p>}
     </div>
-    {error && <div role="status" className="p-3 rounded-xl border border-border text-sm">{error}<button type="button" onClick={() => setRevision(value => value + 1)} className="block mt-2 font-bold text-primary underline">Retry map</button></div>}
+    {error && <div role="status" className="p-3 rounded-xl border border-border text-sm">{error}<button type="button" onClick={async () => { if (!reloadRequired) { setRevision(value => value + 1); return; } setLoadingMap(true); try { await refreshPage(); } catch { setLoadingMap(false); } }} disabled={loadingMap} className="block mt-2 font-bold text-primary underline">{reloadRequired ? msg('FE_MAP_RELOAD_PAGE', 'Reload page') : msg('FE_MAP_RETRY', 'Retry map')}</button></div>}
     <div className="relative">
+      {loadingMap && <p role="status" className="absolute bottom-3 left-3 z-10 rounded-xl bg-card p-3 text-sm shadow">{msg('FE_MAP_LOADING', 'Loading map…')}</p>}
       <div ref={element} role="region" aria-label="Choose your delivery pin on Google Maps" className="h-[340px] sm:h-[380px] w-full rounded-2xl overflow-hidden bg-muted" />
       <button type="button" onClick={useLocation} disabled={locating} className="absolute top-3 right-3 flex items-center gap-2 bg-card rounded-full px-4 py-2 text-sm font-bold shadow"><LocateFixed className="w-4 h-4" />{locating ? 'Finding location…' : 'Use my location'}</button>
     </div>

@@ -1,3 +1,4 @@
+import { publicSiteUrl } from '@/native/publicLinks';
 import DeliveryAddress from '@/components/DeliveryAddress';
 import { googleReviewUrl as configuredGoogleReviewUrl } from '@/lib/googleReviews';
 import { settlePaidCart } from '@/lib/paidCart';
@@ -532,7 +533,7 @@ export default function OrderDetail() {
           headline: 'My Holy Grills order',
           value: formatNaira(order.total_amount || 0),
           caption: 'Just got my grill on 🔥',
-          link: `${window.location.origin}/orders/${order.id}`,
+          link: publicSiteUrl(`/orders/${order.id}`),
         }}
       />
     </div>

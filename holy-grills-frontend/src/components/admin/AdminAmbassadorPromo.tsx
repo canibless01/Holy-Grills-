@@ -1,3 +1,4 @@
+import { publicSiteUrl } from '@/native/publicLinks';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Megaphone, ChevronDown, Copy, Check, Download, Share2, Loader2, Send } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
@@ -12,7 +13,7 @@ import { buildWhatsAppShareUrl } from '@/lib/whatsappShare';
 const LINK_TOKENS = [/{{link}}/g, /{link}/g, /{{LINK}}/g];
 const personalize = (caption: string, link: string) =>
   LINK_TOKENS.reduce((out, token) => out.replace(token, link), caption || '');
-const trackingLink = (code?: string | null) => (code ? `${window.location.origin}/register?ref=${encodeURIComponent(code)}` : '');
+const trackingLink = (code?: string | null) => (code ? `${publicSiteUrl('/register')}?ref=${encodeURIComponent(code)}` : '');
 
 export default function AdminAmbassadorPromo() {
   const [messages, setMessages] = useState<any[]>([]);

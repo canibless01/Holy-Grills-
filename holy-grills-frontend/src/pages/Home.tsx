@@ -1,3 +1,4 @@
+import AndroidDownloadCard from '@/components/android/AndroidDownloadCard';
 import { useResumeEffect } from '@/hooks/useResumeEffect';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -124,6 +125,7 @@ export default function Home() {
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: 'easeOut' }} className="space-y-7">
 
       <HeroCarousel onCta={handleCta} />
+      <AndroidDownloadCard />
 
 
       <OrderSuggestionCard />

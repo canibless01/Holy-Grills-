@@ -1,3 +1,4 @@
+import { launchPayment, paymentCallback } from '@/native/payments';
 import EventAnswers from './EventAnswers';
 import { useState } from 'react';
 import { ChevronLeft, Wallet, CreditCard, Flame, Check, Loader2, Tag, Info } from 'lucide-react';
@@ -54,7 +55,7 @@ export default function RegisterModal({ event, tiers, user, wallet, hpBalance, i
     if (submitting || !valid) return;
     setSubmitting(true);
     try {
-      const body: RegisterEventPayload = { callback_url: window.location.href };
+      const body: RegisterEventPayload = { callback_url: paymentCallback(window.location.pathname + window.location.search + window.location.hash) };
       if (selectedTier) body.tier_id = selectedTier.id;
       if (promoCode.trim()) body.promo_code = promoCode.trim();
       body.registration_answers = answers;
@@ -82,7 +83,7 @@ export default function RegisterModal({ event, tiers, user, wallet, hpBalance, i
         // Guests have no session to poll with, so remember the email they registered
         // with: the event page uses it as proof to verify the reference on return.
         if (isGuest) sessionStorage.setItem('hg_event_guest_email', guest.guest_email.trim());
-        window.location.href = res.authorization_url;
+        await launchPayment(res.authorization_url, `/events/${event.id}?reference=${encodeURIComponent(res.reference || res.payment_reference || '')}`);
         return;
       }
 

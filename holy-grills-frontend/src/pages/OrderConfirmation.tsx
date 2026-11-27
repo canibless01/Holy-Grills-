@@ -1,3 +1,4 @@
+import { publicSiteUrl } from '@/native/publicLinks';
 import DeliveryAddress from '@/components/DeliveryAddress';
 import { settlePaidCart } from '@/lib/paidCart';
 import { guestOrderToken, paymentReturnToken, saveGuestOrder, settleGuestCart } from '@/lib/guestOrders';
@@ -308,7 +309,7 @@ export default function OrderConfirmation() {
           headline: 'Order Confirmed',
           value: order.hp_earned > 0 ? `+${order.hp_earned} HP` : '',
           caption: 'I just ordered real flame-grilled goodness from Holy Grills 🔥',
-          link: typeof window !== 'undefined' ? window.location.origin : '',
+          link: publicSiteUrl(),
         }}
       />
     </div>

@@ -1,3 +1,4 @@
+import { publicSiteUrl } from '@/native/publicLinks';
 import { useState, useEffect, useCallback } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -24,7 +25,7 @@ const readStats = (raw, user) => {
     s.referral_code || s.code || profile.referral_code || (profile.profile && profile.profile.referral_code) || '';
   const link =
     s.referral_link || s.link ||
-    (code ? `${window.location.origin}/register?ref=${encodeURIComponent(code)}` : '');
+    (code ? `${publicSiteUrl('/register')}?ref=${encodeURIComponent(code)}` : '');
   return {
     referral_code: code,
     referral_link: link,

@@ -1,0 +1,11 @@
+
+# Local-only OneSignal setup checkpoints
+.onesignal/
+
+# Android signing material belongs in private storage, never source control.
+*.jks
+*.keystore
+*.p12
+local-signing.json
+GitHub-Actions-secrets.json
+*private-signing-backup*

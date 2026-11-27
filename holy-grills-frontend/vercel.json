@@ -59,6 +59,14 @@
       "dest": "/app-shell.html"
     },
     {
+      "src": "/android",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/android/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
       "src": "/cart",
       "dest": "/app-shell.html"
     },

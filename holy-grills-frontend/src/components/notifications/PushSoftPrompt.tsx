@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { isNativeApp } from '@/native/platform';
+import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Bell, Loader2, X } from 'lucide-react';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
@@ -11,12 +12,18 @@ import { subscribeToWebPush } from '@/lib/webPush';
 import { msg } from '@/lib/messages';
 import APP_CONFIG from '@/config/app.config';
 
+const NativePushPrompt = lazy(() => import('@/native/NativePushPrompt'));
+
 const GUEST_CONSENT = 'hg_guest_push_consent_v1';
 const COOLDOWN = 7 * 24 * 60 * 60 * 1000;
 const AUTH_PAGES = new Set(['/login', '/register', '/signup', '/forgot-password', '/reset-password']);
 
 /** A suggestion only: native permission is requested exclusively by the Allow tap. */
 export default function PushSoftPrompt() {
+  return isNativeApp() ? <Suspense fallback={null}><NativePushPrompt /></Suspense> : <WebPushSoftPrompt />;
+}
+
+function WebPushSoftPrompt() {
   const { pathname } = useLocation();
   const { user, isLoading } = useHolyGrill();
   const { gateOpen } = useCampus();

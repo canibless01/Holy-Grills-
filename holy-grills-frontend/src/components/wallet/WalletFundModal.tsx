@@ -1,3 +1,4 @@
+import { launchPayment, paymentCallback } from '@/native/payments';
 import { useState, useRef, useEffect } from 'react';
 import { CreditCard, Building2, X, Copy, Check, Flame, Loader2 } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
@@ -56,7 +57,7 @@ export default function WalletFundModal({ open, onClose, wallet, onSuccess, onAu
     setProcessing(true);
     try {
       if (method === 'card') {
-        const result = await liveApi.wallet.fundCard({ amount: amt, callback_url: `${window.location.origin}/wallet` });
+        const result = await liveApi.wallet.fundCard({ amount: amt, callback_url: paymentCallback('/wallet') });
         // S1 — only https on a Paystack host is followed.
         if (result.authorization_url) {
           if (!isAllowedPaymentUrl(result.authorization_url)) {
@@ -68,7 +69,7 @@ export default function WalletFundModal({ open, onClose, wallet, onSuccess, onAu
             });
             return;
           }
-          window.location.href = result.authorization_url;
+          await launchPayment(result.authorization_url, `/wallet?reference=${encodeURIComponent(result.reference)}`);
           return;
         }
       } else {

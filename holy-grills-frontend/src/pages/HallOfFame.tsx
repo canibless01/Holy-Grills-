@@ -1,3 +1,4 @@
+import { publicSiteUrl } from '@/native/publicLinks';
 import { useState, useEffect, useMemo } from 'react';
 import { Share2, Award } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
@@ -61,7 +62,7 @@ export default function HallOfFame() {
       hp: w.hp_earned ?? inductee?.hp_earned ?? 0,
       value: `${finishes} Top 4 finishes`,
       caption: `${name} just got inducted into the Holy Grills Hall of Fame! 🔥`,
-      link: typeof window !== 'undefined' ? window.location.origin : '',
+      link: publicSiteUrl(),
     });
   };
 

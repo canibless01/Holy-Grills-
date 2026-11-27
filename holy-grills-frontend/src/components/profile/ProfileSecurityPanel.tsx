@@ -1,3 +1,5 @@
+import { isNativeApp } from '@/native/platform';
+import { flushNativeSession } from '@/native/secureSession';
 import { confirmAction } from '@/lib/confirmAction';
 import { useState } from 'react';
 import { KeyRound, MailCheck, LogOut, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
@@ -57,6 +59,7 @@ export default function ProfileSecurityPanel() {
     setLoggingOutAll(true);
     try {
       await liveApi.auth.logoutAll();
+      if (isNativeApp()) await flushNativeSession();
       window.location.href = '/login';
     } catch (e) {
       toast({ title: msg('FE_PROFILE_SECURITY_PANEL_COULD_NOT_SIGN_OUT_EVERYWHERE', 'Could not sign out everywhere'), description: e.message, variant: 'destructive' });

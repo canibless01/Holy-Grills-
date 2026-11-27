@@ -1,3 +1,5 @@
+import { isNativeApp } from '@/native/platform';
+import { launchPayment } from '@/native/payments';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowRight, Check, ChevronDown, Clock3, CreditCard, Loader2, Repeat2, ShieldCheck, Wallet } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
@@ -115,12 +117,15 @@ export default function AutoFundingPanel({ reference, planId, onPaid }: Props) {
     }
   }, [reference, planId, checkPayment]);
 
-  const followCheckout = (url?: string | null) => {
+  const followCheckout = async (url?: string | null, savedPlan?: AutoFundingPlan) => {
     if (!url || !isAllowedPaymentUrl(url)) {
       setError('The payment link is unavailable. Refresh this plan before trying again.');
       return;
     }
-    window.location.assign(url);
+    if (!isNativeApp()) { window.location.assign(url); return; }
+    const plan = savedPlan || plans.find(p => p.checkout_url === url);
+    if (!plan) throw new Error('Refresh this funding plan before continuing payment.');
+    await launchPayment(url, `/wallet?auto_funding=${plan.id}&reference=${encodeURIComponent(plan.setup_reference)}`);
   };
 
   const create = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -138,7 +143,7 @@ export default function AutoFundingPanel({ reference, planId, onPaid }: Props) {
       if (result.plan) { updatePlan(result.plan); setExpandedPlan(result.plan.id); }
       // The POST already contains everything needed for checkout. A secondary
       // plan-list refresh must never be able to block a valid Paystack redirect.
-      followCheckout(result.authorization_url || result.plan?.checkout_url);
+      await followCheckout(result.authorization_url || result.plan?.checkout_url, result.plan);
     } catch (err) {
       setError(err?.message || 'Funding setup could not be confirmed. Refresh before trying again.');
       try { await load(); } catch { /* retain the original error */ }
@@ -201,7 +206,7 @@ export default function AutoFundingPanel({ reference, planId, onPaid }: Props) {
           <h4 className="text-xs font-bold">Contribution history</h4>
           {plan.attempts?.length ? <ol className="mt-2 space-y-2">{plan.attempts.map(attempt => <li key={attempt.id} className="flex items-start justify-between gap-3 text-xs"><span><strong>Contribution {attempt.cycle}</strong><span className="mt-0.5 block text-[11px] text-muted-foreground">{showDate(attempt.updated_at || attempt.scheduled_for)} WAT</span></span><span className={`shrink-0 font-bold ${attempt.state === 'succeeded' ? 'text-success' : attempt.state === 'failed' ? 'text-destructive' : 'text-muted-foreground'}`}>{attemptLabels[attempt.state]}</span></li>)}</ol> : <p className="mt-2 text-xs text-muted-foreground">No confirmed contributions yet.</p>}
         </section>
-        {plan.state === 'draft' && plan.checkout_url && <button type="button" disabled={busy} onClick={() => followCheckout(plan.checkout_url)} className="w-full rounded-xl bg-gradient-cta p-3 font-bold text-white disabled:opacity-50">Continue first payment</button>}
+        {plan.state === 'draft' && plan.checkout_url && <button type="button" disabled={busy} onClick={() => { void followCheckout(plan.checkout_url, plan).catch(failure => setError(failure.message)); }} className="w-full rounded-xl bg-gradient-cta p-3 font-bold text-white disabled:opacity-50">Continue first payment</button>}
         {['draft', 'active', 'attention'].includes(plan.state) && <div className="border-t border-border pt-3">
           {confirmStop === plan.id ? <div className="space-y-3"><p className="text-sm">Stop future contributions? Payments already processing may still finish. An open first-payment link may still accept payment; please close it.</p><div className="flex flex-wrap gap-3"><button type="button" disabled={busy} onClick={() => stop(plan.id)} className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-bold text-destructive">Yes, stop funding</button><button type="button" disabled={busy} onClick={() => setConfirmStop(null)} className="px-3 py-2 text-sm font-semibold">Keep plan</button></div></div>
             : <button type="button" disabled={busy} onClick={() => setConfirmStop(plan.id)} className="py-1 text-xs font-bold text-destructive">Stop automatic funding</button>}

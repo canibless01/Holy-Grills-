@@ -1,3 +1,4 @@
+import NativeNavigation from '@/native/NativeNavigation';
 import EngagementTracker from '@/components/engagement/EngagementTracker';
 import PushSoftPrompt from '@/components/notifications/PushSoftPrompt';
 import EventReleaseGate from '@/components/EventReleaseGate';
@@ -5,7 +6,7 @@ import { lazy, Suspense } from 'react';
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import ScrollToTop from './components/ScrollToTop';
 import { HolyGrillProvider } from '@/lib/HolyGrillContext';
@@ -26,6 +27,7 @@ import ClientOnly from '@/components/ClientOnly';
 import ReferralEntry from '@/components/ReferralEntry';
 const Kitchen = lazy(() => import('@/pages/Kitchen'));
 const Rider = lazy(() => import('@/pages/Rider'));
+const AndroidDownload = lazy(() => import('@/pages/AndroidDownload'));
 const Admin = lazy(() => import('@/pages/Admin'));
 const EventManager = lazy(() => import('@/pages/EventManager'));
 import Login from '@/pages/Login';
@@ -71,9 +73,10 @@ const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('@/pages/ResetPassword'));
 
 const AppRoutes = () => {
+  const location = useLocation();
   return (
     <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><div className="w-10 h-10 rounded-xl bg-muted animate-pulse" /></div>}>
-    <Routes>
+    <Routes key={location.state?.nativePaymentReturn || 'normal'}>
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/signup" element={<Register />} />
@@ -108,6 +111,7 @@ const AppRoutes = () => {
         <Route path="/track-orders" element={<TrackOrders />} />
         <Route path="/faq" element={<FAQ />} />
         <Route path="/contact" element={<Contact />} />
+        <Route path="/android" element={<AndroidDownload />} />
         <Route path="/terms" element={<TermsPrivacy />} />
         <Route path="/our-story" element={<OurStory />} />
         <Route path="/newsletter/unsubscribe" element={<NewsletterUnsubscribe />} />
@@ -169,6 +173,7 @@ export function AppShell() {
     <SoundProvider>
       <HolyGrillProvider>
         <CampusProvider>
+          <NativeNavigation />
           <ScrollToTop />
           <AmbassadorClickTracker />
           <EngagementTracker />

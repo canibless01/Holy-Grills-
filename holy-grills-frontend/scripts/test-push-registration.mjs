@@ -21,6 +21,9 @@ try {
         return { path, namespace: 'fixture' };
       });
       builder.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({ contents:
+        path === '@/native/pushState' ? 'export const nativePushState={registered:false,permission:"default"};' :
+        path === '@/native/platform' ? 'export const isNativeApp=()=>false;' :
+        path === '@/native/push' ? 'export const nativePushReady=()=>{throw Error("Web must not call native push")};export const nativePushLogout=nativePushReady;export const nativePushPermission=nativePushReady;export const nativePushOptOut=nativePushReady;export const nativePushRegistered=nativePushReady;' :
         path.includes('app.config') ? 'export default {onesignal:{appId:\'fixture\'}};' :
         path.includes('liveApi') ? 'export const liveApi={auth:{deviceToken:async body=>globalThis.__register(body),removeDeviceToken:async body=>globalThis.__unregister(body)},notifications:{updatePreferences:async body=>globalThis.__prefs.push(body)}};' :
         'export const msg=(_key,fallback)=>fallback;' }));

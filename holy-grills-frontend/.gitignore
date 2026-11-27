@@ -32,3 +32,16 @@ dist-ssr
 .env
 .vite
 base44/.app.jsonc
+
+# Native build products and signing material
+dist-android/
+*.jks
+*.keystore
+key.properties
+.env.android.local
+
+android-artifacts/
+
+# Public native build configuration and credential-free template
+!.env.android
+!.env.android.local.example

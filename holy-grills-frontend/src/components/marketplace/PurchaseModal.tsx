@@ -1,3 +1,4 @@
+import { launchPayment } from '@/native/payments';
 import { useState } from 'react';
 import { X, Flame, Wallet, CreditCard, Split, Check, Loader2, Package } from 'lucide-react';
 import { liveApi } from '@/lib/liveApi';
@@ -64,7 +65,7 @@ export default function PurchaseModal({ listing, onClose, onSuccess }) {
         if (!isAllowedPaymentUrl(res.authorization_url)) {
           throw new Error(msg('FE_PURCHASE_MODAL_THE_PAYMENT_LINK_DID_NOT_LOOK_SAFE_SO', 'The payment link did not look safe, so nothing was charged. Please try again.'));
         }
-        window.location.href = res.authorization_url;
+        await launchPayment(res.authorization_url, `/marketplace/${listing.id}?reference=${encodeURIComponent(res.reference || '')}`);
         return;
       }
 

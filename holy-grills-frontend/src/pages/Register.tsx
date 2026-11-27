@@ -1,3 +1,5 @@
+import { isNativeApp } from '@/native/platform';
+import { flushNativeSession } from '@/native/secureSession';
 import { useState, useEffect, useId, useRef } from 'react';
 import { Link, useSearchParams, useLocation } from 'react-router-dom';
 import { ArrowRight, Mail, Lock, User, Phone, Calendar, Gift, ChevronDown, AlertCircle, Info, Eye, EyeOff, BookOpen, GraduationCap, MapPin, Search } from 'lucide-react';
@@ -151,6 +153,7 @@ export default function Register() {
         toast({ title: msg('FE_REGISTER_SUCCESS_TITLE', "You're in ❤️‍🔥"), description: msg('FE_REGISTER_SUCCESS_BODY', 'Welcome to Holy Grills.') });
         const role = data?.role || data?.user?.role || 'student';
         const isStaff = ['admin', 'super_admin', 'kitchen', 'rider'].includes(role);
+        if (isNativeApp()) await flushNativeSession();
         window.location.href = isStaff ? (ROLE_HOME[role] || '/admin') : (guestOrderReturn || giftReturn || STUDENT_HOME);
         return;
       }

@@ -1,3 +1,6 @@
+import { mobilePlatform } from '@/native/devicePlatform';
+import { loadAndroidRelease, type AndroidRelease } from '@/native/releaseManifest';
+import { isNativeApp } from '@/native/platform';
 /**
  * Holy Grill — PWA Install Prompt
  * ----------------------------------------------------------------------------
@@ -8,7 +11,7 @@
  *
  * Rendered once at the app root (App.tsx) — covers every page automatically.
  */
-import { useEffect, useState } from 'react';
+import { startTransition, useEffect, useState } from 'react';
 import { Download, X, Share2, Plus, Flame } from 'lucide-react';
 import ModalPortal from '@/components/ModalPortal';
 import { hasInstallPrompt, isStandalone, triggerInstall, subscribeInstallPrompt } from '@/lib/installPromptStore';
@@ -18,11 +21,22 @@ import { msg, useMessages } from '@/lib/messages';
 const DISMISS_KEY = 'hg_install_dismissed';
 
 export default function InstallPrompt() {
+  return isNativeApp() ? null : <WebInstallPrompt />;
+}
+
+function WebInstallPrompt() {
   useMessages();
   const [show, setShow] = useState(false);
   const [showIOS, setShowIOS] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
+  const [apk, setApk] = useState<AndroidRelease | null>(null);
+  useEffect(() => {
+    if (mobilePlatform() !== 'android' || isStandalone()) return;
+    let active = true;
+    loadAndroidRelease().then(value => { if (active) startTransition(() => setApk(value)); });
+    return () => { active = false; };
+  }, []);
   const isIOS = typeof navigator !== 'undefined' && (/iphone|ipad|ipod/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
   const isMobile = isIOS || (typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent));
   const recentlyDismissed = () => {
@@ -30,12 +44,14 @@ export default function InstallPrompt() {
     return saved > 1 && Date.now() >= saved && Date.now() - saved < 7 * 86400000;
   };
   useEffect(() => {
-    const update = () => setShow(!isStandalone() && hasInstallPrompt() && !recentlyDismissed());
+    const update = () => startTransition(() => setShow(!isStandalone() && hasInstallPrompt() && !recentlyDismissed()));
     const manual = () => {
       if (isStandalone()) return;
-      setError(false);
-      if (hasInstallPrompt()) setShow(true);
-      else setShowIOS(true);
+      startTransition(() => {
+        setError(false);
+        if (hasInstallPrompt()) setShow(true);
+        else setShowIOS(true);
+      });
     };
     const installed = () => { setShow(false); setShowIOS(false); };
     update();
@@ -51,12 +67,14 @@ export default function InstallPrompt() {
 
   useEffect(() => {
     if (!isMobile || isStandalone() || recentlyDismissed()) return;
-    const timer = setTimeout(() => setShow(true), 4000);
+    const timer = setTimeout(() => startTransition(() => setShow(true)), 4000);
     return () => clearTimeout(timer);
   }, [isMobile]);
 
   const handleInstall = async () => {
     if (busy) return;
+    if (apk && !isIOS) { localStore.setItem(DISMISS_KEY, String(Date.now())); setShow(false); window.location.assign(apk.url); return; }
+    if (isIOS) { startTransition(() => { setShow(false); setShowIOS(true); }); return; }
     setBusy(true); setError(false);
     const result = await triggerInstall();
     setBusy(false); setShow(false);
@@ -80,11 +98,11 @@ export default function InstallPrompt() {
               <Flame className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="font-heading font-bold text-sm">{msg('FE_INSTALL_TITLE', 'Install Holy Grills')}</div>
+              <div className="font-heading font-bold text-sm">{apk && !isIOS ? msg('FE_ANDROID_DOWNLOAD_TITLE', 'Holy Grills for Android') : msg('FE_INSTALL_TITLE', 'Install Holy Grills')}</div>
               <div className="text-xs text-white/80 truncate">{msg('FE_INSTALL_SUBTITLE', 'Add to your home screen for the full experience')}</div>
             </div>
             <button onClick={handleInstall} disabled={busy} className="shrink-0 px-3 py-2 rounded-full bg-card text-primary text-xs font-bold flex items-center gap-1.5 hover:bg-white/90 transition-colors">
-              <Download className="w-3.5 h-3.5" /> {msg('FE_INSTALL_ACTION', 'Install')}
+              <Download className="w-3.5 h-3.5" /> {apk && !isIOS ? msg('FE_ANDROID_DOWNLOAD_CTA', 'Download APK') : isIOS ? msg('FE_IOS_INSTALL_GUIDE_ACTION', 'Show me how') : msg('FE_INSTALL_ACTION', 'Install')}
             </button>
             <button onClick={dismiss} className="shrink-0 p-1.5 rounded-full hover:bg-white/20 transition-colors" aria-label={msg('FE_PUSH_SOFT_DISMISS', 'Dismiss')}>
               <X className="w-4 h-4" />
@@ -96,7 +114,7 @@ export default function InstallPrompt() {
       {showIOS && (
         <ModalPortal>
         <div className="fixed inset-0 z-[1080] flex items-end sm:items-center justify-center hg-scrim animate-fade-in" onClick={dismiss}>
-          <div className="bg-card rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-md mx-auto animate-slide-up" onClick={(e) => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" aria-label={msg('FE_IOS_INSTALL_ACTION', 'Add to Home Screen')} className="bg-card rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-md mx-auto animate-slide-up" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-12 h-12 rounded-2xl bg-gradient-cta flex items-center justify-center shadow-lg shadow-flame-600/30">
                 <Flame className="w-6 h-6 text-white" />
