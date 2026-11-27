@@ -6,12 +6,12 @@ export default function HpSourceReconciliation({ range }: { range: Record<string
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
-  const from = range.from_date; const to = range.to_date;
+  const from = range.from_date; const to = range.to_date; const campus = range.campus_id;
   useEffect(() => {
     let active = true; setData(null); setError('');
-    liveApi.analytics.hpReconciliation({ from_date: from, to_date: to }).then(result => { if (active) setData(result); }).catch(failure => { if (active) setError(failure.message); });
+    liveApi.analytics.hpReconciliation({ from_date: from, to_date: to, ...(campus ? { campus_id: campus } : {}) }).then(result => { if (active) setData(result); }).catch(failure => { if (active) setError(failure.message); });
     return () => { active = false; };
-  }, [from, to, retry]);
+  }, [from, to, campus, retry]);
   return <section className="rounded-2xl border border-border bg-card p-4 space-y-3">
     <h2 className="font-bold">{msg('FE_HP_SOURCE_REPORT', 'HP balances by source')}</h2>
     <p className="text-xs text-muted-foreground">{msg('FE_HP_REPORT_BASIS', 'Active and pending balances are current. Awards and spending use the selected period. Pending awards are not spendable; source balances use the unspent ledger amounts.')}</p>

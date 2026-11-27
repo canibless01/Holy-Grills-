@@ -4,6 +4,7 @@ import { useCampus } from '@/lib/campusContext';
 import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { msg } from '@/lib/messages';
 import AdminUserPicker from './AdminUserPicker';
+import HpSourceReconciliation from './HpSourceReconciliation';
 import { Flame, TrendingUp, TrendingDown, Sparkles, Play } from 'lucide-react';
 import { liveApi as mockApi } from '@/lib/liveApi';
 import StaffPanelSkeleton from '@/components/skeletons/StaffPanelSkeleton';
@@ -154,6 +155,8 @@ function HpWorkspace({ campusId }) {
           </Card>
         ))}
       </div>
+
+      <HpSourceReconciliation range={campusId ? { campus_id: campusId } : {}} />
 
       <div className="grid lg:grid-cols-2 gap-5">
         <Card>
