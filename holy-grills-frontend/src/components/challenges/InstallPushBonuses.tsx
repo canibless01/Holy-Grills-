@@ -6,6 +6,8 @@ import { useHolyGrill } from '@/lib/HolyGrillContext';
 import { subscribeToWebPush, isWebPushSupported } from '@/lib/webPush';
 import { isStandalone, hasInstallPrompt, triggerInstall, subscribeInstallPrompt } from '@/lib/installPromptStore';
 import StreakPwaBonus from '@/components/streak/StreakPwaBonus';
+import { mobilePlatform } from '@/native/devicePlatform';
+import { loadAndroidRelease } from '@/native/releaseManifest';
 
 /** Each step records a real browser action; the server owns eligibility/HP. */
 export default function InstallPushBonuses() {
@@ -43,7 +45,15 @@ export default function InstallPushBonuses() {
       if (!status) { await reload(); return; }
       if (!status.pwa_install) {
         if (!isNativeApp() && !installed && !isStandalone()) {
-          if (!hasInstallPrompt()) throw new Error('Open your browser menu and choose Install app or Add to Home Screen, then open the installed app to continue.');
+          if (mobilePlatform() === 'android') {
+            const release = await loadAndroidRelease();
+            window.location.assign(release?.url || '/android');
+            return; // A download is not an install: record the reward from the installed app.
+          }
+          if (!hasInstallPrompt()) {
+            window.dispatchEvent(new Event('hg:install-help'));
+            return;
+          }
           const choice = await triggerInstall();
           setInstallAvailable(hasInstallPrompt());
           if (choice?.outcome !== 'accepted') return;
@@ -70,5 +80,5 @@ export default function InstallPushBonuses() {
   };
 
   return <StreakPwaBonus pwaStatus={status} onAction={action} busy={busy} error={error}
-    installed={installed} installAvailable={installAvailable} pushSupported={isNativeApp() ? isPushSupported() : isWebPushSupported()} />;
+    installed={installed} installAvailable={installAvailable || mobilePlatform() === 'android'} pushSupported={isNativeApp() ? isPushSupported() : isWebPushSupported()} />;
 }

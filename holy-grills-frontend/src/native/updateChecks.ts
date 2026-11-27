@@ -6,6 +6,8 @@ export function createUpdateCheck(options: {
   load: () => Promise<AndroidRelease | null>;
   lastSuccess: () => number;
   markSuccess: (time: number) => void;
+  lastPrompt: () => number;
+  markPrompt: (time: number) => void;
   onUpdate: (release: AndroidRelease) => void;
   now?: () => number;
 }) {
@@ -24,7 +26,12 @@ export function createUpdateCheck(options: {
         const available = await options.load();
         if (!active || !available) return;
         options.markSuccess(now());
-        if (available.versionCode > Number(info.build)) options.onUpdate(available);
+        const prompted = options.lastPrompt(), current = now();
+        if (available.versionCode > Number(info.build)
+          && !(prompted > 0 && current >= prompted && current - prompted < 30 * 86400000)) {
+          options.markPrompt(current);
+          options.onUpdate(available);
+        }
       } catch { /* Optional update checks must not interrupt orders or login. */ }
       finally { pending = false; }
     },

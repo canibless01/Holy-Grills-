@@ -166,3 +166,14 @@ Native external referral/order/group links are canonical website URLs rather tha
 Package inspection found an approximately 8 MB release, with most compressed space in Android/Capacitor/OneSignal/Firebase bytecode. Repository documents, SQL, backend files, private signing files and .git were absent from the APK. Browser notifications still belong to Chrome; recent OneSignal campaign payloads included the correct publicly reachable Holy Grills icon. The reported H needs screenshot/device interpretation, and no claim is made that Chrome's sender identity can be replaced by the native app identity.
 
 Railway review: Celery already defaults to one child process, prefetches one task and lazily reuses a background-only Flask application. The repository API Procfile starts two workers/four threads. Actual Railway overrides and service RAM metrics have been requested before claiming measured savings or changing deployed process counts. Job frequencies were not reduced by the Android work.
+
+
+## Follow-up — 27 November 2026
+
+The user confirmed that Maps/GPS now works on the installed Android app, in addition to native push receipt. Public signed version 1.0.2+11.1 was downloaded and its checksum/signature matched the live manifest and permanent app identity. The live homepage Android banner and /android download page passed browser checks.
+
+Starting with base version 1.0.3, installed release apps keep lightweight daily version checks but show an update prompt at most once per 30 days. A separate persisted timestamp suppresses prompts across remounts, logout and same-key upgrades, including when several newer builds become available. New downloads always use the latest signed version. This bundled-APK policy takes effect after installing a build containing it; an older installed binary cannot be changed remotely. There is no mandatory-update bypass in this policy.
+
+The install challenge opens the current public APK download on Android browsers, and the existing installation guide on iPhone/iPad. Downloading never records the install reward. The installed app continues to use the existing lifetime install/push receipts, shared with PWA rewards. Browser OS detection is local navigator information, requires no permission and is only a presentation hint.
+
+HP balances by source were already available in Analytics (Engagement). The same reconciliation view is now also on HP management, using the selected campus and the existing backend authorization. Current active and pending balances are separate from period award totals; the default flow period is 30 days when dates are omitted. No balances, transactions, prices, signup requirements or order rules were modified.

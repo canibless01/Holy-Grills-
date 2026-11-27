@@ -12,6 +12,8 @@ export default function NativeUpdateNotice() {
       load: loadAndroidRelease,
       lastSuccess: () => Number(localStorage.getItem('hg_android_update_checked') || 0),
       markSuccess: time => localStorage.setItem('hg_android_update_checked', String(time)),
+      lastPrompt: () => Number(localStorage.getItem('hg_android_update_prompted') || 0),
+      markPrompt: time => localStorage.setItem('hg_android_update_prompted', String(time)),
       onUpdate: available => { setRelease(available); setHidden(false); },
     });
     const timer = setTimeout(() => { void checker.check(); }, 30000);

@@ -36,13 +36,17 @@ try {
  assert.throws(()=>releasePlan({packageName:'com.holygrills.app.debug'},'canibless01/Holy-Grills-'));
  console.log('PASS public release metadata, monotonic build labels and debug-publication rejection');
  const {createUpdateCheck}=await compile('native/updateChecks');
- let time=1000,saved=0,checks=0,updates=0,finish;
- const checker=createUpdateCheck({now:()=>time,lastSuccess:()=>saved,markSuccess:t=>saved=t,getInfo:async()=>({id:'com.holygrills.app',build:'2'}),load:async()=>{checks++;return new Promise(r=>finish=r)},onUpdate:()=>updates++});
+ let time=1000,saved=0,prompted=0,checks=0,updates=0,finish;
+ const checker=createUpdateCheck({now:()=>time,lastSuccess:()=>saved,markSuccess:t=>saved=t,lastPrompt:()=>prompted,markPrompt:t=>prompted=t,getInfo:async()=>({id:'com.holygrills.app',build:'2'}),load:async()=>{checks++;return new Promise(r=>finish=r)},onUpdate:()=>updates++});
  const firstCheck=checker.check();await Promise.resolve();await checker.check();assert.equal(checks,1);finish(null);await firstCheck;
  time+=300001;const recovered=checker.check();await Promise.resolve();assert.equal(checks,2);finish({versionCode:3});await recovered;assert.equal(updates,1);
  time+=600000;await checker.check();assert.equal(checks,2);
- time+=86400001;const nextDay=checker.check();await Promise.resolve();assert.equal(checks,3);checker.stop();finish({versionCode:4});await nextDay;assert.equal(updates,1);
- console.log('PASS update resume coalescing, failed-network recovery, daily checks and unmount safety');
+ time+=86400001;const nextDay=checker.check();await Promise.resolve();assert.equal(checks,3);finish({versionCode:4});await nextDay;assert.equal(updates,1);
+ const restored=createUpdateCheck({now:()=>time,lastSuccess:()=>0,markSuccess:()=>{},lastPrompt:()=>prompted,markPrompt:t=>prompted=t,getInfo:async()=>({id:'com.holygrills.app',build:'2'}),load:async()=>({versionCode:99}),onUpdate:()=>updates++});
+ await restored.check();assert.equal(updates,1); // Persisted across remounts and upgrades.
+ time=prompted+30*86400000;await restored.check();assert.equal(updates,2);
+ time+=86400001;const interrupted=checker.check();await Promise.resolve();checker.stop();finish({versionCode:100});await interrupted;assert.equal(updates,2);
+ console.log('PASS update resume coalescing, failed-network recovery, daily checks, persistent 30-day prompt limits and unmount safety');
  let scripts=[];document.createElement=()=>({dataset:{},remove(){this.removed=true;}});document.head={appendChild:script=>scripts.push(script)};
  const maps=await compile('lib/googleMaps');
  const first=maps.loadGoogleMaps();const joined=maps.loadGoogleMaps();assert.equal(first,joined);assert.equal(scripts.length,1);
