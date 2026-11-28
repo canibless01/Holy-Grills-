@@ -83,6 +83,12 @@ def upload_signature():
         folder = folder.strip()
         if len(folder) > 255 or not re.fullmatch(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*", folder):
             return jsonify({"error": MSG.UPLOAD_FOLDER_INVALID}), 400
+    elif data.get('folder') == 'team-workspace':
+        from app.db import get_db
+        access = get_db().rpc('hg_team_workspace', {'p_actor':g.user_id,'p_scope':g.campus_id,'p_action':'access'})
+        if not isinstance(access, dict) or not access.get('member'):
+            return jsonify({'error':MSG.TEAM_UPLOAD_MEMBERSHIP}), 403
+        folder = f"team_assets/{g.user_id}"
     elif caller_role == 'community_manager' and data.get('folder') == 'ambassador-promo':
         folder = f"ambassador_promos/{g.user_id}"
     elif caller_role == 'event_organizer' and data.get('folder') == 'events':

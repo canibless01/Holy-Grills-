@@ -65,6 +65,7 @@ export const ADMIN_GROUPS: Array<{ label: string | null; items: AdminSection[] }
     { id: 'reviews', label: 'Reviews', icon: Star, desc: 'Ratings & testimonials', keywords: ['review', 'rating', 'testimonial', 'feedback', 'promote'] },
   ]},
   { label: 'People & Ops', items: [
+    { id: 'teamworkspace', label: msg('FE_TEAM_WORKSPACE', 'Team workspace'), icon: ClipboardCheck, desc: msg('FE_TEAM_ADMIN_SECTION', 'Targets, reviews & team reminders'), keywords: ['team', 'kpi', 'designer', 'brand manager', 'deadline', 'team member'] },
     { id: 'users', label: 'Users', icon: Users, desc: 'Students & staff', keywords: ['user', 'student', 'staff', 'account', 'role', 'deactivate'] },
     { id: 'delivery', label: 'Delivery', icon: Truck, desc: 'Zones & gates', keywords: ['delivery', 'zone', 'gate', 'hostel', 'batch', 'assign batch', 'delivery batch', 'fee'] },
     { id: 'orderlocks', label: 'Order Locks', icon: Lock, desc: 'Price locks', keywords: ['lock', 'price lock', 'order lock', 'reschedule'] },

@@ -11,5 +11,6 @@ Disallow: /orders
 Disallow: /wallet
 Disallow: /profile
 Disallow: /dashboard
+Disallow: /team
 
 Sitemap: https://holygrills.online/sitemap.xml

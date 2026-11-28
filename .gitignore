@@ -9,3 +9,7 @@
 local-signing.json
 GitHub-Actions-secrets.json
 *private-signing-backup*
+
+# Local backend virtualenv (installed for test runs, never committed)
+.venv/
+__pycache__/

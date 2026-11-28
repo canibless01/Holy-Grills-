@@ -29,6 +29,7 @@ const Kitchen = lazy(() => import('@/pages/Kitchen'));
 const Rider = lazy(() => import('@/pages/Rider'));
 const AndroidDownload = lazy(() => import('@/pages/AndroidDownload'));
 const Admin = lazy(() => import('@/pages/Admin'));
+const TeamWorkspace = lazy(() => import('@/team/TeamWorkspace'));
 const EventManager = lazy(() => import('@/pages/EventManager'));
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
@@ -132,6 +133,7 @@ const AppRoutes = () => {
           <Route path="/hall-of-fame" element={<HallOfFame />} />
         </Route>
       </Route>
+      <Route element={<RequireAuth />}><Route path="/team" element={<TeamWorkspace />} /></Route>
       <Route path="/admin" element={<Admin />} />
       <Route path="/community-manager" element={<Admin communityWorkspace />} />
       <Route path="/event-manager" element={<EventManager />} />

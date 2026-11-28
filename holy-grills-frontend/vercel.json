@@ -339,6 +339,14 @@
       "dest": "/app-shell.html"
     },
     {
+      "src": "/team",
+      "dest": "/app-shell.html"
+    },
+    {
+      "src": "/team/(.*)",
+      "dest": "/app-shell.html"
+    },
+    {
       "src": "/terms",
       "dest": "/app-shell.html"
     },

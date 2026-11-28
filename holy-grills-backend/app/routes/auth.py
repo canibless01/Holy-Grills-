@@ -314,12 +314,18 @@ def login():
         return jsonify({"error": MSG.AUTH_LOGIN_FAILED}), 500
 
     user_id = (result.get("user") or {}).get("id")
+    team_workspace = False
     if user_id:
         try:
-            prof = get_db().table("profiles").select("is_active").eq("id", user_id).single().execute()
+            prof = get_db().table("profiles").select("is_active,team_workspace").eq("id", user_id).single().execute()
         except Exception as e:
+            # A checkout without the team migration must still be able to sign in.
+            # Only the additive team flag is optional; the active check is not.
             prof = None
-            logger.warning("login: is_active lookup failed for %s: %s", user_id, e)
+            try:
+                prof = get_db().table("profiles").select("is_active").eq("id", user_id).single().execute()
+            except Exception:
+                logger.warning("login: is_active lookup failed for %s: %s", user_id, e)
         if prof is None:
             # A valid Auth password does not establish an active application identity.
             get_db().auth_sign_out(result.get("access_token"), scope="local")
@@ -327,6 +333,10 @@ def login():
         if prof.get("is_active") is False:
             get_db().auth_sign_out(result.get("access_token"), scope="local")   # drop the session just issued
             return jsonify({"error": MSG.ACCOUNT_DEACTIVATED}), 403
+        # The client sends a fresh team member straight to /team and warms that
+        # chunk. The flag is server-derived (a membership trigger owns it), so it
+        # is safe to surface here; /api/team still re-checks membership itself.
+        team_workspace = prof.get("team_workspace") is True
         # Backfill the OneSignal Email Subscription for accounts created before we
         # registered them: without one, a campaign addressed to the account is
         # accepted by OneSignal and delivered to nobody. Fire-and-forget so login
@@ -342,6 +352,7 @@ def login():
         # delivery of newly issued credentials behind optional streak queries.
 
     result["message"] = MSG.LOGIN_SUCCESS
+    result["team_workspace"] = team_workspace
     return jsonify(result), 200
 
 

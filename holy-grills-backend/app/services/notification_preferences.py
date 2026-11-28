@@ -6,6 +6,8 @@ REQUEST_TYPES = frozenset({'catering_request','marketplace_request','admin_cater
 
 
 def category_for_notification(kind):
+    if kind.startswith('team_'):
+        return None
     if kind in ACCOUNT_TYPES or kind in ('low_stock_ingredient','menu_item_sold_out') or kind.startswith(('wallet_', 'delivery_pass_')):
         return None
     if kind.startswith(('order_streak','order_lock')):

@@ -924,6 +924,14 @@ def send_scheduled_blasts(self, campus_id=None):
         return {"skipped": "Lock not acquired", "notification_recovery": recovery, "refund_recovery": refund_recovery, "wallet_transfer_recovery": wallet_transfer_recovery}
 
     try:
+        # Team reminders share this existing tick and durable provider outbox.
+        try:
+            from app.services.team_workspace import capture_due as capture_team_due
+            team_notices = capture_team_due(db)
+            if team_notices.get('queued'):
+                recover_due_notifications(limit=100)
+        except Exception as exc:
+            logger.warning('Team notice capture deferred: %s', type(exc).__name__)
         # Ambassador digests share this tick and the existing email outbox.
         ambassador_reports = {"queued": 0}
         try:
