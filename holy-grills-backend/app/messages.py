@@ -118,6 +118,7 @@ class MSG:
     FE_TEAM_LOG_HELP = "Meeting decisions, owned actions and incidents. Keep your group conversations; log what the team needs to follow through."
     FE_TEAM_LOG_KIND = "Entry type"
     FE_TEAM_LOG_SETUP = "Add to the team log"
+    FE_TEAM_LOG_NEEDS_WEEK = "Open this week before adding a team log entry."
     FE_TEAM_LOG_TITLE = "Headline"
     FE_TEAM_LOWER = "Lower is better"
     FE_TEAM_MANAGE = "Manage the team"

@@ -56,6 +56,9 @@ jobs:
       - name: Settings-merge tests (admin vs user value precedence)
         run: npm run test:settings-merge
 
+      - name: Team workspace navigation tests (additive membership)
+        run: npm run test:team-workspace
+
       - name: Build (client + SSR + pre-render)
         run: npm run build
 

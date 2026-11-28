@@ -20,7 +20,9 @@ export default function TeamDialog({dialog,data,busy,error,onClose,onSave}:{dial
   }
   if(kind==='review')return {id:item.id,version:item.version,status:'approved',feedback:''};
   if(kind==='rule')return item||{title:'',body:'',responsibility_id:null,weekdays:[1,2,3,4,5],minute_of_day:540,outstanding_only:false,enabled:true};
-  return item||{week_id:data.week?.id,kind:'action',title:'',body:'',owner_id:null,due_at:'',private:false,status:'open'};
+  // Default to a log type the caller is allowed to write: meeting/change notes
+  // are reviewer-only on the server, so members start at an owned action.
+  return item||{week_id:data.week?.id,kind:data.reviewer?'meeting':'action',title:'',body:'',owner_id:null,due_at:'',private:false,status:'open'};
  });
  const set=(key:string,value:unknown)=>setForm((f:any)=>({...f,[key]:value}));
  const titles:Record<string,string>={member:msg('FE_TEAM_ASSIGN_MEMBER','Assign a team responsibility'),responsibility:msg('FE_TEAM_EDIT_RESPONSIBILITY','Shape this responsibility'),targets:msg('FE_TEAM_WEEK_TARGETS','Targets for this week'),settings:msg('FE_TEAM_WORKSPACE_SETTINGS','Workspace rhythm'),week:msg('FE_TEAM_WEEK_SETUP','Set the week’s deadline'),review:msg('FE_TEAM_REVIEW_UPDATE','Review this update'),rule:msg('FE_TEAM_REMINDER_SETUP','Schedule a team reminder'),log:msg('FE_TEAM_LOG_SETUP','Add to the team log')};

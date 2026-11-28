@@ -55,7 +55,22 @@ BEGIN
  IF (SELECT count(*) FROM notifications WHERE user_id=u)<>3 THEN RAISE EXCEPTION 'distinct channel rows missing'; END IF;
  UPDATE team_memberships SET active=false WHERE id=mid;
  IF hg_team_notice_valid(u,meta) OR (SELECT team_workspace FROM profiles WHERE id=u) THEN RAISE EXCEPTION 'removed member retained access'; END IF;
- IF has_function_privilege('authenticated','hg_team_workspace(uuid,uuid,text,jsonb,uuid)','EXECUTE') OR has_table_privilege('anon','team_entries','SELECT') THEN RAISE EXCEPTION 'public access'; END IF;
+ IF has_function_privilege('authenticated','hg_team_workspace(uuid,uuid,text,jsonb,uuid)','EXECUTE') OR has_function_privilege('authenticated','hg_team_seed_campus(uuid)','EXECUTE') OR has_table_privilege('anon','team_entries','SELECT') THEN RAISE EXCEPTION 'public access'; END IF;
+ -- A campus created AFTER the first migration has no seed row; the backfill
+ -- function must repair it without touching an already-configured campus.
+ INSERT INTO campuses(id,name) VALUES('00000002-0000-0000-0000-000000000002','Late campus');
+ DELETE FROM team_settings WHERE campus_id='00000002-0000-0000-0000-000000000002';
+ DELETE FROM team_reminder_rules WHERE campus_id='00000002-0000-0000-0000-000000000002';
+ DELETE FROM team_responsibilities WHERE campus_id='00000002-0000-0000-0000-000000000002';
+ IF NOT hg_team_seed_campus('00000002-0000-0000-0000-000000000002') THEN RAISE EXCEPTION 'late campus not seeded'; END IF;
+ IF (SELECT count(*) FROM team_responsibilities WHERE campus_id='00000002-0000-0000-0000-000000000002')<>7
+  OR NOT EXISTS(SELECT 1 FROM team_settings WHERE campus_id='00000002-0000-0000-0000-000000000002')
+  OR (SELECT count(*) FROM team_reminder_rules WHERE campus_id='00000002-0000-0000-0000-000000000002')<3 THEN RAISE EXCEPTION 'late campus seed incomplete'; END IF;
+ UPDATE team_settings SET coverage_target=64,version=version+1 WHERE campus_id='00000002-0000-0000-0000-000000000002';
+ IF NOT hg_team_seed_campus('00000002-0000-0000-0000-000000000002') THEN RAISE EXCEPTION 'seed is not idempotent'; END IF;
+ IF (SELECT coverage_target FROM team_settings WHERE campus_id='00000002-0000-0000-0000-000000000002')<>64 THEN RAISE EXCEPTION 'seed overwrote admin settings'; END IF;
+ IF (SELECT count(*) FROM team_reminder_rules WHERE campus_id='00000002-0000-0000-0000-000000000002')<>3 THEN RAISE EXCEPTION 'seed duplicated reminders'; END IF;
+ IF hg_team_seed_campus(NULL) OR hg_team_seed_campus('00000002-0000-0000-0000-ffffffffffff') THEN RAISE EXCEPTION 'seed accepted an unknown campus'; END IF;
  IF hg_team_targets_valid('[{"id":"20000001-0000-0000-0000-000000000001","title":"Bad","target":null,"tolerance":1,"direction":"higher","unit":"count"}]') THEN RAISE EXCEPTION 'null target'; END IF;
 END $$;
 ROLLBACK;

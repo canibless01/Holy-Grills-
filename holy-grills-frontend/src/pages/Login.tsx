@@ -14,8 +14,11 @@ import { haptic } from '@/lib/haptic';
 const ROLE_HOME = { admin: '/admin', super_admin: '/admin', community_manager: '/admin', event_organizer: '/event-manager', kitchen: '/kitchen', rider: '/rider', student: '/' };
 
 const loginDestination = (role, from, teamMember = false) => {
-  if (teamMember && (!from || from === '/team')) return '/team';
   const isStaff = ['admin', 'super_admin', 'kitchen', 'rider'].includes(role);
+  // Team membership is additive: a member who also holds a staff panel keeps
+  // that panel as their landing page. Only a member with no staff panel is
+  // sent straight to their team week.
+  if (teamMember && !isStaff && (!from || from === '/team')) return '/team';
   const studentRoutes = ['/', '/menu', '/cart', '/checkout', '/orders', '/track-orders', '/dashboard', '/hp-education', '/rewards', '/wallet', '/profile', '/addresses', '/notifications', '/notification-preferences', '/referrals', '/order-locks', '/streak', '/leaderboard', '/events', '/marketplace', '/faq', '/terms', '/our-story', '/hall-of-fame'];
   const isStudentRoute = (p) => {
     if (typeof p !== 'string' || !p.startsWith('/') || p.startsWith('//') || p.includes(String.fromCharCode(92)) || p.includes(String.fromCharCode(10)) || p.includes(String.fromCharCode(13))) return false;

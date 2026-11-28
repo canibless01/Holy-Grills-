@@ -58,3 +58,41 @@ class TeamRouteTests(unittest.TestCase):
         with self.app.test_request_context('/',method='POST',json={}):
             self.assertEqual(mutate.__wrapped__('save')[1],400)
             self.assertEqual(response({'error':'closed'})[1],409)
+
+
+class TeamLoginPayloadTests(unittest.TestCase):
+    """A fresh login tells the client to open /team, without breaking older checkouts."""
+
+    def setUp(self):
+        self.app=Flask(__name__)
+
+    def _login(self,db):
+        from app.routes import auth
+        body={'email':'team@example.test','password':'Password123!'}
+        with self.app.test_request_context('/api/auth/login',method='POST',json=body), \
+             patch.object(auth.auth_service,'login',return_value={'user':{'id':'verified-user'},'access_token':'a','refresh_token':'r'}), \
+             patch.object(auth,'get_db',return_value=db):
+            return auth.login.__wrapped__()
+
+    def test_active_team_member_is_flagged(self):
+        db=MagicMock();db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value={'is_active':True,'team_workspace':True}
+        response,status=self._login(db)
+        self.assertEqual(status,200);self.assertTrue(response.json['team_workspace'])
+
+    def test_ordinary_account_is_not_flagged(self):
+        db=MagicMock();db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value={'is_active':True}
+        response,status=self._login(db)
+        self.assertEqual(status,200);self.assertFalse(response.json['team_workspace'])
+
+    def test_missing_team_column_still_signs_in(self):
+        db=MagicMock()
+        db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect=[
+            RuntimeError('column profiles.team_workspace does not exist'),{'is_active':True}]
+        response,status=self._login(db)
+        self.assertEqual(status,200);self.assertEqual(response.json['access_token'],'a');self.assertFalse(response.json['team_workspace'])
+
+    def test_inactive_account_is_still_rejected(self):
+        db=MagicMock();db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect=[
+            RuntimeError('column does not exist'),{'is_active':False}]
+        response,status=self._login(db)
+        self.assertEqual(status,403);self.assertNotIn('access_token',response.json)
