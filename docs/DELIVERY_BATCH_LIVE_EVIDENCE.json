@@ -1,0 +1,51 @@
+{
+  "date": "2026-10-21",
+  "migration_version": "20261021092016",
+  "scope": "Isolated API/SQL fixtures. Zero-value paid orders are synthetic prerequisites, not provider proof.",
+  "cases": [
+    {
+      "case": "mixed ready/non-ready selection rejects entire batch",
+      "success": true
+    },
+    {
+      "case": "create same-gate batch and replay",
+      "orders": 3,
+      "one_batch": true
+    },
+    {
+      "case": "whole batch reassignment synchronizes effective rider",
+      "old_rider_refused": true
+    },
+    {
+      "case": "partial split and response retry",
+      "selected": 1,
+      "remaining": 2,
+      "one_new_batch": true
+    },
+    {
+      "case": "delivery attempt remains active and on-road batch cannot cancel",
+      "success": true
+    },
+    {
+      "case": "cancel releases every waiting order atomically",
+      "success": true
+    },
+    {
+      "case": "concurrent create intents for same orders",
+      "one_winner": true,
+      "no_empty_loser_batch": true
+    }
+  ],
+  "limits": [
+    "Native full kitchen preparation/rider payout flow remains open.",
+    "No automatic gate staging enabled.",
+    "No cleanup performed."
+  ],
+  "controlled_browser_cases": {
+    "create_filters_ready_paid_unbatched_campus_and_reuses_retry_intent": true,
+    "whole_batch_reassignment_ui": true,
+    "partial_split_ui_and_retry_intent": true,
+    "cancel_requires_confirmation_and_refreshes_saved_status": true
+  },
+  "controlled_browser_scope": "Actual admin components at a mobile viewport, every API request intercepted; proves UI interactions, not live role authorization or persistence."
+}

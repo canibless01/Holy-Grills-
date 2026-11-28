@@ -2,11 +2,25 @@ from flask import Blueprint, request, jsonify, g, current_app
 from app.middleware.auth import require_auth, require_role, resolve_scoped_campus_id
 from app.db import get_db, get_user_client, SupabaseError
 from app.messages import MSG
-from app.utils.settings import get_validated_setting, SettingError
-from datetime import datetime, timezone, date
+from app.utils.settings import get_validated_setting, setting_or_config, SettingError
+from datetime import datetime, timezone, date, timedelta
 from app.utils.tz import today_wat
 
 order_locks_bp = Blueprint("order_locks", __name__)
+
+
+def _validate_lock_date(locked_date: date) -> tuple[bool, str | None]:
+    """Validate that locked_date is WAT tomorrow through day+7 inclusive.
+    Returns (is_valid, error_message). Same-day is disallowed.
+    """
+    today = today_wat()
+    tomorrow = today + timedelta(days=1)
+    max_date = today + timedelta(days=7)
+    if locked_date < tomorrow:
+        return False, MSG.ORDER_LOCK_DATE_FUTURE
+    if locked_date > max_date:
+        return False, MSG.ORDER_LOCK_DATE_OUT_OF_RANGE
+    return True, None
 
 
 @order_locks_bp.route("", methods=["POST"])
@@ -32,8 +46,13 @@ def create_lock():
         description: Validation error
     """
     db = get_user_client()
-    data = request.get_json(force=True) or {}
-    locked_date_str = (data.get("locked_date") or "").strip()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': MSG.JSON_OBJECT_REQUIRED}), 400
+    raw_date = data.get('locked_date')
+    if raw_date is not None and not isinstance(raw_date, str):
+        return jsonify({'error': MSG.ORDER_LOCK_DATE_INVALID}), 400
+    locked_date_str = (raw_date or '').strip()
     if not locked_date_str:
         return jsonify({"error": MSG.ORDER_LOCK_DATE_REQUIRED}), 400
 
@@ -42,16 +61,22 @@ def create_lock():
     except ValueError:
         return jsonify({"error": MSG.ORDER_LOCK_DATE_INVALID}), 400
 
-    if locked_date <= today_wat():
-        return jsonify({"error": MSG.ORDER_LOCK_DATE_FUTURE}), 400
+    ok, err = _validate_lock_date(locked_date)
+    if not ok:
+        return jsonify({"error": err}), 400
 
-    # Prevent users from having multiple active locks
+    # Expire only this actor's missed dates, even when the worker is offline.
+    _expire_own_locks(g.user_id)
+    # The existing unique partial index remains the concurrency authority.
     existing = db.table("order_locks").select("id").eq("user_id", g.user_id).eq("status", "active").execute()
     if existing:
         return jsonify({"error": MSG.ORDER_LOCK_ALREADY_ACTIVE}), 400
 
     # reward_type: 'discount' (default) or 'hp'
-    reward_type = (data.get("reward_type") or "discount").lower()
+    raw_reward_type = data.get('reward_type', 'discount')
+    if not isinstance(raw_reward_type, str):
+        return jsonify({'error': MSG.ORDER_LOCK_REWARD_TYPE_INVALID}), 400
+    reward_type = raw_reward_type.lower()
     if reward_type not in ("discount", "hp"):
         return jsonify({"error": MSG.ORDER_LOCK_REWARD_TYPE_INVALID}), 400
 
@@ -62,14 +87,26 @@ def create_lock():
     try:
         if reward_type == "discount":
             env_default = float(current_app.config.get("ORDER_LOCK_DEFAULT_DISCOUNT_PCT", 10.0))
+            # `order_lock_default_discount_pct` is the name the admin UI and the
+            # frontend use; the shorter legacy name is still honoured so an
+            # existing row keeps working.
             discount_pct = get_validated_setting(
                 db,
-                "order_lock_default_discount",
-                default=env_default,
+                "order_lock_default_discount_pct",
+                default=None,
                 minimum=1.0,
                 maximum=50.0,
                 required=False
             )
+            if discount_pct is None:
+                discount_pct = get_validated_setting(
+                    db,
+                    "order_lock_default_discount",
+                    default=env_default,
+                    minimum=1.0,
+                    maximum=50.0,
+                    required=False
+                )
         elif reward_type == "hp":
             # order_lock_max_hp setting
             max_hp_setting = get_validated_setting(
@@ -138,9 +175,12 @@ def list_locks():
         description: List of locks
     """
     db = get_user_client()
+    _expire_own_locks(g.user_id)
     q = db.table("order_locks").select("*").eq("user_id", g.user_id)
     status = request.args.get("status")
     if status:
+        if status not in ('active', 'used', 'expired', 'cancelled'):
+            return jsonify({'error': MSG.ORDER_LOCK_STATUS_INVALID}), 400
         q = q.eq("status", status)
     locks = q.order("created_at", ascending=False).execute() or []
     return jsonify({"locks": locks, "count": len(locks)}), 200
@@ -218,31 +258,45 @@ def reschedule_lock(lock_id):
         return jsonify({"error": MSG.ORDER_LOCK_NOT_FOUND}), 404
     if lock.get("status") != "active":
         return jsonify({"error": MSG.ORDER_LOCK_NOT_ACTIVE}), 400
-    max_reschedules = current_app.config.get("ORDER_LOCK_MAX_RESCHEDULES", 1)
-    if int(lock.get("reschedule_count", 0)) >= max_reschedules:
-        return jsonify({"error": MSG.ORDER_LOCK_RESCHEDULE_LIMIT}), 400
-
-    data = request.get_json(force=True) or {}
-    new_date_str = (data.get("locked_date") or "").strip()
+    max_reschedules = setting_or_config(
+        db, "order_lock_max_reschedules",
+        current_app.config.get("ORDER_LOCK_MAX_RESCHEDULES", 1),
+        minimum=0, maximum=10,
+    )
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': MSG.JSON_OBJECT_REQUIRED}), 400
+    raw_date = data.get('locked_date')
+    if raw_date is not None and not isinstance(raw_date, str):
+        return jsonify({'error': MSG.ORDER_LOCK_DATE_INVALID}), 400
+    new_date_str = (raw_date or '').strip()
     if not new_date_str:
         return jsonify({"error": MSG.ORDER_LOCK_DATE_REQUIRED}), 400
     try:
         new_date = date.fromisoformat(new_date_str)
     except ValueError:
         return jsonify({"error": MSG.ORDER_LOCK_DATE_INVALID}), 400
-    if new_date <= today_wat():
-        return jsonify({"error": MSG.ORDER_LOCK_DATE_FUTURE}), 400
+    ok, err = _validate_lock_date(new_date)
+    if not ok:
+        return jsonify({"error": err}), 400
 
+    # An unchanged date is a safe retry of a committed reschedule, not another use.
+    if new_date_str == lock.get('locked_date'):
+        return jsonify({'message': MSG.ORDER_LOCK_RESCHEDULED, 'lock': lock}), 200
+    current_count = int(lock.get('reschedule_count', 0))
+    if current_count >= max_reschedules:
+        return jsonify({'error': MSG.ORDER_LOCK_RESCHEDULE_LIMIT}), 400
     now = datetime.now(timezone.utc).isoformat()
-    current_count = int(lock.get("reschedule_count", 0))
-    updated = reschedule_lock_write(db, lock_id, current_count, {
+    updated = reschedule_lock_write(get_db(), lock_id, g.user_id, current_count, {
         "locked_date": new_date_str,
         "reschedule_count": current_count + 1,
         "updated_at": now,
     }).execute()
     if not updated:
-        # Someone else's concurrent reschedule already landed since we read the lock
-        return jsonify({"error": MSG.ORDER_LOCK_RESCHEDULE_LIMIT}), 400
+        latest = db.table('order_locks').select('*').eq('id', lock_id).eq('user_id', g.user_id).single().execute()
+        if latest and latest.get('status') == 'active' and latest.get('locked_date') == new_date_str:
+            return jsonify({'message': MSG.ORDER_LOCK_RESCHEDULED, 'lock': latest}), 200
+        return jsonify({'error': MSG.ORDER_LOCK_CHANGED}), 409
     row = updated[0] if isinstance(updated, list) else updated
     return jsonify({"message": MSG.ORDER_LOCK_RESCHEDULED, "lock": row}), 200
 
@@ -278,12 +332,16 @@ def cancel_lock(lock_id):
     )
     if not lock:
         return jsonify({"error": MSG.ORDER_LOCK_NOT_FOUND}), 404
-    if lock.get("status") != "active":
-        return jsonify({"error": MSG.ORDER_LOCK_NOT_ACTIVE}), 400
-
-    now = datetime.now(timezone.utc).isoformat()
-    db.table("order_locks").eq("id", lock_id).update({"status": "cancelled", "updated_at": now}).execute()
-    return jsonify({"message": MSG.ORDER_LOCK_CANCELLED}), 200
+    if lock.get('status') == 'cancelled':
+        return jsonify({'message': MSG.ORDER_LOCK_CANCELLED}), 200
+    if lock.get('status') != 'active':
+        return jsonify({'error': MSG.ORDER_LOCK_NOT_ACTIVE}), 400
+    updated = cancel_lock_write(get_db(), lock_id, g.user_id).execute()
+    if not updated:
+        latest = db.table('order_locks').select('id,status').eq('id', lock_id).eq('user_id', g.user_id).single().execute()
+        if not latest or latest.get('status') != 'cancelled':
+            return jsonify({'error': MSG.ORDER_LOCK_CHANGED}), 409
+    return jsonify({'message': MSG.ORDER_LOCK_CANCELLED}), 200
 
 
 # ── Admin endpoints ───────────────────────────────────────────────────────────
@@ -321,31 +379,35 @@ def admin_list_locks():
     
     status = request.args.get("status")
     if status:
+        if status not in ('active', 'used', 'expired', 'cancelled'):
+            return jsonify({'error': MSG.ORDER_LOCK_STATUS_INVALID}), 400
         q = q.eq("status", status)
     date_filter = request.args.get("date")
     if date_filter:
+        try:
+            date.fromisoformat(date_filter)
+        except ValueError:
+            return jsonify({'error': MSG.ORDER_LOCK_DATE_INVALID}), 400
         q = q.eq("locked_date", date_filter)
     locks = q.execute() or []
     return jsonify({"locks": locks, "count": len(locks)}), 200
 
 
-def reschedule_lock_write(db, lock_id, expected_reschedule_count, update):
+def reschedule_lock_write(db, lock_id, user_id, expected_reschedule_count, update):
     return (
         db.table("order_locks")
         .eq("id", lock_id)
+        .eq('user_id', user_id)
+        .eq('status', 'active')
         .eq("reschedule_count", expected_reschedule_count)
         .update(update)
     )
 
 
-def cancel_lock_write(db, lock_id):
+def cancel_lock_write(db, lock_id, user_id):
     now = datetime.now(timezone.utc).isoformat()
-    return db.table("order_locks").eq("id", lock_id).update({"status": "cancelled", "updated_at": now})
+    return db.table('order_locks').eq('id', lock_id).eq('user_id', user_id).eq('status', 'active').update({'status': 'cancelled', 'updated_at': now})
 
 
-def _get_setting(db, key: str, default: str = "") -> str:
-    try:
-        row = db.table("system_settings").select("value").eq("key", key).is_("campus_id", "null").single().execute()
-        return row.get("value", default) if row else default
-    except Exception:
-        return default
+def _expire_own_locks(user_id):
+    return get_db().table('order_locks').eq('user_id', user_id).eq('status', 'active').lt('locked_date', today_wat().isoformat()).update({'status': 'expired', 'updated_at': datetime.now(timezone.utc).isoformat()})

@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-21",
+  "database_cases": [
+    {
+      "case": "automatic simple instant + replay",
+      "success": true,
+      "one_debit": true
+    },
+    {
+      "case": "automatic menu_item instant + replay",
+      "success": true,
+      "one_debit": true
+    },
+    {
+      "case": "automatic unlinked_food instant + replay",
+      "success": true,
+      "one_debit": true
+    },
+    {
+      "case": "multiple next-order + response retry + failure rollback",
+      "success": true
+    },
+    {
+      "case": "cancel releases all entitlements and refunds exactly once",
+      "success": true
+    },
+    {
+      "case": "concurrent distinct claims",
+      "successes": 1,
+      "refusals": 2,
+      "one_debit": true
+    }
+  ],
+  "browser_cases": {
+    "native_redeemed_dialog_to_fee_only_wallet_checkout_preserves_paid_cart": true
+  },
+  "limits": [
+    "No real Paystack or push provider proof.",
+    "Next-order attachment has live transaction evidence, not a full paid-order native UI path.",
+    "No rider physical reward handover proof in this batch.",
+    "Current reward definition is used; immutable entitlement snapshots remain open."
+  ]
+}

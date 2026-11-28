@@ -1,0 +1,8 @@
+{
+  "final_origin": "https://www.holygrills.online",
+  "sdk_initialization": {
+    "ok": false,
+    "name": "Error",
+    "message": "Can only be used on: https://holygrills.online"
+  }
+}

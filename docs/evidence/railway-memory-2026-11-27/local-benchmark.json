@@ -1,0 +1,131 @@
+[
+  {
+    "workers": 2,
+    "threads": 4,
+    "preload": false,
+    "processes": 3,
+    "ready_pss_mib": 91.12,
+    "cases": [
+      {
+        "path": "/_local_benchmark/io",
+        "concurrency": 8,
+        "requests": 288,
+        "p50_ms": 32.02,
+        "p95_ms": 58.67,
+        "requests_per_second": 212.64
+      },
+      {
+        "path": "/_local_benchmark/io",
+        "concurrency": 16,
+        "requests": 288,
+        "p50_ms": 61.37,
+        "p95_ms": 92.28,
+        "requests_per_second": 226.73
+      },
+      {
+        "path": "/api/messages?prefix=FE_",
+        "concurrency": 8,
+        "requests": 288,
+        "p50_ms": 43.17,
+        "p95_ms": 83.34,
+        "requests_per_second": 168.15
+      },
+      {
+        "path": "/api/messages?prefix=FE_",
+        "concurrency": 16,
+        "requests": 288,
+        "p50_ms": 88.51,
+        "p95_ms": 167.67,
+        "requests_per_second": 156.91
+      }
+    ],
+    "loaded_pss_mib": 98.82,
+    "worker_restart": "PASS"
+  },
+  {
+    "workers": 1,
+    "threads": 8,
+    "preload": false,
+    "processes": 2,
+    "ready_pss_mib": 54.88,
+    "cases": [
+      {
+        "path": "/_local_benchmark/io",
+        "concurrency": 8,
+        "requests": 288,
+        "p50_ms": 33.17,
+        "p95_ms": 38.12,
+        "requests_per_second": 236.19
+      },
+      {
+        "path": "/_local_benchmark/io",
+        "concurrency": 16,
+        "requests": 288,
+        "p50_ms": 61.86,
+        "p95_ms": 66.06,
+        "requests_per_second": 251.26
+      },
+      {
+        "path": "/api/messages?prefix=FE_",
+        "concurrency": 8,
+        "requests": 288,
+        "p50_ms": 71.53,
+        "p95_ms": 113.95,
+        "requests_per_second": 104.44
+      },
+      {
+        "path": "/api/messages?prefix=FE_",
+        "concurrency": 16,
+        "requests": 288,
+        "p50_ms": 144.52,
+        "p95_ms": 198.52,
+        "requests_per_second": 103.97
+      }
+    ],
+    "loaded_pss_mib": 60.04,
+    "worker_restart": "PASS"
+  },
+  {
+    "workers": 2,
+    "threads": 4,
+    "preload": true,
+    "processes": 3,
+    "ready_pss_mib": 59.47,
+    "cases": [
+      {
+        "path": "/_local_benchmark/io",
+        "concurrency": 8,
+        "requests": 288,
+        "p50_ms": 31.79,
+        "p95_ms": 58.94,
+        "requests_per_second": 213.69
+      },
+      {
+        "path": "/_local_benchmark/io",
+        "concurrency": 16,
+        "requests": 288,
+        "p50_ms": 61.8,
+        "p95_ms": 119.54,
+        "requests_per_second": 219.81
+      },
+      {
+        "path": "/api/messages?prefix=FE_",
+        "concurrency": 8,
+        "requests": 288,
+        "p50_ms": 48.7,
+        "p95_ms": 84.98,
+        "requests_per_second": 154.52
+      },
+      {
+        "path": "/api/messages?prefix=FE_",
+        "concurrency": 16,
+        "requests": 288,
+        "p50_ms": 99.93,
+        "p95_ms": 191.9,
+        "requests_per_second": 137.32
+      }
+    ],
+    "loaded_pss_mib": 100.73,
+    "worker_restart": "PASS"
+  }
+]

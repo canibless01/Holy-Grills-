@@ -38,7 +38,7 @@ ORDERING_WINDOW_FIELDS = "id,opens_at,closes_at,is_closed,capacity,linked_delive
 FULL_DAY_OPEN, FULL_DAY_CLOSE = "00:00", "23:59"
 
 
-def resolve_date_override(db, campus_id, date_iso):
+def resolve_date_override(db, campus_id, date_iso, *, strict=False):
     """The date's override row for this campus, or None. Campus row beats global.
 
     Returns None when no override applies — including when the table cannot be
@@ -51,6 +51,8 @@ def resolve_date_override(db, campus_id, date_iso):
             .eq("date", date_iso).execute()
         ) or []
     except Exception as exc:                                   # noqa: BLE001
+        if strict:
+            raise
         logger.warning("schedule: operating_hour_overrides unreadable for %s: %s", date_iso, exc)
         return None
 
@@ -72,7 +74,7 @@ def override_window(override):
             override.get("closes_at") or FULL_DAY_CLOSE)
 
 
-def effective_ordering_windows(db, campus_id, date_iso, weekday):
+def effective_ordering_windows(db, campus_id, date_iso, weekday, *, strict=False):
     """The ordering windows in force for one campus on one date (WAT).
 
     Returns `(rows, source)`:
@@ -98,7 +100,7 @@ def effective_ordering_windows(db, campus_id, date_iso, weekday):
         .eq("weekday", weekday).eq("campus_id", campus_id).execute()
     ) or []
 
-    override = resolve_date_override(db, campus_id, date_iso)
+    override = resolve_date_override(db, campus_id, date_iso, strict=strict)
     if override is not None:
         if override.get("is_closed"):
             # Closed all day: the weekday rows must not open it.
@@ -125,3 +127,55 @@ def effective_ordering_windows(db, campus_id, date_iso, weekday):
     if weekly:
         return weekly, "weekly"
     return [], "config"
+
+
+def config_default_window() -> tuple:
+    """(opens_at, closes_at) from config — the step-4 fallback.
+
+    A campus with no `ordering_windows` rows at all still has ordering hours:
+    `ORDERING_WINDOW_OPEN_TIME`/`ORDERING_WINDOW_CLOSE_TIME`. Reading them here
+    (rather than inline in each caller) is what keeps the ordering gate
+    (`resolve_ordering_window`) and the status endpoint
+    (`get_ordering_window_status`) agreeing about the same campus.
+    """
+    from flask import current_app
+    return (
+        current_app.config.get("ORDERING_WINDOW_OPEN_TIME", "08:00"),
+        current_app.config.get("ORDERING_WINDOW_CLOSE_TIME", "16:00"),
+    )
+
+
+def effective_windows_with_config(db, campus_id, date_iso, weekday, operating_hours=None, *, strict=False):
+    """`effective_ordering_windows`, with the config fallback materialised.
+
+    Identical precedence, except that step 4 — "no rows at all" — now returns
+    ONE synthetic open window at the configured times instead of an empty list.
+    `resolve_ordering_window` and `get_ordering_window_status` must see the same
+    thing: without this, a config-only campus is reported as permanently closed
+    by the status endpoint while checkout happily accepts orders inside the
+    configured hours.
+    """
+    rows, source = effective_ordering_windows(db, campus_id, date_iso, weekday, strict=strict)
+    if rows or source != "config":
+        return rows, source
+    # Admin weekly hours are the campus fallback when no ordering window was
+    # configured. They must govern checkout as well as the storefront badge.
+    hours = operating_hours
+    if hours is None:
+        hours = db.table('operating_hours').select('*').eq('weekday',weekday).execute() or []
+    candidates = [row for row in hours if row.get('weekday') == weekday and row.get('campus_id') in (None,campus_id)]
+    candidates.sort(key=lambda row: row.get('campus_id') is not None, reverse=True)
+    if candidates:
+        row = candidates[0]
+        return [{"id":None,"opens_at":row.get('open_time') or row.get('opens_at') or FULL_DAY_OPEN,
+                 "closes_at":row.get('close_time') or row.get('closes_at') or FULL_DAY_CLOSE,
+                 "is_closed":bool(row.get('is_closed')), "capacity":None,"linked_delivery_window_id":None}], 'operating_hours'
+    opens, closes = config_default_window()
+    return [{
+        "id": None,
+        "opens_at": opens,
+        "closes_at": closes,
+        "is_closed": False,
+        "capacity": None,
+        "linked_delivery_window_id": None,
+    }], "config"

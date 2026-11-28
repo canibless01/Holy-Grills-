@@ -1,0 +1,54 @@
+BEGIN;
+SET LOCAL request.jwt.claims='{"role":"service_role"}';
+DO $$
+DECLARE c uuid:=gen_random_uuid();foreign_c uuid:=gen_random_uuid();a uuid:=gen_random_uuid();b uuid:=gen_random_uuid();foreign_user uuid:=gen_random_uuid();u uuid;cash_named uuid:=gen_random_uuid();cash_anon uuid:=gen_random_uuid();hp_named uuid:=gen_random_uuid();hp_anon uuid:=gen_random_uuid();res jsonb;receipt jsonb;plan jsonb;
+BEGIN
+ INSERT INTO campuses(id,name,slug,is_active) VALUES(c,'[AUDIT rollback] Gift A','audit-'||c,true),(foreign_c,'[AUDIT rollback] Gift B','audit-'||foreign_c,true);
+ FOREACH u IN ARRAY ARRAY[a,b,foreign_user] LOOP
+  INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES(u,'audit-gift-'||u||'@example.invalid','{}');
+  UPDATE profiles SET campus_id=c,is_active=true,push_enabled=true,email_notifications=true,referral_code='HG'||left(replace(u::text,'-',''),16) WHERE id=u;
+  INSERT INTO wallets(user_id,campus_id,currency,balance) VALUES(u,c,'NGN',1000) ON CONFLICT(user_id) DO UPDATE SET balance=1000;
+  INSERT INTO notification_preferences(user_id,campus_id,hp_updates,push_enabled,email_enabled) VALUES(u,c,true,true,true) ON CONFLICT(user_id) DO UPDATE SET hp_updates=true,push_enabled=true,email_enabled=true;
+ END LOOP;
+ UPDATE profiles SET nickname='Gift Sender',phone='+2348000000000' WHERE id=a;
+ UPDATE profiles SET nickname='Gift Friend' WHERE id=b;
+ UPDATE profiles SET campus_id=foreign_c WHERE id=foreign_user;
+ INSERT INTO feature_flags(feature_name,is_active,campus_id) VALUES('wallet_transfer',true,c);
+ PERFORM public.record_hp_transaction_atomic(a,1000,'earn','active','seed','seed',gen_random_uuid(),null,'Seed',c);
+ plan:=jsonb_build_object('recipient_id',b,'recipient_code',(SELECT referral_code FROM profiles WHERE id=b),'amount_kobo',10000,'note','Happy birthday','anonymous',false,'share_contact',true);
+ res:=public.hg_wallet_transfer('send',a,cash_named,plan);
+ receipt:=public.hg_wallet_transfer_receipt(b,cash_named);
+ IF receipt->>'sender_name'<>'Gift Sender' OR receipt->'shared_contact'->>'phone'<>'+2348000000000' THEN RAISE EXCEPTION 'Named cash contact missing';END IF;
+ UPDATE profiles SET phone='+2348111111111' WHERE id=a;
+ IF public.hg_wallet_transfer_receipt(b,cash_named)->'shared_contact'->>'phone'<>'+2348000000000' THEN RAISE EXCEPTION 'Cash contact snapshot repriced';END IF;
+ PERFORM public.hg_wallet_transfer('send',a,cash_named,plan);
+ BEGIN PERFORM public.hg_wallet_transfer('send',a,cash_named,plan||'{"share_contact":false}');RAISE EXCEPTION 'Changed cash consent accepted';EXCEPTION WHEN raise_exception THEN IF SQLERRM<>'transfer_intent_conflict' THEN RAISE;END IF;END;
+ PERFORM public.hg_wallet_transfer('send',a,cash_anon,plan||'{"anonymous":true,"share_contact":false}');
+ receipt:=public.hg_wallet_transfer_receipt(b,cash_anon);
+ IF receipt->>'sender_name'<>'Anonymous' OR receipt->>'sender_id' IS NOT NULL OR receipt->>'sender_code' IS NOT NULL OR receipt->>'shared_contact' IS NOT NULL THEN RAISE EXCEPTION 'Anonymous cash receipt leaked sender';END IF;
+ IF EXISTS(SELECT 1 FROM wallet_transactions WHERE user_id=b AND reference_id=cash_anon AND (reason LIKE '%Gift Sender%' OR metadata->>'counterparty_id' IS NOT NULL)) THEN RAISE EXCEPTION 'Anonymous cash ledger leaked sender';END IF;
+ IF public.hg_wallet_transfer('notice',null,cash_anon)->>'sender_name'<>'Anonymous' THEN RAISE EXCEPTION 'Anonymous notification leaked sender';END IF;
+ IF public.hg_wallet_transfer_receipt(foreign_user,cash_named) IS NOT NULL THEN RAISE EXCEPTION 'Foreign cash receipt read';END IF;
+ res:=public.hg_transfer_hp_gift(a,b,10,hp_named,'{"note":"Birthday love","share_contact":true}');
+ receipt:=public.hg_hp_gift_receipt(b,hp_named);
+ IF receipt->>'sender_name'<>'Gift Sender' OR receipt->'shared_contact'->>'phone'<>'+2348111111111' THEN RAISE EXCEPTION 'Named HP gift contact missing';END IF;
+ PERFORM public.hg_transfer_hp_gift(a,b,10,hp_anon,'{"anonymous":true}');
+ PERFORM public.hg_transfer_hp_gift(a,b,10,hp_anon,'{"anonymous":true}');
+ receipt:=public.hg_hp_gift_receipt(b,hp_anon);
+ IF receipt->>'sender_name'<>'Anonymous' OR receipt->>'shared_contact' IS NOT NULL THEN RAISE EXCEPTION 'Anonymous HP receipt leaked sender';END IF;
+ IF EXISTS(SELECT 1 FROM hp_transactions WHERE user_id=b AND reference_id=hp_anon AND (metadata->>'sender_id' IS NOT NULL OR metadata->>'sender_name'<>'Anonymous')) THEN RAISE EXCEPTION 'Anonymous HP ledger leaked sender';END IF;
+ BEGIN PERFORM public.hg_transfer_hp_gift(a,b,10,hp_anon,'{}');RAISE EXCEPTION 'Changed HP consent accepted';EXCEPTION WHEN raise_exception THEN IF SQLERRM<>'transfer_intent_conflict' THEN RAISE;END IF;END;
+ BEGIN PERFORM public.hg_transfer_hp_gift(b,a,10,hp_anon,'{}');RAISE EXCEPTION 'Foreign actor reused intent';EXCEPTION WHEN raise_exception THEN IF SQLERRM<>'transfer_not_found' THEN RAISE;END IF;END;
+ BEGIN PERFORM public.hg_transfer_hp_gift(a,foreign_user,10,gen_random_uuid(),'{}');RAISE EXCEPTION 'Cross campus HP gift accepted';EXCEPTION WHEN raise_exception THEN IF SQLERRM<>'recipient_unavailable' THEN RAISE;END IF;END;
+ IF (SELECT hp_balance FROM profiles WHERE id=a)<>980 OR (SELECT hp_balance FROM profiles WHERE id=b)<>20 THEN RAISE EXCEPTION 'HP gift conservation/replay failed';END IF;
+ IF (SELECT balance FROM wallets WHERE user_id=a)<>800 OR (SELECT balance FROM wallets WHERE user_id=b)<>1200 THEN RAISE EXCEPTION 'Cash gift conservation/replay failed';END IF;
+ IF public.hg_hp_gift_receipt(foreign_user,hp_named) IS NOT NULL THEN RAISE EXCEPTION 'Foreign HP receipt read';END IF;
+ IF has_function_privilege('authenticated','public.hg_transfer_hp_gift(uuid,uuid,integer,uuid,jsonb)','EXECUTE') THEN RAISE EXCEPTION 'HP gift RPC exposed';END IF;
+ PERFORM set_config('hg.audit_gift_users',jsonb_build_object('a',a,'b',b,'hp',hp_anon)::text,true);
+END $$;
+SET CONSTRAINTS ALL IMMEDIATE;
+DO $$DECLARE ids jsonb:=current_setting('hg.audit_gift_users')::jsonb;n integer;BEGIN
+ SELECT count(*) INTO n FROM notifications WHERE user_id=(ids->>'b')::uuid AND reference_id=(ids->>'hp')::uuid AND type='hp_transfer_recipient';IF n<>3 THEN RAISE EXCEPTION 'Missing or duplicate HP gift channels: %',n;END IF;
+ IF EXISTS(SELECT 1 FROM notifications WHERE user_id IN((ids->>'a')::uuid,(ids->>'b')::uuid) AND type='hp_balance_changed') THEN RAISE EXCEPTION 'Generic duplicate HP gift notice';END IF;
+END $$;
+ROLLBACK;

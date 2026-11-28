@@ -1,0 +1,47 @@
+{
+  "source_revision": "e6810a23116faf0414eb7e15d95122cfe5a6a644",
+  "frontend": {
+    "entry": "/assets/index-CJZ3Hexx.js",
+    "root_device_sync": true,
+    "manifest": "/manifest.json",
+    "chunk_count": 80,
+    "device_sync_chunks": [],
+    "manifest_status": 200,
+    "manifest_valid": true
+  },
+  "native_browser": {
+    "browser_error": "Error",
+    "failure_class": "certificate"
+  },
+  "notification_assets": {
+    "/icons/icon-192.png": {
+      "status": 200,
+      "type": "image/png"
+    },
+    "/brand/icon-mark.png": {
+      "status": 200,
+      "type": "image/png"
+    },
+    "/service-worker.js": {
+      "status": 200,
+      "type": "application/javascript"
+    }
+  },
+  "workers": {
+    "observed_revision": "e6810a23116faf0414eb7e15d95122cfe5a6a644",
+    "jobs": [
+      "send-scheduled-blasts",
+      "process-scheduled-orders"
+    ],
+    "observed_success_at_utc": "2026-11-26T09:45:00Z",
+    "failed_jobs_last_24h": 0
+  },
+  "existing_morning_pushes": {
+    "notifications_observed": 3,
+    "successful_dispatches": 3,
+    "delivery_errors": 0,
+    "clicks": 0,
+    "additional_messages_sent": 0
+  },
+  "scope": "Public assets and source markers; live worker receipts and existing provider messages. Native browser certificate failure is an audit-environment limitation, not a passed native-install check. No identities, subscription IDs, contact details, message text or credentials included."
+}

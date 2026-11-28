@@ -1,0 +1,49 @@
+**Reset update — 30 October:** the authorized database cleanup is now completed and independently verified. See [completed reset and preserved configuration](PRE_LAUNCH_RESET_COMPLETED_2026_10_30.md). Earlier “not executed” notes below are historical. Real owner/admin setup and final release smoke remain.
+
+Latest continuation and remaining-work list: [30 October 2026](REMAINING_LAUNCH_AND_AUDIT_2026_10_30.md). Older continuation notes below are historical.
+
+# Launch priorities — current status, 29 October 2026
+
+This is a current decision list, not a list of unbuilt features. Earlier audit logs record history; passing evidence here and linked domain reports supersedes older open entries. **The whole admin page-by-page/action-by-action audit is not complete.** Tested order/refund/batch/reward/ambassador/financial/campus boundaries do not certify every sidebar page. No defensible ecosystem-wide percentage exists without a fully executed action matrix.
+
+## Closed in the latest batches
+
+- Real Paystack TEST full-card, split, guest, unpaid-resume, webhook replay and corrected wallet-funding flows: PAY-01–07 in the [provider results](FRESH_ENV_PROVIDER_PWA_RESULTS_2026_10_28.md).
+- Admission at capacity two, paid overflow to tomorrow, capacity expansion move-up, one debit and complete moved-order timing metadata; explicit partial/full/delivered-refund review; generic physical-reward handover and rider settlement recording.
+- Atomic delivery HP, pending unlock, welcome and missing squad-recipient recovery; ordering-streak HP now also recovers atomically against the original delivery week and saved terms. [Financial recovery](DELIVERY_REWARD_FINANCIAL_RECOVERY_2026_10_28.md), [streak recovery](ORDER_STREAK_RECOVERY_2026_10_29.md).
+- Multi-gift campaigns and targeted promo quota/allocation/full-refund restoration cases. These are implemented, not still waiting to be built.
+- Actual Cloudinary CMS upload/persistence/replacement and sample carousel rendering; tier-image containment; actual map/search/save with gate fallback. Upload concern is closed; final presentation is a separate check.
+- Latest other-chat fixes are merged: public campus leaderboard peers, personal dashboard rank, deferred tier/reward loading, scarcity-label null handling and actual execution of scheduled monthly side inserts. The monthly worker has not been deployed or proven running.
+- FUTA's supplied 51 departments/ten schools are live; mobile/desktop signup uses school → department selection. [Catalogue evidence](FUTA_SIGNUP_REFERENCE_DATA_2026_10_29.md).
+
+## Must resolve before enabling the affected launch path
+
+| Priority | Remaining work | Practical completion condition |
+| --- | --- | --- |
+| Core | Launch-supported promo/HP/squad/order-lock/campaign/earned-reward combinations and their cancellation/refund variants | Execute the allowed combinations with quote/charge/benefit/HP conservation; explicitly reject unsupported combinations. Wider timeout/late-payment/post-cancellation/refund variants remain beyond the seven provider cases |
+| Core | Remaining menu-linked/special physical rewards and delivery exceptions | Test selected launch reward types through kitchen/rider, failed/unclaimed delivery and refund/restoration. Generic reward delivery already passes |
+| Core | Remaining delivery-hook outage recovery | Tier/milestone/login-reclamation/legacy gift hooks still need durable recovery. Order-streak and core financial recovery are now closed; do not repeat them as unimplemented |
+| Messaging | Durable application email counters, saved dispatch/retry and recovery | Finish the reviewed draft plus application integration, real SQL concurrency/lease tests and worker re-drive. Current quota-rejection fallback and real Resend delivery pass, but are not durable cross-worker quota accounting |
+| Messaging | OneSignal registration and actual device delivery/click | Origin mismatch is fixed in source: the app now standardises on the origin the push app is configured for (`https://holygrills.online`), refuses SDK init on the `www` alias and only asks for permission after the SDK is ready — [alignment report](WEB_PUSH_ORIGIN_ALIGNMENT_2026_10_29.md). Live host alignment is now verified: apex serves directly, `www` → 308 to apex. A real SDK probe found the next blocker: CSP omitted the OneSignal JSONP configuration host from `script-src`; the exact-host correction initializes the real SDK under a controlled header test. Follow rollout evidence in [provider results](FRESH_ENV_PROVIDER_PWA_RESULTS_2026_10_28.md). The corrected live policy and real SDK initialization now pass on production (`e939f61`). Remaining: one bounded real recipient subscription/identity/backend persistence/receipt/click check. The dashboard Site URL must not be moved to `www`; no broadcast is needed to verify this |
+| Operations | A running worker/timer for features promised at launch | Choose and verify actual execution/recovery, or keep the dependent scheduled features disabled and define explicit manual operations. No external cron/hosting migration has been deployed because the user deferred it |
+| Access | Remaining action matrix for enabled admin/role workflows | Student/guest/own-campus admin/other-campus admin/super-admin/kitchen/rider/community-manager checks, negative/repeated/concurrent requests and persisted outcomes for the remaining actions. Whole-page approval is still open |
+| Startup | Consistent storefront loading on first and returning visits | Latest real mobile/desktop settled two-slide samples pass, but an earlier empty-hero timeout and a public-config 12-second abort remain recorded. Diagnose/retest initial-load behavior; settled visual success is not a startup-performance pass |
+| Release | Production content/configuration smoke and account/data reset | Confirm reference data and stock/capacity/fees, rehearse dependency-safe cleanup preserving intentional content, bootstrap the real super admin, verify clean signup and one bounded release smoke. [Prepared reset plan](PRE_LAUNCH_CLEANUP_PLAN_2026_10_29.md); no deletion yet |
+
+Actual Chrome native installation remains a release requirement **if the launch promises an installed PWA**. Deployed manifest/icons/HTTPS/service-worker technical checks pass, but the user's missing native menu entry remains unresolved on devices. A working website does not close this PWA-specific issue.
+
+## Can follow after launch if their entry points stay disabled
+
+Events/tickets/check-in, marketplace/subscriptions/codes, broader catering flows, advanced inventory/report/export/history matrices, and every nonlaunch admin setting still require their domain audit. They are not certified by the order audit or a table inventory. Broad visual redesign, spin-wheel refinement and remaining cosmetic storefront variants can follow; content visibility, returning-user loading and functional checkout presentation must still work for launch. Financial/stock correctness used by enabled checkout remains core even if advanced inventory UI is deferred.
+
+The full original A/B domain scope is [here](REMAINING_ECOSYSTEM_AUDIT_SPLIT.md); [admin inventory and tested coverage](ADMIN_AUDIT_COVERAGE_STATUS.md) distinguishes mapping from verification. No new automatic cron, Auth policy, cleanup or provider origin mutation is implied by this document.
+
+Latest provider handoff `c829332` is integrated: settled real mobile/desktop carousel samples, browser Google Maps and WhatsApp redirects pass. Native handoff/device push/installation remain separate. The initial-load timing gap remains open; no provider settings or additional accounts were changed in that handoff.
+
+Academic setup continuation: [Departments & Academic Levels page evidence](ADMIN_ACADEMIC_PAGE_EVIDENCE_2026_10_29.md) closes that page's listed native actions and targeted actual database/role cases. PG and searchable signup options are added; backend suite **742 passed**. Academic Calendar and delivery-location page actions remain next in this group. Whole-admin sign-off is still open.
+
+Academic Calendar page continuation: [calendar evidence](ADMIN_CALENDAR_PAGE_EVIDENCE_2026_10_29.md) records all six types, all modal fields, scoped creation/edit/retirement, real permissions and graduation date consumer checks. Backend **750 passed**. Gate/hostel and delivery-area controls remain next; no worker or cleanup was activated.
+
+Delivery locations continuation: [Gates/Hostels evidence](ADMIN_DELIVERY_LOCATIONS_EVIDENCE_2026_10_29.md) records the completed listed controls, rate/minimum fields, restore, real scope/duplicate/link constraints and a corrected no-pin base-fee bypass. Backend **760 passed**. Delivery area radius/centre is next. No cleanup or worker activation occurred.
+
+Delivery area continuation: [centre/radius page evidence](ADMIN_DELIVERY_AREA_EVIDENCE_2026_10_29.md) closes its listed controls and actual settings permission/backing-row checks, including the wrong-campus radius request, stale/failed-read handling and strict radius inputs. Backend **769 passed**. Other admin matrices remain open; no cleanup or scheduler was activated.

@@ -1,0 +1,10 @@
+{
+  "case": "native guest checkout tracking email",
+  "order_id": "0795cf9f-902e-4bee-871d-a23288aa0488",
+  "provider_http_status": 200,
+  "message_id": "01a18425-db74-7c0b-992e-4370224848f4",
+  "tracking_link_present": true,
+  "application_accepted": true,
+  "provider_last_event": "delivered",
+  "provider_status_query_http_status": 200
+}

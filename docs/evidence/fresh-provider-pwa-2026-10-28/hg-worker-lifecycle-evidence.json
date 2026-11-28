@@ -1,0 +1,40 @@
+{
+  "origin": "http://127.0.0.1:4174",
+  "mode": "actual production bundle/worker; real application APIs; controlled worker byte update only",
+  "phase": "worker update",
+  "first_install_documents": 1,
+  "same_initial_document": true,
+  "controlled": true,
+  "after_real_update_documents": 2,
+  "real_update_reloaded_once": true,
+  "headers": {
+    "/": {
+      "status": 200,
+      "content_type": "text/html; charset=utf-8",
+      "cache_control": null,
+      "csp_present": true,
+      "worker_scope_header": null
+    },
+    "/manifest.json": {
+      "status": 200,
+      "content_type": "application/manifest+json",
+      "cache_control": "no-cache",
+      "csp_present": true,
+      "worker_scope_header": null
+    },
+    "/service-worker.js": {
+      "status": 200,
+      "content_type": "application/javascript",
+      "cache_control": "no-cache",
+      "csp_present": true,
+      "worker_scope_header": "/"
+    },
+    "/missing-audit-route": {
+      "status": 404,
+      "content_type": "text/html; charset=utf-8",
+      "cache_control": null,
+      "csp_present": true,
+      "worker_scope_header": null
+    }
+  }
+}

@@ -17,6 +17,13 @@ def is_feature_enabled(feature_name: str, campus_id: str = None) -> bool:
     Uses get_db() deliberately: this is an internal, system-triggered check (not a
     personal read), so it behaves the same from a request handler or a cron job.
     """
+    if campus_id is None:
+        from flask import has_request_context, g
+        if has_request_context():
+            from app.middleware.auth import resolve_scoped_campus_id, header_campus_id
+            campus_id = resolve_scoped_campus_id()
+            if not getattr(g, 'user_id', None) and getattr(g, 'user_role', None) != 'super_admin':
+                campus_id = campus_id or header_campus_id()
     try:
         db = get_db()
         if campus_id:

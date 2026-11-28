@@ -1,0 +1,24 @@
+[
+  {
+    "table": "profiles",
+    "kind": "campus",
+    "status": 206,
+    "range": "0-0/5"
+  },
+  {
+    "table": "hp_transactions",
+    "kind": "campus",
+    "status": 206,
+    "range": "0-0/4"
+  },
+  {
+    "table": "hp_transactions",
+    "kind": "own_user",
+    "status": 200,
+    "range": "*/0"
+  },
+  {
+    "all_time_rank": 5,
+    "status": 200
+  }
+]

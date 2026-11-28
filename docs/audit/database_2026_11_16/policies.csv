@@ -1,0 +1,438 @@
+cmd,qual,roles,tablename,permissive,policyname,schemaname,with_check
+ALL,true,"[""service_role""]",birthday_celebrations,PERMISSIVE,birthday_celebrations_service,hg_internal,true
+ALL,true,"[""service_role""]",cart_recovery_steps,PERMISSIVE,cart_recovery_steps_service,hg_internal,true
+ALL,true,"[""service_role""]",checkout_intent_closures,PERMISSIVE,checkout_intent_closures_service,hg_internal,true
+ALL,true,"[""service_role""]",delivery_cost_allocations,PERMISSIVE,service_access,hg_internal,true
+ALL,true,"[""service_role""]",delivery_cost_audit,PERMISSIVE,service_access,hg_internal,true
+ALL,true,"[""service_role""]",delivery_cost_entries,PERMISSIVE,service_access,hg_internal,true
+ALL,true,"[""service_role""]",delivery_cost_receipts,PERMISSIVE,service_access,hg_internal,true
+ALL,true,"[""service_role""]",delivery_pool_budgets,PERMISSIVE,delivery_pool_budget_service,hg_internal,true
+ALL,true,"[""service_role""]",delivery_subsidy_ledger,PERMISSIVE,delivery_subsidy_service,hg_internal,true
+ALL,true,"[""service_role""]",delivery_subsidy_movements,PERMISSIVE,delivery_subsidy_movements_service,hg_internal,true
+ALL,true,"[""service_role""]",event_organizer_reviews,PERMISSIVE,organizer_reviews_service,hg_internal,true
+ALL,true,"[""service_role""]",event_organizer_terms,PERMISSIVE,event_terms_service,hg_internal,true
+ALL,true,"[""service_role""]",event_payout_requests,PERMISSIVE,event_payouts_service,hg_internal,true
+ALL,true,"[""service_role""]",event_ticket_earnings,PERMISSIVE,event_earnings_service,hg_internal,true
+ALL,true,"[""service_role""]",event_ticket_refunds,PERMISSIVE,event_refunds_service_only,hg_internal,true
+ALL,true,"[""service_role""]",guest_cart_email_optouts,PERMISSIVE,guest_cart_optouts_service,hg_internal,true
+ALL,true,"[""service_role""]",operations_emails,PERMISSIVE,operations_emails_service,hg_internal,true
+ALL,true,"[""service_role""]",stock_low_episodes,PERMISSIVE,stock_low_service,hg_internal,true
+ALL,true,"[""service_role""]",wallet_funding_attempts,PERMISSIVE,wallet_funding_attempts_service,hg_internal,true
+ALL,true,"[""service_role""]",wallet_funding_plans,PERMISSIVE,wallet_funding_plans_service,hg_internal,true
+ALL,true,"[""service_role""]",wallet_transfers,PERMISSIVE,wallet_transfers_service,hg_internal,true
+ALL,((user_id = ( SELECT auth.uid() AS uid)) OR hg_is_campus_admin(campus_id)),"[""authenticated""]",abandoned_carts,PERMISSIVE,abandoned_carts: unified access,public,((user_id = ( SELECT auth.uid() AS uid)) OR hg_is_campus_admin(campus_id))
+ALL,((campus_id IS NOT NULL) AND hg_is_campus_admin(campus_id)),"[""public""]",academic_calendar,PERMISSIVE,academic_calendar: campus admins manage,public,((campus_id IS NOT NULL) AND hg_is_campus_admin(campus_id))
+SELECT,((is_active = true) OR hg_is_campus_admin(campus_id)),"[""public""]",academic_calendar,PERMISSIVE,"academic_calendar: public reads active, admins read all",public,
+ALL,((campus_id IS NULL) AND hg_is_campus_admin(NULL::uuid)),"[""public""]",academic_calendar,PERMISSIVE,academic_calendar: super_admin manages global entries,public,((campus_id IS NULL) AND hg_is_campus_admin(NULL::uuid))
+ALL,((campus_id IS NOT NULL) AND hg_is_campus_admin(campus_id)),"[""authenticated""]",academic_levels,PERMISSIVE,academic_levels: campus admins manage,public,((campus_id IS NOT NULL) AND hg_is_campus_admin(campus_id))
+ALL,((campus_id IS NULL) AND hg_is_campus_admin(NULL::uuid)),"[""authenticated""]",academic_levels,PERMISSIVE,academic_levels: super_admin manages global,public,((campus_id IS NULL) AND hg_is_campus_admin(NULL::uuid))
+SELECT,(is_active = true),"[""public""]",academic_levels,PERMISSIVE,academic_levels_public_read,public,
+INSERT,,"[""authenticated""]",admin_audit_logs,PERMISSIVE,admin_audit_logs: admins insert,public,(hg_is_campus_admin(campus_id) AND (actor_id = ( SELECT auth.uid() AS uid)))
+SELECT,hg_is_campus_admin(campus_id),"[""public""]",admin_audit_logs,PERMISSIVE,admin_audit_logs: admins read,public,
+SELECT,"((customer_user_id = auth.uid()) OR hg_is_ambassador_staff(( SELECT a.campus_id
+   FROM ambassadors a
+  WHERE (a.profile_id = ambassador_attributions.ambassador_id))))","[""authenticated""]",ambassador_attributions,PERMISSIVE,amb_attributions_self_read,public,
+SELECT,"((ambassador_id = auth.uid()) OR hg_is_ambassador_staff(( SELECT a.campus_id
+   FROM ambassadors a
+  WHERE (a.profile_id = ambassador_grants.ambassador_id))))","[""authenticated""]",ambassador_grants,PERMISSIVE,amb_grants_self_read,public,
+SELECT,"hg_is_ambassador_staff(( SELECT a.campus_id
+   FROM ambassadors a
+  WHERE (a.profile_id = ambassador_link_clicks.ambassador_id)))","[""authenticated""]",ambassador_link_clicks,PERMISSIVE,amb_staff_clicks,public,
+SELECT,"((ambassador_id = auth.uid()) OR hg_is_ambassador_staff(( SELECT a.campus_id
+   FROM ambassadors a
+  WHERE (a.profile_id = ambassador_meal_discount_redemptions.ambassador_id))))","[""authenticated""]",ambassador_meal_discount_redemptions,PERMISSIVE,amb_meal_redemptions_self_read,public,
+SELECT,"((ambassador_id = auth.uid()) OR hg_is_ambassador_staff(( SELECT a.campus_id
+   FROM ambassadors a
+  WHERE (a.profile_id = ambassador_meal_discounts.ambassador_id))))","[""authenticated""]",ambassador_meal_discounts,PERMISSIVE,amb_meal_self_read,public,
+SELECT,"((ambassador_id = auth.uid()) OR hg_is_ambassador_staff(( SELECT a.campus_id
+   FROM ambassadors a
+  WHERE (a.profile_id = ambassador_milestone_claims.ambassador_id))))","[""authenticated""]",ambassador_milestone_claims,PERMISSIVE,amb_claims_self_read,public,
+SELECT,hg_is_ambassador_staff(campus_id),"[""authenticated""]",ambassador_milestones,PERMISSIVE,amb_staff_milestones,public,
+SELECT,"((ambassador_id = auth.uid()) OR hg_is_ambassador_staff(( SELECT a.campus_id
+   FROM ambassadors a
+  WHERE (a.profile_id = ambassador_monthly_reviews.ambassador_id))))","[""authenticated""]",ambassador_monthly_reviews,PERMISSIVE,amb_reviews_self_read,public,
+SELECT,"((customer_user_id = auth.uid()) OR hg_is_ambassador_staff(( SELECT a.campus_id
+   FROM ambassadors a
+  WHERE (a.profile_id = ambassador_order_attributions.ambassador_id))))","[""authenticated""]",ambassador_order_attributions,PERMISSIVE,amb_order_attr_self_read,public,
+SELECT,"hg_is_ambassador_staff(( SELECT a.campus_id
+   FROM ambassadors a
+  WHERE (a.profile_id = ambassador_promo_assignments.ambassador_id)))","[""authenticated""]",ambassador_promo_assignments,PERMISSIVE,amb_staff_promo_assignments,public,
+SELECT,hg_is_ambassador_staff(campus_id),"[""authenticated""]",ambassador_promo_messages,PERMISSIVE,amb_staff_promo_messages,public,
+SELECT,hg_is_ambassador_staff(campus_id),"[""authenticated""]",ambassadors,PERMISSIVE,amb_staff_ambassadors,public,
+SELECT,((profile_id = auth.uid()) OR hg_is_ambassador_staff(campus_id)),"[""authenticated""]",ambassadors,PERMISSIVE,ambassadors_self_read,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",banners,PERMISSIVE,banners: admins all,public,
+SELECT,((campus_id IS NULL) OR (campus_id = ( SELECT hg_user_campus_id() AS hg_user_campus_id)) OR hg_is_campus_admin(campus_id)),"[""anon"", ""authenticated""]",banners,RESTRICTIVE,banners: enforce CMS campus reads,public,
+SELECT,((is_active = true) AND ((starts_at IS NULL) OR (starts_at <= now())) AND ((ends_at IS NULL) OR (ends_at >= now()))),"[""public""]",banners,PERMISSIVE,banners: public read active,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",batch_orders,PERMISSIVE,batch_orders_admin_all,public,
+SELECT,"(EXISTS ( SELECT 1
+   FROM delivery_batches b
+  WHERE ((b.id = batch_orders.batch_id) AND (b.rider_id = ( SELECT auth.uid() AS uid)))))","[""public""]",batch_orders,PERMISSIVE,batch_orders_rider_read,public,
+INSERT,,"[""public""]",brand_partnership_requests,PERMISSIVE,brand_partnership_requests: admins insert,public,hg_is_admin()
+SELECT,hg_is_admin(),"[""public""]",brand_partnership_requests,PERMISSIVE,brand_partnership_requests: admins read,public,
+UPDATE,hg_is_admin(),"[""public""]",brand_partnership_requests,PERMISSIVE,brand_partnership_requests: admins update,public,hg_is_admin()
+ALL,hg_is_campus_admin(NULL::uuid),"[""public""]",brand_partnership_requests,PERMISSIVE,brand_partnership_requests: super_admin manages,public,hg_is_campus_admin(NULL::uuid)
+SELECT,true,"[""anon"", ""authenticated""]",campuses,PERMISSIVE,Allow select for everyone,public,
+ALL,(auth.uid() = user_id),"[""public""]",cart_free_side_selections,PERMISSIVE,cart_free_side_selections: users manage own,public,(auth.uid() = user_id)
+INSERT,,"[""authenticated""]",cart_items,RESTRICTIVE,cart_items: own campus menu on insert,public,"(EXISTS ( SELECT 1
+   FROM menu_items m
+  WHERE ((m.id = cart_items.menu_item_id) AND ((m.campus_id IS NULL) OR (m.campus_id = hg_user_campus_id())))))"
+UPDATE,true,"[""authenticated""]",cart_items,RESTRICTIVE,cart_items: own campus menu on update,public,"(EXISTS ( SELECT 1
+   FROM menu_items m
+  WHERE ((m.id = cart_items.menu_item_id) AND ((m.campus_id IS NULL) OR (m.campus_id = hg_user_campus_id())))))"
+ALL,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",cart_items,PERMISSIVE,cart_items: users manage own,public,(( SELECT auth.uid() AS uid) = user_id)
+ALL,hg_is_campus_admin(campus_id),"[""public""]",catering_requests,PERMISSIVE,catering_requests: admins all,public,
+INSERT,,"[""public""]",catering_requests,PERMISSIVE,catering_requests: public insert,public,((status = 'new'::text) AND (quoted_amount IS NULL) AND (assigned_to IS NULL))
+ALL,hg_is_campus_admin(campus_id),"[""public""]",challenge_completions,PERMISSIVE,challenge_completions: admins all,public,
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",challenge_completions,PERMISSIVE,challenge_completions: users read own,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",challenges,PERMISSIVE,challenges: admins all,public,
+SELECT,(((is_active = true) AND ((campus_id IS NULL) OR (campus_id = hg_user_campus_id()))) OR hg_is_campus_admin(campus_id)),"[""public""]",challenges,PERMISSIVE,challenges: public read active,public,
+ALL,hg_is_admin(),"[""public""]",cron_locks,PERMISSIVE,Admins manage cron_locks,public,
+ALL,hg_is_campus_admin(campus_id),"[""authenticated""]",daily_checkins,PERMISSIVE,daily_checkins: admin write,public,hg_is_campus_admin(campus_id)
+SELECT,((user_id = auth.uid()) OR hg_is_campus_admin(campus_id)),"[""public""]",daily_checkins,PERMISSIVE,daily_checkins_campus_scoping,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",delivery_assignments,PERMISSIVE,delivery_assignments: admins all,public,
+SELECT,((rider_id = auth.uid()) OR hg_is_campus_admin(campus_id)),"[""public""]",delivery_assignments,PERMISSIVE,delivery_assignments: riders read,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",delivery_batches,PERMISSIVE,delivery_batches: admins all,public,
+SELECT,((rider_id = auth.uid()) OR hg_is_campus_admin(campus_id)),"[""public""]",delivery_batches,PERMISSIVE,delivery_batches: riders read,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",delivery_windows,PERMISSIVE,delivery_windows: admins all,public,
+SELECT,((is_active = true) OR hg_is_campus_admin(campus_id)),"[""public""]",delivery_windows,PERMISSIVE,delivery_windows: public read active,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",delivery_zones,PERMISSIVE,delivery_zones: admins all,public,
+SELECT,(((is_active = true) AND hg_campus_visible(campus_id)) OR hg_is_campus_admin(campus_id)),"[""public""]",delivery_zones,PERMISSIVE,delivery_zones: public read active,public,
+ALL,((campus_id IS NOT NULL) AND hg_is_campus_admin(campus_id)),"[""authenticated""]",departments,PERMISSIVE,departments: campus admins manage,public,((campus_id IS NOT NULL) AND hg_is_campus_admin(campus_id))
+ALL,((campus_id IS NULL) AND hg_is_campus_admin(NULL::uuid)),"[""authenticated""]",departments,PERMISSIVE,departments: super_admin manages global,public,((campus_id IS NULL) AND hg_is_campus_admin(NULL::uuid))
+SELECT,(is_active = true),"[""public""]",departments,PERMISSIVE,departments_public_read,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",device_fingerprints,PERMISSIVE,device_fingerprints: admins all,public,hg_is_campus_admin(campus_id)
+ALL,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",device_tokens,PERMISSIVE,Users manage own device tokens,public,(( SELECT auth.uid() AS uid) = user_id)
+ALL,hg_is_campus_admin(NULL::uuid),"[""public""]",email_templates,PERMISSIVE,email_templates: admins all,public,
+SELECT,true,"[""public""]",email_templates,PERMISSIVE,email_templates: public read,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",event_checkins,PERMISSIVE,event_checkins: admins all,public,
+INSERT,,"[""authenticated""]",event_checkins,PERMISSIVE,event_checkins: users insert own with door code,public,"((checked_in_by = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1
+   FROM (event_tickets et
+     JOIN events e ON ((e.id = et.event_id)))
+  WHERE ((et.id = event_checkins.ticket_id) AND (et.user_id = ( SELECT auth.uid() AS uid)) AND ((e.metadata ->> 'qr_token'::text) IS NOT NULL) AND ((e.metadata ->> 'qr_token'::text) = event_checkins.qr_code)))))"
+SELECT,"(EXISTS ( SELECT 1
+   FROM event_tickets t
+  WHERE ((t.id = event_checkins.ticket_id) AND (t.user_id = ( SELECT auth.uid() AS uid)))))","[""authenticated""]",event_checkins,PERMISSIVE,event_checkins_owner_read,public,
+INSERT,,"[""authenticated""]",event_checkins,RESTRICTIVE,event_checkins_valid_admission,public,"((checked_in_by = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1
+   FROM (event_tickets t
+     JOIN events e ON ((e.id = t.event_id)))
+  WHERE ((t.id = event_checkins.ticket_id) AND (t.status = 'confirmed'::text) AND (t.payment_status = ANY (ARRAY['paid'::text, 'not_required'::text])) AND ((t.qr_expires_at IS NULL) OR (t.qr_expires_at > now())) AND e.is_published AND (e.ends_at > now()) AND (NOT (event_checkins.campus_id IS DISTINCT FROM t.campus_id))))))"
+ALL,true,"[""service_role""]",event_door_tokens,PERMISSIVE,event_door_tokens_service_only,public,true
+ALL,hg_is_campus_admin(campus_id),"[""authenticated""]",event_ticket_tiers,PERMISSIVE,event_tiers_admin,public,
+SELECT,"(EXISTS ( SELECT 1
+   FROM (events e
+     JOIN profiles p ON ((p.id = e.organizer_id)))
+  WHERE ((e.id = event_ticket_tiers.event_id) AND (e.organizer_id = ( SELECT auth.uid() AS uid)) AND p.is_active AND ((p.role)::text = 'event_organizer'::text))))","[""authenticated""]",event_ticket_tiers,PERMISSIVE,event_tiers_organizer_read,public,
+SELECT,(is_active = true),"[""anon"", ""authenticated""]",event_ticket_tiers,PERMISSIVE,event_tiers_read_all,public,
+SELECT,"(EXISTS ( SELECT 1
+   FROM events e
+  WHERE (e.id = event_ticket_tiers.event_id)))","[""anon"", ""authenticated""]",event_ticket_tiers,RESTRICTIVE,event_tiers_visible_parent,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",event_tickets,PERMISSIVE,event_tickets: admins all,public,
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",event_tickets,PERMISSIVE,event_tickets: users read own,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",events,PERMISSIVE,events: admins all,public,
+SELECT,(((is_published = true) AND ((campus_id IS NULL) OR hg_campus_visible(campus_id))) OR hg_is_campus_admin(campus_id)),"[""public""]",events,PERMISSIVE,events: public read published,public,
+SELECT,"((organizer_id = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1
+   FROM profiles
+  WHERE ((profiles.id = ( SELECT auth.uid() AS uid)) AND ((profiles.role)::text = 'event_organizer'::text) AND profiles.is_active))))","[""authenticated""]",events,PERMISSIVE,events_organizer_read,public,
+ALL,hg_is_campus_admin(campus_id),"[""authenticated""]",exclusive_spin_fulfillments,PERMISSIVE,exclusive_spin_fulfillments: admins all,public,hg_is_campus_admin(campus_id)
+UPDATE,"(COALESCE((result_snapshot ->> 'prize_type'::text), 'physical'::text) = 'physical'::text)","[""authenticated""]",exclusive_spin_fulfillments,RESTRICTIVE,exclusive_spin_fulfillments: only physical staff updates,public,"(COALESCE((result_snapshot ->> 'prize_type'::text), 'physical'::text) = 'physical'::text)"
+SELECT,(user_id = ( SELECT auth.uid() AS uid)),"[""authenticated""]",exclusive_spin_fulfillments,PERMISSIVE,exclusive_spin_fulfillments: users read own,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",exclusive_spin_prizes,PERMISSIVE,exclusive_spin_prizes: admins all,public,hg_is_campus_admin(campus_id)
+SELECT,(is_active AND ((campus_id IS NULL) OR (campus_id = hg_user_campus_id()) OR hg_is_campus_admin(campus_id))),"[""authenticated""]",exclusive_spin_prizes,PERMISSIVE,exclusive_spin_prizes: authenticated read active,public,
+ALL,hg_is_campus_admin(campus_id),"[""authenticated""]",exclusive_spins,PERMISSIVE,exclusive_spins: admins write,public,hg_is_campus_admin(campus_id)
+SELECT,((user_id = ( SELECT auth.uid() AS uid)) OR hg_is_campus_admin(campus_id)),"[""authenticated""]",exclusive_spins,PERMISSIVE,exclusive_spins: users read own,public,
+ALL,hg_is_campus_admin(NULL::uuid),"[""authenticated""]",feature_flags,PERMISSIVE,feature_flags_admin_write,public,(hg_is_campus_admin(NULL::uuid) AND (campus_id IS NULL))
+SELECT,"((campus_id IS NULL) OR ((auth.uid() IS NOT NULL) AND (campus_id = ( SELECT p.campus_id
+   FROM profiles p
+  WHERE (p.id = auth.uid())))))","[""anon"", ""authenticated""]",feature_flags,PERMISSIVE,feature_flags_read_scoped,public,
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",first_order_gifts,PERMISSIVE,Users view own gift,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",first_order_gifts,PERMISSIVE,first_order_gifts: admins all,public,hg_is_campus_admin(campus_id)
+ALL,hg_is_campus_admin(campus_id),"[""public""]",flash_redemptions,PERMISSIVE,Admins manage flash_redemptions,public,
+SELECT,((is_active = true) AND hg_campus_visible(campus_id)),"[""public""]",flash_redemptions,PERMISSIVE,Anyone can view flash_redemptions,public,
+ALL,hg_is_campus_admin(campus_id),"[""authenticated""]",free_side_credits,PERMISSIVE,free_side_credits: admins write,public,hg_is_campus_admin(campus_id)
+SELECT,((user_id = ( SELECT auth.uid() AS uid)) OR hg_is_campus_admin(campus_id)),"[""authenticated""]",free_side_credits,PERMISSIVE,free_side_credits: users read own,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",free_side_items,PERMISSIVE,free_side_items: admins manage,public,hg_is_campus_admin(campus_id)
+SELECT,(is_active = true),"[""public""]",free_side_items,PERMISSIVE,free_side_items: anyone can read active,public,
+SELECT,((campus_id IS NULL) OR (campus_id = ( SELECT hg_user_campus_id() AS hg_user_campus_id)) OR hg_is_campus_admin(campus_id)),"[""authenticated""]",free_side_items,RESTRICTIVE,free_side_items: enforce campus reads,public,
+SELECT,((is_active = true) AND hg_campus_visible(campus_id)),"[""anon"", ""authenticated""]",gates,PERMISSIVE,anon_read_gates,public,
+ALL,hg_is_campus_admin(campus_id),"[""authenticated""]",gates,PERMISSIVE,gates: admins all,public,hg_is_campus_admin(campus_id)
+ALL,true,"[""service_role""]",gates,PERMISSIVE,service_role_all_gates,public,true
+ALL,hg_is_admin(),"[""public""]",hall_of_fame_inductees,PERMISSIVE,Admins manage hall_of_fame,public,
+SELECT,true,"[""public""]",hall_of_fame_inductees,PERMISSIVE,Anyone reads hall_of_fame,public,
+ALL,((user_id = ( SELECT auth.uid() AS uid)) OR hg_is_campus_admin(campus_id)),"[""authenticated""]",hall_of_fame_rewards,PERMISSIVE,hall_of_fame_rewards: unified access,public,hg_is_campus_admin(campus_id)
+SELECT,((is_active = true) AND hg_campus_visible(campus_id)),"[""anon"", ""authenticated""]",hostels,PERMISSIVE,anon_read_hostels,public,
+ALL,hg_is_campus_admin(campus_id),"[""authenticated""]",hostels,PERMISSIVE,hostels: admins all,public,hg_is_campus_admin(campus_id)
+ALL,true,"[""service_role""]",hostels,PERMISSIVE,service_role_all_hostels,public,true
+ALL,hg_is_campus_admin(campus_id),"[""public""]",hp_bundle_purchases,PERMISSIVE,Admins manage hp_bundle_purchases,public,
+SELECT,(( SELECT auth.uid() AS uid) = event_host_id),"[""authenticated""]",hp_bundle_purchases,PERMISSIVE,Users view own hp_bundle_purchases,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",hp_bundles,PERMISSIVE,Admins manage hp_bundles,public,
+SELECT,(is_active = true),"[""public""]",hp_bundles,PERMISSIVE,Anyone can view active hp_bundles,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",hp_expiry_log,PERMISSIVE,hp_expiry_log_admin_all,public,
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",hp_expiry_log,PERMISSIVE,hp_expiry_log_users_read_own,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",hp_tiers,PERMISSIVE,hp_tiers: admins all,public,
+SELECT,((is_active = true) OR hg_is_campus_admin(campus_id)),"[""public""]",hp_tiers,PERMISSIVE,hp_tiers: public read active,public,
+SELECT,hg_is_campus_admin(campus_id),"[""public""]",hp_transactions,PERMISSIVE,hp_transactions: admins read,public,
+SELECT,((user_id = auth.uid()) OR hg_is_campus_admin(campus_id)),"[""public""]",hp_transactions,PERMISSIVE,hp_transactions: users read own,public,
+ALL,"(hg_is_campus_admin(campus_id) OR ((hg_current_user_role() = 'kitchen'::user_role) AND (campus_id = ( SELECT p.campus_id
+   FROM profiles p
+  WHERE (p.id = auth.uid())))))","[""authenticated""]",kitchen_settings,PERMISSIVE,kitchen_settings: unified manage,public,"(hg_is_campus_admin(campus_id) OR ((hg_current_user_role() = 'kitchen'::user_role) AND (campus_id = ( SELECT p.campus_id
+   FROM profiles p
+  WHERE (p.id = auth.uid())))))"
+ALL,hg_is_campus_admin(campus_id),"[""public""]",leaderboard_entries,PERMISSIVE,leaderboard_entries: admins all,public,
+SELECT,hg_campus_visible(campus_id),"[""public""]",leaderboard_entries,PERMISSIVE,leaderboard_entries: public read,public,
+ALL,hg_is_campus_admin(campus_id),"[""authenticated""]",leaderboard_reward_fulfillments,PERMISSIVE,leaderboard_reward_fulfillments: admin write,public,hg_is_campus_admin(campus_id)
+SELECT,((user_id = ( SELECT auth.uid() AS uid)) OR hg_is_campus_admin(campus_id)),"[""authenticated""]",leaderboard_reward_fulfillments,PERMISSIVE,leaderboard_reward_fulfillments: owner or admin read,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",leaderboard_snapshots,PERMISSIVE,leaderboard_snapshots: admins all,public,
+SELECT,hg_campus_visible(campus_id),"[""public""]",leaderboard_snapshots,PERMISSIVE,leaderboard_snapshots: public read,public,
+SELECT,true,"[""public""]",login_streak_rewards,PERMISSIVE,Anyone reads login_streak_rewards,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",login_streak_rewards,PERMISSIVE,login_streak_rewards: admins all,public,hg_is_campus_admin(campus_id)
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",login_streaks,PERMISSIVE,Users view own streak,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",login_streaks,PERMISSIVE,login_streaks: admins all,public,hg_is_campus_admin(campus_id)
+ALL,hg_is_campus_admin(campus_id),"[""public""]",marketplace_access_codes,PERMISSIVE,marketplace_access_codes: admins all,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",marketplace_code_batches,PERMISSIVE,marketplace_code_batches: admins all,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",marketplace_listing_availability,PERMISSIVE,marketplace_listing_availability: admin manage own campus,public,hg_is_campus_admin(campus_id)
+SELECT,((campus_id = hg_user_campus_id()) OR hg_is_campus_admin(campus_id)),"[""authenticated""]",marketplace_listing_availability,PERMISSIVE,marketplace_listing_availability: read own campus,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",marketplace_listings,PERMISSIVE,marketplace_listings: admins all,public,
+SELECT,"(((status = 'active'::text) AND (COALESCE(is_out_of_stock, false) = false) AND ((campus_id IS NULL) OR (campus_id = hg_user_campus_id()))) OR hg_is_campus_admin(campus_id))","[""authenticated""]",marketplace_listings,PERMISSIVE,marketplace_listings: public read active,public,
+SELECT,hg_is_campus_admin(campus_id),"[""authenticated""]",marketplace_purchase_reports,PERMISSIVE,marketplace_purchase_reports: admins read,public,
+SELECT,(user_id = auth.uid()),"[""authenticated""]",marketplace_purchase_reports,PERMISSIVE,marketplace_purchase_reports: users read own,public,
+INSERT,,"[""authenticated""]",marketplace_purchase_reports,PERMISSIVE,marketplace_purchase_reports: users report own purchases,public,"((user_id = ( SELECT auth.uid() AS uid)) AND (status = 'open'::text) AND (EXISTS ( SELECT 1
+   FROM marketplace_purchases p
+  WHERE ((p.id = marketplace_purchase_reports.purchase_id) AND (p.user_id = ( SELECT auth.uid() AS uid)) AND (p.status = 'completed'::text) AND (NOT (p.campus_id IS DISTINCT FROM marketplace_purchase_reports.campus_id))))))"
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",marketplace_purchases,PERMISSIVE,marketplace_purchases: users read own,public,
+SELECT,((user_id = auth.uid()) OR hg_is_campus_admin(campus_id)),"[""public""]",marketplace_purchases,PERMISSIVE,marketplace_purchases_campus_scoping,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",marketplace_requests,PERMISSIVE,marketplace_requests: admins all,public,hg_is_campus_admin(campus_id)
+INSERT,,"[""authenticated""]",marketplace_requests,PERMISSIVE,marketplace_requests: authenticated submit,public,((status = 'pending'::text) AND (requested_by = auth.uid()) AND ((campus_id IS NULL) OR (campus_id = hg_user_campus_id())))
+SELECT,(requested_by = auth.uid()),"[""authenticated""]",marketplace_requests,PERMISSIVE,marketplace_requests: requester read own,public,
+SELECT,((lower(vendor_email) = lower(( SELECT (auth.jwt() ->> 'email'::text)))) OR hg_is_campus_admin(campus_id)),"[""public""]",marketplace_requests,PERMISSIVE,marketplace_requests: vendor read own or admin,public,
+SELECT,true,"[""public""]",measurement_units,PERMISSIVE,measurement_units: everyone reads,public,
+ALL,hg_is_campus_admin(NULL::uuid),"[""public""]",measurement_units,PERMISSIVE,measurement_units: super_admin manages,public,hg_is_campus_admin(NULL::uuid)
+SELECT,true,"[""public""]",membership_rewards,PERMISSIVE,Anyone reads membership_rewards,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",membership_rewards,PERMISSIVE,membership_rewards: admins all,public,hg_is_campus_admin(campus_id)
+SELECT,true,"[""public""]",menu_addon_groups,PERMISSIVE,Anyone can view addon groups,public,
+INSERT,,"[""authenticated""]",menu_addon_groups,RESTRICTIVE,addon_groups: parent scope on insert,public,"(EXISTS ( SELECT 1
+   FROM menu_items m
+  WHERE ((m.id = menu_addon_groups.menu_item_id) AND (NOT (m.campus_id IS DISTINCT FROM menu_addon_groups.campus_id)))))"
+UPDATE,true,"[""authenticated""]",menu_addon_groups,RESTRICTIVE,addon_groups: parent scope on update,public,"(EXISTS ( SELECT 1
+   FROM menu_items m
+  WHERE ((m.id = menu_addon_groups.menu_item_id) AND (NOT (m.campus_id IS DISTINCT FROM menu_addon_groups.campus_id)))))"
+ALL,hg_is_campus_admin(campus_id),"[""public""]",menu_addon_groups,PERMISSIVE,menu_addon_groups: admins all,public,hg_is_campus_admin(campus_id)
+SELECT,((campus_id IS NULL) OR (campus_id = hg_user_campus_id()) OR hg_is_campus_admin(campus_id)),"[""anon"", ""authenticated""]",menu_addon_groups,RESTRICTIVE,menu_addon_groups: enforce catalogue campus reads,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",menu_addons,PERMISSIVE,Admins manage menu_addons,public,
+SELECT,((is_available = true) AND (is_archived = false)),"[""public""]",menu_addons,PERMISSIVE,Anyone can view available menu_addons,public,
+INSERT,,"[""authenticated""]",menu_addons,RESTRICTIVE,addons: parent scope on insert,public,"((group_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM menu_addon_groups a
+  WHERE ((a.id = menu_addons.group_id) AND (NOT (a.campus_id IS DISTINCT FROM menu_addons.campus_id))))))"
+UPDATE,true,"[""authenticated""]",menu_addons,RESTRICTIVE,addons: parent scope on update,public,"((group_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM menu_addon_groups a
+  WHERE ((a.id = menu_addons.group_id) AND (NOT (a.campus_id IS DISTINCT FROM menu_addons.campus_id))))))"
+SELECT,((campus_id IS NULL) OR (campus_id = hg_user_campus_id()) OR hg_is_campus_admin(campus_id)),"[""anon"", ""authenticated""]",menu_addons,RESTRICTIVE,menu_addons: enforce catalogue campus reads,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",menu_categories,PERMISSIVE,menu_categories: admins all,public,
+SELECT,((campus_id IS NULL) OR (campus_id = hg_user_campus_id()) OR hg_is_campus_admin(campus_id)),"[""anon"", ""authenticated""]",menu_categories,RESTRICTIVE,menu_categories: enforce catalogue campus reads,public,
+SELECT,(((is_active = true) AND ((campus_id IS NULL) OR (campus_id = hg_user_campus_id()))) OR hg_is_campus_admin(campus_id)),"[""public""]",menu_categories,PERMISSIVE,menu_categories: public read active,public,
+INSERT,,"[""authenticated""]",menu_item_availability,RESTRICTIVE,availability: parent scope on insert,public,"(EXISTS ( SELECT 1
+   FROM menu_items m
+  WHERE ((m.id = menu_item_availability.menu_item_id) AND ((m.campus_id IS NULL) OR (m.campus_id = menu_item_availability.campus_id)))))"
+UPDATE,true,"[""authenticated""]",menu_item_availability,RESTRICTIVE,availability: parent scope on update,public,"(EXISTS ( SELECT 1
+   FROM menu_items m
+  WHERE ((m.id = menu_item_availability.menu_item_id) AND ((m.campus_id IS NULL) OR (m.campus_id = menu_item_availability.campus_id)))))"
+SELECT,((campus_id IS NULL) OR (campus_id = hg_user_campus_id()) OR hg_is_campus_admin(campus_id)),"[""anon"", ""authenticated""]",menu_item_availability,RESTRICTIVE,menu_item_availability: enforce catalogue campus reads,public,
+SELECT,true,"[""public""]",menu_item_availability,PERMISSIVE,menu_item_availability: public read,public,
+ALL,hg_is_campus_staff(campus_id),"[""public""]",menu_item_availability,PERMISSIVE,menu_item_availability: staff manage own campus,public,hg_is_campus_staff(campus_id)
+ALL,hg_is_campus_admin(campus_id),"[""public""]",menu_item_variation_groups,PERMISSIVE,Admins manage menu_item_variation_groups,public,
+SELECT,true,"[""public""]",menu_item_variation_groups,PERMISSIVE,Anyone can view menu_item_variation_groups,public,
+SELECT,((campus_id IS NULL) OR (campus_id = hg_user_campus_id()) OR hg_is_campus_admin(campus_id)),"[""anon"", ""authenticated""]",menu_item_variation_groups,RESTRICTIVE,menu_item_variation_groups: enforce catalogue campus reads,public,
+INSERT,,"[""authenticated""]",menu_item_variation_groups,RESTRICTIVE,variation_groups: parent scope on insert,public,"(EXISTS ( SELECT 1
+   FROM menu_items m
+  WHERE ((m.id = menu_item_variation_groups.menu_item_id) AND (NOT (m.campus_id IS DISTINCT FROM menu_item_variation_groups.campus_id)))))"
+UPDATE,true,"[""authenticated""]",menu_item_variation_groups,RESTRICTIVE,variation_groups: parent scope on update,public,"(EXISTS ( SELECT 1
+   FROM menu_items m
+  WHERE ((m.id = menu_item_variation_groups.menu_item_id) AND (NOT (m.campus_id IS DISTINCT FROM menu_item_variation_groups.campus_id)))))"
+ALL,hg_is_campus_admin(campus_id),"[""public""]",menu_item_variation_options,PERMISSIVE,Admins manage menu_item_variation_options,public,
+SELECT,(is_available = true),"[""public""]",menu_item_variation_options,PERMISSIVE,Anyone can view available variation_options,public,
+SELECT,((campus_id IS NULL) OR (campus_id = hg_user_campus_id()) OR hg_is_campus_admin(campus_id)),"[""anon"", ""authenticated""]",menu_item_variation_options,RESTRICTIVE,menu_item_variation_options: enforce catalogue campus reads,public,
+INSERT,,"[""authenticated""]",menu_item_variation_options,RESTRICTIVE,variation_options: parent scope on insert,public,"(EXISTS ( SELECT 1
+   FROM menu_item_variation_groups v
+  WHERE ((v.id = menu_item_variation_options.variation_group_id) AND (NOT (v.campus_id IS DISTINCT FROM menu_item_variation_options.campus_id)))))"
+UPDATE,true,"[""authenticated""]",menu_item_variation_options,RESTRICTIVE,variation_options: parent scope on update,public,"(EXISTS ( SELECT 1
+   FROM menu_item_variation_groups v
+  WHERE ((v.id = menu_item_variation_options.variation_group_id) AND (NOT (v.campus_id IS DISTINCT FROM menu_item_variation_options.campus_id)))))"
+SELECT,true,"[""public""]",menu_items,PERMISSIVE,Enable read access for all users,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",menu_items,PERMISSIVE,menu_items: admins all,public,
+INSERT,,"[""authenticated""]",menu_items,RESTRICTIVE,menu_items: category scope on insert,public,"(EXISTS ( SELECT 1
+   FROM menu_categories c
+  WHERE ((c.id = menu_items.category_id) AND ((c.campus_id IS NULL) OR (c.campus_id = menu_items.campus_id)))))"
+UPDATE,true,"[""authenticated""]",menu_items,RESTRICTIVE,menu_items: category scope on update,public,"(EXISTS ( SELECT 1
+   FROM menu_categories c
+  WHERE ((c.id = menu_items.category_id) AND ((c.campus_id IS NULL) OR (c.campus_id = menu_items.campus_id)))))"
+SELECT,((campus_id IS NULL) OR (campus_id = hg_user_campus_id()) OR hg_is_campus_admin(campus_id)),"[""anon"", ""authenticated""]",menu_items,RESTRICTIVE,menu_items: enforce catalogue campus reads,public,
+SELECT,(((is_active = true) AND ((auth.uid() IS NULL) OR (campus_id IS NULL) OR (campus_id = hg_user_campus_id()))) OR hg_is_campus_admin(campus_id)),"[""public""]",milestones,PERMISSIVE,Anyone can view active milestones,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",milestones,PERMISSIVE,milestones: admins all,public,hg_is_campus_admin(campus_id)
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""public""]",monthly_hp_tracker,PERMISSIVE,Users view own monthly tracker,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",monthly_hp_tracker,PERMISSIVE,monthly_hp_tracker: admins all,public,hg_is_campus_admin(campus_id)
+ALL,hg_is_campus_admin(campus_id),"[""authenticated""]",newsletter_campaigns,PERMISSIVE,newsletter_campaigns: admins manage,public,hg_is_campus_admin(campus_id)
+ALL,hg_is_campus_admin(campus_id),"[""public""]",newsletter_subscriptions,PERMISSIVE,newsletter_subscriptions: admins all,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",notification_blasts,PERMISSIVE,notification_blasts: admins all,public,hg_is_campus_admin(campus_id)
+ALL,hg_is_campus_admin(campus_id),"[""authenticated""]",notification_blasts,RESTRICTIVE,notification_blasts_segment_scope,public,"(hg_is_campus_admin(campus_id) AND (jsonb_typeof(COALESCE(segment, '{}'::jsonb)) = 'object'::text) AND ((campus_id IS NULL) OR ((((segment ->> 'campus_id'::text) IS NULL) OR ((segment ->> 'campus_id'::text) = (campus_id)::text)) AND (((segment ->> 'campus'::text) IS NULL) OR ((segment ->> 'campus'::text) = (campus_id)::text)))))"
+ALL,hg_is_campus_admin(campus_id),"[""public""]",notification_deliveries,PERMISSIVE,notification_deliveries: admins all,public,
+SELECT,(user_id = ( SELECT auth.uid() AS uid)),"[""authenticated""]",notification_deliveries,PERMISSIVE,notification_deliveries: users read,public,
+ALL,((dispatch = '{}'::jsonb) AND (dispatch_payload IS NULL)),"[""anon"", ""authenticated""]",notification_deliveries,RESTRICTIVE,notification_dispatch_private,public,((dispatch = '{}'::jsonb) AND (dispatch_payload IS NULL))
+ALL,hg_is_campus_admin(campus_id),"[""public""]",notification_log,PERMISSIVE,notification_log: admins all,public,hg_is_campus_admin(campus_id)
+ALL,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",notification_preferences,PERMISSIVE,Users manage own notification preferences,public,(( SELECT auth.uid() AS uid) = user_id)
+ALL,hg_is_campus_admin(campus_id),"[""public""]",notifications,PERMISSIVE,notifications: admins all,public,
+SELECT,((user_id = ( SELECT auth.uid() AS uid)) OR hg_is_campus_admin(campus_id)),"[""authenticated""]",notifications,PERMISSIVE,notifications: users read own,public,
+UPDATE,(user_id = ( SELECT auth.uid() AS uid)),"[""authenticated""]",notifications,PERMISSIVE,notifications: users update own,public,(user_id = ( SELECT auth.uid() AS uid))
+SELECT,((user_id = auth.uid()) OR hg_is_campus_admin(campus_id)),"[""public""]",notifications,PERMISSIVE,notifications_campus_scoping,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",operating_hour_overrides,PERMISSIVE,operating_hour_overrides: admins all,public,hg_is_campus_admin(campus_id)
+SELECT,true,"[""public""]",operating_hour_overrides,PERMISSIVE,operating_hour_overrides: public read,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",operating_hours,PERMISSIVE,operating_hours: admins all,public,
+SELECT,true,"[""public""]",operating_hours,PERMISSIVE,operating_hours: public read,public,
+SELECT,"(EXISTS ( SELECT 1
+   FROM (order_items i
+     JOIN orders o ON ((o.id = i.order_id)))
+  WHERE ((i.id = order_addon_selections.order_item_id) AND (NOT (o.campus_id IS DISTINCT FROM order_addon_selections.campus_id)))))","[""authenticated""]",order_addon_selections,PERMISSIVE,order_addon_selections: visible parent order read,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",order_items,PERMISSIVE,order_items: admins all,public,
+SELECT,(hg_effective_rider(order_id) = auth.uid()),"[""authenticated""]",order_items,PERMISSIVE,order_items: assigned rider read,public,
+SELECT,hg_is_campus_staff(campus_id),"[""authenticated""]",order_items,PERMISSIVE,order_items: campus staff read,public,
+SELECT,"(EXISTS ( SELECT 1
+   FROM orders o
+  WHERE ((o.id = order_items.order_id) AND ((o.user_id = ( SELECT auth.uid() AS uid)) OR hg_is_campus_admin(order_items.campus_id)))))","[""public""]",order_items,PERMISSIVE,order_items: users read own,public,
+SELECT,((( SELECT auth.uid() AS uid) = user_id) OR hg_is_campus_admin(campus_id)),"[""authenticated""]",order_locks,PERMISSIVE,order_locks: owner or admin read,public,
+SELECT,hg_is_campus_admin(campus_id),"[""public""]",order_motivations,PERMISSIVE,order_motivations: admins read,public,
+INSERT,,"[""public""]",order_motivations,PERMISSIVE,order_motivations: users insert own,public,"(EXISTS ( SELECT 1
+   FROM orders o
+  WHERE ((o.id = order_motivations.order_id) AND (o.user_id = auth.uid()))))"
+ALL,hg_is_campus_admin(campus_id),"[""public""]",order_reviews,PERMISSIVE,order_reviews: admins all,public,
+SELECT,hg_campus_visible(campus_id),"[""public""]",order_reviews,PERMISSIVE,order_reviews: public read,public,
+UPDATE,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",order_reviews,PERMISSIVE,order_reviews: users update,public,
+INSERT,,"[""authenticated""]",order_reviews,PERMISSIVE,order_reviews_one_per_order_insert,public,"((( SELECT auth.uid() AS uid) = user_id) AND (EXISTS ( SELECT 1
+   FROM orders o
+  WHERE ((o.id = order_reviews.order_id) AND (o.user_id = ( SELECT auth.uid() AS uid)) AND (o.status = 'delivered'::order_status)))) AND (NOT (EXISTS ( SELECT 1
+   FROM order_reviews er
+  WHERE (er.order_id = order_reviews.order_id)))))"
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",order_share_events,PERMISSIVE,Users view own share events,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",order_share_events,PERMISSIVE,order_share_events: admins all,public,hg_is_campus_admin(campus_id)
+INSERT,,"[""public""]",order_share_events,PERMISSIVE,order_share_events: user insert own,public,(auth.uid() = user_id)
+ALL,(NOT (metadata ? 'customer_reminder_day'::text)),"[""anon"", ""authenticated""]",order_status_logs,RESTRICTIVE,customer_reminder_receipts_private,public,(NOT (metadata ? 'customer_reminder_day'::text))
+ALL,"(NOT (metadata ?| ARRAY['delivery_reward_recovery'::text, 'pending_hp_unlock'::text]))","[""anon"", ""authenticated""]",order_status_logs,RESTRICTIVE,hg_internal_delivery_reward_receipts,public,"(NOT (metadata ?| ARRAY['delivery_reward_recovery'::text, 'pending_hp_unlock'::text]))"
+ALL,hg_is_campus_admin(campus_id),"[""public""]",order_status_logs,PERMISSIVE,order_status_logs: admins all,public,
+SELECT,"(EXISTS ( SELECT 1
+   FROM orders
+  WHERE ((orders.id = order_status_logs.order_id) AND (orders.user_id = ( SELECT auth.uid() AS uid)))))","[""public""]",order_status_logs,PERMISSIVE,order_status_logs: users read own,public,
+ALL,(NOT (metadata ? 'order_streak_recovery'::text)),"[""anon"", ""authenticated""]",order_status_logs,RESTRICTIVE,order_streak_recovery_private,public,(NOT (metadata ? 'order_streak_recovery'::text))
+SELECT,true,"[""public""]",order_streak_rewards,PERMISSIVE,Anyone reads order_streak_rewards,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",order_streak_rewards,PERMISSIVE,order_streak_rewards: admins all,public,hg_is_campus_admin(campus_id)
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",order_streaks,PERMISSIVE,Users view own order streak,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",order_streaks,PERMISSIVE,order_streaks: admins all,public,hg_is_campus_admin(campus_id)
+ALL,hg_is_campus_admin(campus_id),"[""public""]",ordering_windows,PERMISSIVE,ordering_windows: admins all,public,hg_is_campus_admin(campus_id)
+SELECT,true,"[""public""]",ordering_windows,PERMISSIVE,ordering_windows: public read,public,
+DELETE,hg_is_campus_admin(campus_id),"[""public""]",orders,PERMISSIVE,orders: admins delete,public,
+UPDATE,hg_is_campus_admin(campus_id),"[""public""]",orders,PERMISSIVE,orders: admins update all,public,
+UPDATE,"(EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.role = 'kitchen'::user_role) AND p.is_active AND (p.campus_id = orders.campus_id))))","[""public""]",orders,PERMISSIVE,orders: kitchen campus update,public,
+SELECT,(hg_effective_rider(id) = auth.uid()),"[""public""]",orders,PERMISSIVE,orders: rider assigned batch select,public,
+UPDATE,(hg_effective_rider(id) = auth.uid()),"[""public""]",orders,PERMISSIVE,orders: rider assigned batch update,public,
+SELECT,"((squad_id IS NOT NULL) AND (EXISTS ( SELECT 1
+   FROM squad_roster sr
+  WHERE ((sr.squad_id = orders.squad_id) AND (sr.user_id = auth.uid()) AND (sr.is_active = true)))))","[""public""]",orders,PERMISSIVE,orders: squad roster can view squad orders,public,
+UPDATE,((user_id = auth.uid()) AND (status = 'received'::order_status)),"[""public""]",orders,PERMISSIVE,orders: users cancel own received,public,(user_id = auth.uid())
+SELECT,(user_id = auth.uid()),"[""public""]",orders,PERMISSIVE,orders: users read own,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",orders,PERMISSIVE,orders_admin_all,public,hg_is_campus_admin(campus_id)
+SELECT,((user_id = auth.uid()) OR hg_is_campus_staff(campus_id)),"[""public""]",orders,PERMISSIVE,orders_campus_scoping,public,
+SELECT,hg_is_campus_admin(campus_id),"[""public""]",payments,PERMISSIVE,payments: admins read,public,
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",payments,PERMISSIVE,payments: users read own,public,
+SELECT,hg_is_campus_admin(campus_id),"[""public""]",pending_squad_hp,PERMISSIVE,pending_squad_hp: admins view,public,
+DELETE,hg_is_campus_admin(campus_id),"[""public""]",profiles,PERMISSIVE,profiles: admins delete,public,
+SELECT,((id = auth.uid()) OR hg_is_campus_admin(campus_id)),"[""public""]",profiles,PERMISSIVE,profiles: users read own,public,
+UPDATE,(id = ( SELECT auth.uid() AS uid)),"[""authenticated""]",profiles,PERMISSIVE,profiles: users update own,public,"((id = ( SELECT auth.uid() AS uid)) AND (role = ( SELECT p.role
+   FROM profiles p
+  WHERE (p.id = ( SELECT auth.uid() AS uid)))) AND (hp_balance = ( SELECT p.hp_balance
+   FROM profiles p
+  WHERE (p.id = ( SELECT auth.uid() AS uid)))))"
+ALL,hg_is_campus_admin(campus_id),"[""public""]",profiles,PERMISSIVE,profiles_admin_all,public,hg_is_campus_admin(campus_id)
+ALL,hg_is_campus_admin(campus_id),"[""public""]",promo_code_uses,PERMISSIVE,promo_code_uses: admins all,public,
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",promo_code_uses,PERMISSIVE,promo_code_uses: users read own,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",promo_codes,PERMISSIVE,promo_codes: admins all,public,hg_is_campus_admin(campus_id)
+SELECT,(((is_active = true) AND (( SELECT auth.uid() AS uid) IS NOT NULL) AND ((campus_id IS NULL) OR (campus_id = hg_user_campus_id()))) OR hg_is_campus_admin(campus_id)),"[""public""]",promo_codes,PERMISSIVE,promo_codes: authenticated read active,public,
+SELECT,hg_is_campus_admin(campus_id),"[""public""]",push_subscriptions,PERMISSIVE,push_subscriptions: admins read all,public,
+ALL,(user_id = ( SELECT auth.uid() AS uid)),"[""authenticated""]",push_subscriptions,PERMISSIVE,push_subscriptions: users crud own,public,(user_id = ( SELECT auth.uid() AS uid))
+ALL,hg_is_campus_admin(campus_id),"[""public""]",redemption_cost_log,PERMISSIVE,redemption_cost_log: admins manage,public,hg_is_campus_admin(campus_id)
+SELECT,hg_is_campus_admin(campus_id),"[""public""]",redemption_cost_log,PERMISSIVE,redemption_cost_log: campus admins read,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",referral_codes,PERMISSIVE,referral_codes: admins all,public,
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",referral_codes,PERMISSIVE,referral_codes: users read own,public,
+SELECT,true,"[""public""]",referral_milestones,PERMISSIVE,Anyone reads referral_milestones,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",referral_milestones,PERMISSIVE,referral_milestones: admins all,public,hg_is_campus_admin(campus_id)
+ALL,hg_is_campus_admin(campus_id),"[""public""]",referrals,PERMISSIVE,referrals: admins all,public,
+SELECT,((( SELECT auth.uid() AS uid) = referrer_id) OR (( SELECT auth.uid() AS uid) = referred_user_id)),"[""authenticated""]",referrals,PERMISSIVE,referrals: users read own,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",reward_redemptions,PERMISSIVE,reward_redemptions: admins all,public,
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",reward_redemptions,PERMISSIVE,reward_redemptions: users read own,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",rewards,PERMISSIVE,rewards: admins all,public,
+SELECT,(((is_active = true) AND hg_campus_visible(campus_id)) OR hg_is_campus_admin(campus_id)),"[""public""]",rewards,PERMISSIVE,rewards: public read active,public,
+ALL,((( SELECT auth.uid() AS uid) = user_id) OR hg_is_campus_admin(campus_id)),"[""authenticated""]",rider_profiles,PERMISSIVE,rider_profiles: unified access,public,((( SELECT auth.uid() AS uid) = user_id) OR hg_is_campus_admin(campus_id))
+ALL,(( SELECT auth.uid() AS uid) = user_id),"[""public""]",saved_for_later,PERMISSIVE,Users manage own saved items,public,(( SELECT auth.uid() AS uid) = user_id)
+SELECT,"hg_is_campus_admin(( SELECT scheduled_notifications.campus_id
+   FROM scheduled_notifications
+  WHERE (scheduled_notifications.id = scheduled_notification_sends.campaign_id)))","[""public""]",scheduled_notification_sends,PERMISSIVE,scheduled_notification_sends: admins view,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",scheduled_notifications,PERMISSIVE,scheduled_notifications: admins all,public,hg_is_campus_admin(campus_id)
+ALL,hg_is_campus_admin(campus_id),"[""authenticated""]",squad_members,PERMISSIVE,Admins manage squad members,public,
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",squad_members,PERMISSIVE,Users view own squad entries,public,
+DELETE,"(EXISTS ( SELECT 1
+   FROM orders o
+  WHERE ((o.id = squad_members.order_id) AND (o.user_id = ( SELECT auth.uid() AS uid)) AND (o.status <> 'delivered'::order_status))))","[""authenticated""]",squad_members,PERMISSIVE,squad_members: order owner delete before delivery,public,
+INSERT,,"[""public""]",squad_members,PERMISSIVE,squad_members: order owner insert,public,"(EXISTS ( SELECT 1
+   FROM orders
+  WHERE ((orders.id = squad_members.order_id) AND (orders.user_id = auth.uid()))))"
+SELECT,"(EXISTS ( SELECT 1
+   FROM orders o
+  WHERE ((o.id = squad_members.order_id) AND (o.user_id = ( SELECT auth.uid() AS uid)))))","[""authenticated""]",squad_members,PERMISSIVE,squad_members: order owner select,public,
+UPDATE,"(EXISTS ( SELECT 1
+   FROM orders o
+  WHERE ((o.id = squad_members.order_id) AND (o.user_id = ( SELECT auth.uid() AS uid)))))","[""authenticated""]",squad_members,PERMISSIVE,squad_members: order owner update,public,"(EXISTS ( SELECT 1
+   FROM orders o
+  WHERE ((o.id = squad_members.order_id) AND (o.user_id = ( SELECT auth.uid() AS uid)))))"
+SELECT,"(EXISTS ( SELECT 1
+   FROM (orders o
+     JOIN squad_roster sr ON ((sr.squad_id = o.squad_id)))
+  WHERE ((o.id = squad_members.order_id) AND (sr.user_id = auth.uid()) AND (sr.is_active = true))))","[""public""]",squad_members,PERMISSIVE,squad_members: squad roster can view,public,
+ALL,"hg_is_campus_admin(( SELECT squads.campus_id
+   FROM squads
+  WHERE (squads.id = squad_roster.squad_id)))","[""public""]",squad_roster,PERMISSIVE,squad_roster: admins all,public,
+SELECT,(user_id = auth.uid()),"[""public""]",squad_roster,PERMISSIVE,squad_roster: member views own row,public,
+ALL,"(EXISTS ( SELECT 1
+   FROM squads
+  WHERE ((squads.id = squad_roster.squad_id) AND (squads.creator_id = auth.uid()))))","[""public""]",squad_roster,PERMISSIVE,squad_roster: squad creator manage,public,"(EXISTS ( SELECT 1
+   FROM squads
+  WHERE ((squads.id = squad_roster.squad_id) AND (squads.creator_id = auth.uid()))))"
+ALL,hg_is_campus_admin(campus_id),"[""public""]",squads,PERMISSIVE,squads: admins all,public,
+ALL,(creator_id = auth.uid()),"[""public""]",squads,PERMISSIVE,squads: creator manage own,public,"((creator_id = auth.uid()) AND ((campus_id IS NULL) OR (campus_id = ( SELECT profiles.campus_id
+   FROM profiles
+  WHERE (profiles.id = auth.uid())))))"
+SELECT,hg_is_squad_roster_member(id),"[""public""]",squads,PERMISSIVE,squads: roster members view,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",stock_items,PERMISSIVE,stock_items: admins all,public,hg_is_campus_admin(campus_id)
+INSERT,,"[""authenticated""]",stock_items,RESTRICTIVE,stock_items_zero_opening_balance,public,(current_balance = (0)::numeric)
+ALL,hg_is_campus_admin(campus_id),"[""public""]",stock_ledger,PERMISSIVE,stock_ledger: admins all,public,hg_is_campus_admin(campus_id)
+ALL,hg_is_campus_admin(campus_id),"[""public""]",storefront_sections,PERMISSIVE,storefront_sections: admins all,public,
+SELECT,((campus_id IS NULL) OR (campus_id = ( SELECT hg_user_campus_id() AS hg_user_campus_id)) OR hg_is_campus_admin(campus_id)),"[""anon"", ""authenticated""]",storefront_sections,RESTRICTIVE,storefront_sections: enforce CMS campus reads,public,
+SELECT,((is_active = true) OR hg_is_campus_admin(campus_id)),"[""public""]",storefront_sections,PERMISSIVE,storefront_sections: public read active,public,
+ALL,hg_is_campus_admin(campus_id),"[""authenticated""]",system_settings,PERMISSIVE,"system_settings: campus admins manage own, super_admin manages ",public,hg_is_campus_admin(campus_id)
+SELECT,((is_public = true) AND ((campus_id IS NULL) OR hg_campus_visible(campus_id))),"[""public""]",system_settings,PERMISSIVE,system_settings: public read,public,
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""public""]",tier_monthly_perk_usage,PERMISSIVE,Users view own tier perk usage,public,
+ALL,hg_is_campus_admin(NULL::uuid),"[""public""]",tier_monthly_perk_usage,PERMISSIVE,tier_monthly_perk_usage: admins all,public,
+ALL,((( SELECT auth.uid() AS uid) = user_id) OR hg_is_campus_admin(campus_id)),"[""authenticated""]",user_addresses,PERMISSIVE,user_addresses: unified access,public,((( SELECT auth.uid() AS uid) = user_id) OR hg_is_campus_admin(campus_id))
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",user_milestones,PERMISSIVE,Users view own milestones,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",user_milestones,PERMISSIVE,user_milestones: admins all,public,hg_is_campus_admin(campus_id)
+ALL,hg_is_campus_admin(campus_id),"[""public""]",user_tiers,PERMISSIVE,user_tiers: admins all,public,
+SELECT,(user_id = ( SELECT auth.uid() AS uid)),"[""public""]",user_tiers,PERMISSIVE,user_tiers: users read own,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",virtual_accounts,PERMISSIVE,virtual_accounts: admins all,public,
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",virtual_accounts,PERMISSIVE,virtual_accounts: users read own,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",wallet_topups,PERMISSIVE,wallet_topups: admins all,public,
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",wallet_topups,PERMISSIVE,wallet_topups: users read own,public,
+SELECT,hg_is_campus_admin(campus_id),"[""public""]",wallet_transactions,PERMISSIVE,wallet_transactions: admins read,public,
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",wallet_transactions,PERMISSIVE,wallet_transactions: users read own,public,
+SELECT,((user_id = auth.uid()) OR hg_is_campus_admin(campus_id)),"[""public""]",wallet_transactions,PERMISSIVE,wallet_transactions_campus_scoping,public,
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",wallet_withdrawals,PERMISSIVE,Users view own withdrawals,public,
+ALL,hg_is_campus_admin(campus_id),"[""public""]",wallet_withdrawals,PERMISSIVE,wallet_withdrawals: admins all,public,hg_is_campus_admin(campus_id)
+SELECT,hg_is_campus_admin(campus_id),"[""public""]",wallets,PERMISSIVE,wallets: admins read,public,
+SELECT,(( SELECT auth.uid() AS uid) = user_id),"[""authenticated""]",wallets,PERMISSIVE,wallets: users read own,public,
+SELECT,((user_id = auth.uid()) OR hg_is_campus_admin(campus_id)),"[""public""]",wallets,PERMISSIVE,wallets_campus_scoping,public,
+SELECT,hg_is_campus_admin(campus_id),"[""authenticated""]",webhook_events,PERMISSIVE,webhook_events_admin_read,public,

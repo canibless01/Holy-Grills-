@@ -1,0 +1,51 @@
+[
+  {
+    "email": "canidesigns@gmail.com",
+    "signup_award": {
+      "awarded": 50,
+      "replayed": false
+    },
+    "hp_balance": 50,
+    "live_balances": {
+      "/hp/balance": {
+        "status": 200,
+        "active": 50,
+        "pending": 0,
+        "total_credits": null,
+        "error": null
+      },
+      "/free-sides": {
+        "status": 200,
+        "active": null,
+        "pending": null,
+        "total_credits": 1,
+        "error": null
+      }
+    }
+  },
+  {
+    "email": "grillthevibe@gmail.com",
+    "signup_award": {
+      "awarded": 50,
+      "replayed": false
+    },
+    "hp_balance": 50,
+    "live_balances": {
+      "/hp/balance": {
+        "status": 200,
+        "active": 50,
+        "pending": 0,
+        "total_credits": null,
+        "error": null
+      },
+      "/free-sides": {
+        "status": 200,
+        "active": null,
+        "pending": null,
+        "total_credits": 1,
+        "error": null
+      }
+    },
+    "role": "super_admin"
+  }
+]

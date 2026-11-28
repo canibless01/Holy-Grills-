@@ -1,0 +1,12 @@
+{
+  "upload_http_status": 200,
+  "method": "signed isolated provider upload; not admin editor/storefront reflection",
+  "cdn_http_status": 200,
+  "png_decodes": true,
+  "dimensions": [
+    192,
+    192
+  ],
+  "owned_audit_asset_cleanup_http_status": 200,
+  "owned_audit_asset_cleanup_result": "ok"
+}

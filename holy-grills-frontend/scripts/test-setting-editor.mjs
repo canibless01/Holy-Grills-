@@ -1,0 +1,14 @@
+import { execFileSync } from 'node:child_process';
+import { strict as assert } from 'node:assert';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const root=join(dirname(fileURLToPath(import.meta.url)),'..');
+const out=join(root,'node_modules','.cache-setting-editor.mjs');
+execFileSync(join(root,'node_modules','.bin','esbuild'),[join(root,'src/lib/settingEditor.ts'),'--format=esm',`--outfile=${out}`]);
+const {parseSettingValue:parse,displaySettingValue:display}=await import(out);
+for(const value of [{enabled:true,credits:1},['one','two'],[1,2],42,true,false,'21:00','+2348000000000','Gate, hostel','123']) assert.deepEqual(parse(display(value),value),value);
+for(const bad of ['{','null','[]','false']) assert.throws(()=>parse(bad,{enabled:true}));
+for(const bad of ['','Infinity','NaN']) assert.throws(()=>parse(bad,10));
+assert.deepEqual(parse('["a","b"]'),['a','b']);assert.equal(parse('Gate, hostel'),'Gate, hostel');
+assert.equal(parse('false'),false);assert.equal(parse('25'),25);
+console.log('PASS setting editor: object/list/bool/number/text round-trip, phone and comma preservation, malformed JSON/type/nonfinite rejection');

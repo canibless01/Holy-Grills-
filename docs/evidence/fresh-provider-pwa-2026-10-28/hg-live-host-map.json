@@ -1,0 +1,126 @@
+[
+  {
+    "url": "http://holygrills.online",
+    "status": 200,
+    "final_url": "https://www.holygrills.online/",
+    "redirects": [
+      {
+        "status": 308,
+        "location": "https://holygrills.online/"
+      },
+      {
+        "status": 308,
+        "location": "https://www.holygrills.online/"
+      }
+    ],
+    "content_type": "text/html; charset=utf-8",
+    "cache_control": "public, max-age=0, must-revalidate"
+  },
+  {
+    "url": "https://holygrills.online",
+    "status": 200,
+    "final_url": "https://www.holygrills.online/",
+    "redirects": [
+      {
+        "status": 308,
+        "location": "https://www.holygrills.online/"
+      }
+    ],
+    "content_type": "text/html; charset=utf-8",
+    "cache_control": "public, max-age=0, must-revalidate"
+  },
+  {
+    "url": "https://www.holygrills.online/manifest.json",
+    "status": 200,
+    "final_url": "https://www.holygrills.online/manifest.json",
+    "redirects": [],
+    "content_type": "application/json; charset=utf-8",
+    "cache_control": "public, max-age=0, must-revalidate"
+  },
+  {
+    "url": "https://www.holygrills.online/service-worker.js",
+    "status": 200,
+    "final_url": "https://www.holygrills.online/service-worker.js",
+    "redirects": [],
+    "content_type": "application/javascript; charset=utf-8",
+    "cache_control": "public, max-age=0, must-revalidate",
+    "worker_version": "hg-v5"
+  },
+  {
+    "url": "https://www.holygrills.online/cart?reminder=1",
+    "status": 200,
+    "final_url": "https://www.holygrills.online/cart?reminder=1",
+    "redirects": [],
+    "content_type": "text/html; charset=utf-8",
+    "cache_control": "public, max-age=0, must-revalidate"
+  },
+  {
+    "url": "https://www.holygrills.online/orders",
+    "status": 200,
+    "final_url": "https://www.holygrills.online/orders",
+    "redirects": [],
+    "content_type": "text/html; charset=utf-8",
+    "cache_control": "public, max-age=0, must-revalidate"
+  },
+  {
+    "url": "https://www.holygrills.online/rewards",
+    "status": 200,
+    "final_url": "https://www.holygrills.online/rewards",
+    "redirects": [],
+    "content_type": "text/html; charset=utf-8",
+    "cache_control": "public, max-age=0, must-revalidate"
+  },
+  {
+    "url": "https://nominatim.openstreetmap.org/search?format=json&q=FUTA%20Akure&limit=1",
+    "status": 200,
+    "final_url": "https://nominatim.openstreetmap.org/search?format=json&q=FUTA%20Akure&limit=1",
+    "redirects": [],
+    "content_type": "application/json; charset=utf-8",
+    "cache_control": null,
+    "result_count": 1
+  },
+  {
+    "url": "https://a.tile.openstreetmap.org/0/0/0.png",
+    "status": 200,
+    "final_url": "https://a.tile.openstreetmap.org/0/0/0.png",
+    "redirects": [],
+    "content_type": "image/png",
+    "cache_control": "max-age=87763, stale-while-revalidate=604800, stale-if-error=604800",
+    "png_signature_valid": true
+  },
+  {
+    "url": "https://b.tile.openstreetmap.org/0/0/0.png",
+    "status": 200,
+    "final_url": "https://b.tile.openstreetmap.org/0/0/0.png",
+    "redirects": [],
+    "content_type": "image/png",
+    "cache_control": "max-age=87763, stale-while-revalidate=604800, stale-if-error=604800",
+    "png_signature_valid": true
+  },
+  {
+    "url": "https://c.tile.openstreetmap.org/0/0/0.png",
+    "status": 200,
+    "final_url": "https://c.tile.openstreetmap.org/0/0/0.png",
+    "redirects": [],
+    "content_type": "image/png",
+    "cache_control": "max-age=87763, stale-while-revalidate=604800, stale-if-error=604800",
+    "png_signature_valid": true
+  },
+  {
+    "url": "https://maps.google.com/?q=7.3,5.1",
+    "status": 200,
+    "final_url": "https://www.google.com/maps?q=7.3,5.1",
+    "redirects": [
+      {
+        "status": 302,
+        "location": "https://maps.google.com/maps?q=7.3,5.1"
+      },
+      {
+        "status": 302,
+        "location": "https://www.google.com/maps?q=7.3,5.1"
+      }
+    ],
+    "content_type": "text/html; charset=UTF-8",
+    "cache_control": "private, max-age=0"
+  }
+]

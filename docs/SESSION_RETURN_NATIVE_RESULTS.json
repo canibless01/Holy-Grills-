@@ -1,0 +1,5 @@
+{
+  "real_owned_auth_refresh_once_and_public_cms_not_blocked_by_expired_session": true,
+  "reload_preserves_verified_account_without_second_rotation": true,
+  "new_browser_context_restores_local_persistent_session": true
+}

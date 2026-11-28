@@ -1,0 +1,60 @@
+{
+  "captured_at": "2026-11-16T09:02:02.876931+00:00",
+  "counts": {
+    "flags": 18,
+    "views": 16,
+    "tables": 157,
+    "indexes": 640,
+    "policies": 322,
+    "settings": 101,
+    "triggers": 123,
+    "functions": 282,
+    "extensions": 9,
+    "migrations": 421
+  },
+  "structural_findings": [],
+  "duplicate_policy_groups": [],
+  "duplicate_trigger_groups": [],
+  "identical_index_groups": [
+    [
+      "order_share_events_user_date_key",
+      "order_share_events_user_day_uniq"
+    ]
+  ],
+  "overloads": [
+    [
+      "hg_generate_referral_code(text)",
+      "hg_generate_referral_code()"
+    ],
+    [
+      "hg_release_order_refund_reservation(uuid,numeric)",
+      "hg_release_order_refund_reservation(uuid,numeric,numeric)"
+    ]
+  ],
+  "browser_definers": [
+    "get_hp_program_report_summary(date)",
+    "get_menu_item_review_stats(uuid[])",
+    "get_pending_squad_hp_report(integer)",
+    "hg_ambassador_actor()",
+    "hg_campus_visible(uuid)",
+    "hg_current_user_role()",
+    "hg_effective_rider(uuid)",
+    "hg_hp_grant_segment(uuid,uuid,timestamp with time zone,timestamp with time zone,uuid,integer)",
+    "hg_is_admin()",
+    "hg_is_ambassador_staff(uuid)",
+    "hg_is_campus_admin(uuid)",
+    "hg_is_campus_staff(uuid)",
+    "hg_is_financial_admin()",
+    "hg_is_squad_roster_member(uuid)",
+    "hg_user_campus_id()"
+  ],
+  "browser_invokers": [
+    "get_event_tier_comparison(uuid)",
+    "hg_admin_batch_pay_breakdown(uuid)",
+    "hg_admin_rider_batches(uuid,timestamp with time zone,integer,integer)",
+    "hg_admin_rider_payments(uuid,timestamp with time zone)",
+    "hg_rider_batch_pay(timestamp with time zone,integer,integer)",
+    "hg_rider_earnings(timestamp with time zone)",
+    "hg_rider_stats()"
+  ]
+}

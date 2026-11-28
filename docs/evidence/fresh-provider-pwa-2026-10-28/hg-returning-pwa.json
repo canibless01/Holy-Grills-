@@ -1,0 +1,13 @@
+{
+  "origin": "https://www.holygrills.online",
+  "cache_refresh": {
+    "served_name": "Holy Grill \u2014 FUTA's Only Flame Grill",
+    "cache_updated": true,
+    "stale_seed_replaced": true
+  },
+  "returning_controller": "https://www.holygrills.online/service-worker.js",
+  "offline_manifest": {
+    "status": 200,
+    "name": "Holy Grill \u2014 FUTA's Only Flame Grill"
+  }
+}

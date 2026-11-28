@@ -1,0 +1,35 @@
+BEGIN;
+SET LOCAL request.jwt.claims='{"role":"service_role"}';
+DO $$
+DECLARE c uuid:=gen_random_uuid();c2 uuid:=gen_random_uuid();a uuid:=gen_random_uuid();u uuid:=gen_random_uuid();v uuid:=gen_random_uuid();outsider uuid:=gen_random_uuid();s uuid:=gen_random_uuid();tier uuid:=gen_random_uuid();r jsonb;period date:=date_trunc('month',now() AT TIME ZONE 'Africa/Lagos')::date-interval '1 month';notice uuid;
+BEGIN
+ INSERT INTO campuses(id,name,slug,is_active) VALUES(c,'Local reports','local-'||c,true),(c2,'Foreign reports','local-'||c2,true);
+ INSERT INTO auth.users(id,email) SELECT id,id||'@example.invalid' FROM unnest(ARRAY[a,u,v,outsider,s]) id;
+ INSERT INTO profiles(id,email,full_name,role,campus_id,is_active) SELECT id,id||'@example.invalid','Local report person',CASE WHEN id=a THEN 'admin' WHEN id=s THEN 'super_admin' ELSE 'student' END::user_role,CASE WHEN id=outsider THEN c2 ELSE c END,true FROM unnest(ARRAY[a,u,v,outsider,s]) id ON CONFLICT(id) DO UPDATE SET role=excluded.role,campus_id=excluded.campus_id,is_active=true;
+ INSERT INTO ambassadors(profile_id,campus_id,status) VALUES(u,c,'active'),(v,c,'active'),(outsider,c2,'active'),(s,c,'active');
+ INSERT INTO hp_tiers(id,name,min_points,sort_order,campus_id,is_active) VALUES(tier,'Local Flame',50,0,c,true);
+ UPDATE profiles SET current_tier_id=tier WHERE id IN (u,v);
+ r:=hg_ambassador_mail_data(c,'monthly',period);
+ IF r->>'error' IS NOT NULL OR jsonb_array_length(r->'people')<>2 OR (r->'team'->>'ambassadors')::int<>2 OR r->'tiers'->0->>'tier'<>'Local Flame' THEN RAISE EXCEPTION 'scoped report mismatch: %',r; END IF;
+ IF r::text ~ 'retained_order_value|revenue|total_order_value|phone|email|profit' THEN RAISE EXCEPTION 'private business/contact field leaked'; END IF;
+ IF (SELECT count(*) FROM jsonb_array_elements(r->'people') x WHERE x->>'user_id'=outsider::text)>0 THEN RAISE EXCEPTION 'cross campus'; END IF;
+ r:=hg_ambassador_mail_data(c,'monthly',date_trunc('month',now())::date);
+ IF r->>'error'<>'incomplete' THEN RAISE EXCEPTION 'incomplete month accepted'; END IF;
+ r:=hg_queue_ambassador_report(outsider,c,'monthly',period,'Local monthly report','Safe counts only');
+ IF r->>'skipped'<>'true' THEN RAISE EXCEPTION 'foreign recipient'; END IF;
+ r:=hg_queue_ambassador_report(s,c,'monthly',period,'Local monthly report','Safe counts only');
+ IF r->>'skipped'<>'true' THEN RAISE EXCEPTION 'super recipient'; END IF;
+ INSERT INTO notification_preferences(user_id,email_enabled) VALUES(v,false);
+ r:=hg_queue_ambassador_report(v,c,'monthly',period,'Local monthly report','Safe counts only');
+ IF r->>'skipped'<>'true' THEN RAISE EXCEPTION 'optout ignored'; END IF;
+ r:=hg_queue_ambassador_report(u,c,'monthly',period,'Local monthly report','Safe counts only');notice:=(r->>'notification_id')::uuid;
+ IF notice IS NULL OR NOT EXISTS(SELECT 1 FROM notification_deliveries WHERE notification_id=notice AND channel='email') THEN RAISE EXCEPTION 'no durable email'; END IF;
+ r:=hg_queue_ambassador_report(u,c,'monthly',period,'Changed subject','Changed body');
+ IF r->>'duplicate'<>'true' OR (SELECT count(*) FROM hg_internal.ambassador_report_receipts WHERE user_id=u)<>1 THEN RAISE EXCEPTION 'duplicate report'; END IF;
+ IF hg_ambassador_report_notice_valid(u,c) IS NOT TRUE THEN RAISE EXCEPTION 'valid ambassador rejected'; END IF;
+ UPDATE ambassadors SET status='inactive' WHERE profile_id=u;
+ IF hg_ambassador_report_notice_valid(u,c) IS TRUE THEN RAISE EXCEPTION 'removed ambassador eligible'; END IF;
+ IF has_function_privilege('authenticated','hg_ambassador_mail_data(uuid,text,date)','EXECUTE') OR has_table_privilege('anon','hg_internal.ambassador_report_receipts','SELECT') THEN RAISE EXCEPTION 'public data access'; END IF;
+END $$;
+ROLLBACK;
+SELECT 'passed count-only campus team, current tiers, incomplete period, optouts, removal, email outbox and duplicate-safe reports; rolled back' AS evidence;

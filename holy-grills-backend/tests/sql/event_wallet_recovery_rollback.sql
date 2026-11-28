@@ -1,0 +1,37 @@
+BEGIN;
+SET LOCAL request.jwt.claims='{"role":"service_role"}';
+SET LOCAL search_path=public,extensions;
+DO $$
+DECLARE c uuid:=gen_random_uuid();a uuid:=gen_random_uuid();u uuid:=gen_random_uuid();guy uuid:=gen_random_uuid();e uuid:=gen_random_uuid();tier uuid:=gen_random_uuid();t uuid;gt uuid;r jsonb;pid uuid;email text:='audit-guest-recovery-'||gen_random_uuid()||'@example.invalid';copy jsonb:='{"_recovery_reason":"Payment arrived after the ticket reservation expired. Return the card payment to the app wallet."}';
+BEGIN
+ INSERT INTO campuses(id,name,slug) VALUES(c,'[AUDIT rollback] Event recovery','audit-'||c);
+ INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES(a,'audit-'||a||'@example.invalid','{"full_name":"Audit admin"}'),(u,'audit-'||u||'@example.invalid','{"full_name":"Audit member"}');
+ UPDATE profiles SET campus_id=c,is_active=true WHERE id IN(a,u);UPDATE profiles SET role='admin' WHERE id=a;
+ UPDATE wallets SET balance=100 WHERE user_id=u;
+ INSERT INTO events(id,title,slug,location,starts_at,ends_at,capacity,campus_id,is_published,hp_reward) VALUES(e,'[AUDIT rollback] Recovery','audit-'||e,'Hall',now()+interval '1 day',now()+interval '2 days',10,c,true,50);
+ INSERT INTO event_ticket_tiers(id,event_id,name,price_naira,price_naira_full,price_hp,capacity,campus_id) VALUES(tier,e,'Regular',100,100,0,10,c);
+ r:=hg_register_event_with_delivery(e,u,tier,false,20,null,'{}');t:=(r->>'ticket_id')::uuid;
+ IF r ? 'error' OR (r->>'card_amount_used')::numeric<>80 THEN RAISE EXCEPTION 'Member reservation failed: %',r;END IF;
+ UPDATE event_tickets SET payment_reference='audit-late-'||t,payment_expires_at=now()-interval '1 minute' WHERE id=t;
+ PERFORM hg_release_expired_event_reservation(t);
+ IF (SELECT balance FROM wallets WHERE user_id=u)<>100 THEN RAISE EXCEPTION 'Expiry did not restore wallet';END IF;
+ pid:=hg_pay_event_with_delivery(t,'paystack','audit-late-'||t,80,copy);
+ IF pid IS NULL OR (SELECT balance FROM wallets WHERE user_id=u)<>180 OR (SELECT payment_status FROM event_tickets WHERE id=t)<>'refunded' THEN RAISE EXCEPTION 'Late member payment not credited to wallet';END IF;
+ IF (SELECT amount FROM hg_internal.event_ticket_refunds WHERE ticket_id=t)<>80 OR (SELECT sold_count FROM event_ticket_tiers WHERE id=tier)<>0 THEN RAISE EXCEPTION 'Late refund duplicated wallet restoration or seat release';END IF;
+ PERFORM hg_pay_event_with_delivery(t,'paystack','audit-late-'||t,80,copy);
+ IF (SELECT balance FROM wallets WHERE user_id=u)<>180 THEN RAISE EXCEPTION 'Late callback replay credited twice';END IF;
+ r:=hg_register_guest_event_with_delivery(e,email::citext,'Audit guest','08012345678',tier,null,'{}');gt:=(r->>'ticket_id')::uuid;
+ UPDATE event_tickets SET payment_reference='audit-late-'||gt,payment_expires_at=now()-interval '1 minute' WHERE id=gt;PERFORM hg_release_expired_event_reservation(gt);
+ PERFORM hg_pay_event_with_delivery(gt,'paystack','audit-late-'||gt,100,copy);
+ IF NOT EXISTS(SELECT 1 FROM hg_internal.event_ticket_refunds WHERE ticket_id=gt AND destination='wallet' AND state='awaiting_account' AND amount=100) THEN RAISE EXCEPTION 'Guest refund not waiting for verified wallet';END IF;
+ r:=hg_claim_event_refund((SELECT id FROM hg_internal.event_ticket_refunds WHERE ticket_id=gt));
+ IF r->>'state'<>'awaiting_account' THEN RAISE EXCEPTION 'Guest refund attempted a bank payout';END IF;
+ INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES(guy,email,'{"full_name":"Audit verified guest"}');UPDATE profiles SET campus_id=c,is_active=true WHERE id=guy;
+ IF hg_claim_guest_event_refunds(guy)<>0 THEN RAISE EXCEPTION 'Unverified email claimed funds';END IF;
+ UPDATE auth.users SET email_confirmed_at=now() WHERE id=guy;
+ IF hg_claim_guest_event_refunds(guy)<>1 THEN RAISE EXCEPTION 'Verified guest credit did not complete';END IF;
+ IF (SELECT balance FROM wallets WHERE user_id=guy)<>100 OR NOT EXISTS(SELECT 1 FROM event_tickets WHERE id=gt AND user_id=guy AND payment_status='refunded') THEN RAISE EXCEPTION 'Guest wallet/ownership mismatch';END IF;
+ IF hg_claim_guest_event_refunds(guy)<>0 OR (SELECT balance FROM wallets WHERE user_id=guy)<>100 THEN RAISE EXCEPTION 'Guest claim replay credited twice';END IF;
+ IF has_function_privilege('authenticated','public.hg_claim_guest_event_refunds(uuid)','execute') THEN RAISE EXCEPTION 'Guest credit helper exposed';END IF;
+END $$;
+ROLLBACK;

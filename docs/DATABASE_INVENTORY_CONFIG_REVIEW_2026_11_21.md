@@ -1,0 +1,36 @@
+# Database inventory and configuration review — 21 November 2026
+
+This completes the recorded A7 inventory/grant/dependency pass and O4/O5 configuration assessment. It is paired with the A4 [settings/flag consumer map](SETTINGS_FEATURE_CONSUMER_MAP_2026_11_16.md), [global-policy fix](ACTIVE_GLOBAL_STAFF_POLICIES_2026_11_16.md) and [earlier helper review](DATABASE_PERMISSION_REVIEW_2026_11_14.md). It is not a claim that an inventory alone proves every application or historical routine branch.
+
+## Reviewable inventory
+
+The [metadata evidence folder](audit/database_2026_11_16/) contains every recorded table, policy, view, trigger, index, function signature/grant, migration, extension, flag and setting consumer. The 16 November snapshot covers **136 public + 21 private tables, 322 policies, 16 views, 123 triggers, 640 indexes, 282 functions, 421 migration records, 18 flags and 101 setting keys**. A 21 November live check reconfirms the table/policy/trigger counts and both corrective migrations. No customer rows, setting values, recipient addresses, tokens or function bodies are exported.
+
+The SQL/review tools are read-only: `tools/database_audit_snapshot.sql`, `tools/database_function_usage.sql` and `tools/review_database_inventory.py`. The [282-function usage matrix](audit/database_2026_11_16/function_usage_2026_11_21.csv) records source/SQL/policy reference candidates, actual trigger bindings and catalog dependency counts. PL/pgSQL/dynamic calls are not fully represented by pg_depend or text matching; 19 routines without source/reference candidates are retained, not declared unused or deleted.
+
+## Policies, grants and dependency results
+
+- All 157 recorded base tables have RLS. All 16 authenticated-readable public views use invoker security. Private tables expose no anon/authenticated table privileges. No invalid index, duplicate policy expression or exact duplicate trigger definition was found.
+- Reviewed service-only policies, active staff/campus predicates, owner/parent/roster/assignment predicates, public catalogue reads and restrictive parent/campus/private-dispatch policies together. A restrictive `USING(true)` parent check does not grant rows; a broad legacy table privilege is not an unrestricted write when RLS denies it.
+- This review found and fixed the five inactive-super-admin global predicates, with a direct pre-fix reproduction and fresh post-fix role/token-reuse/INSERT/UPDATE/DELETE matrices. The direct kitchen predicate now includes active status. See its dedicated evidence; ordinary staff/owner functionality and the paid kitchen/rider loop still pass.
+- Removed raw public/member catering INSERT privileges after proving submission uses the validated, rate-limited service API. The old permissive INSERT policy is now inert for browser roles, including column-level INSERT checks. Scoped admin/kitchen UPDATE remains available. No unrelated public submission policy was removed.
+- The 15 browser-executable definers retain their documented identity/role/aggregate/report boundaries. The seven executable invokers are the public event-tier comparison and scoped/own rider reports. They retain underlying RLS and their existing ownership/admin predicates. No arbitrary-SQL/network wrapper was found among these application entrypoints.
+- The only exact duplicate index definition is `order_share_events_user_day_uniq` beside the constraint-owned `order_share_events_user_date_key`. The constraint-owned index is retained. The extra legacy index is also retained as optional cleanup, with no invented data repair or urgency.
+- Two overload families remain intentional: referral-code generation with/without an email seed; and card-only versus wallet+card refund-reservation release. Their required argument names/arities distinguish them; none was removed simply because another signature exists. Money maintenance routines remain backend-only.
+- Migration history and repository filenames are reconciled by definitions/name as well as timestamp. The October free-side file explicitly records an applied result rather than executable DDL; old seed/config scripts are not rerun against owner-edited data. Historical provider/counter/funding scripts are superseded or already represented by live effects: provider columns, private counted-email RPCs and v2 automatic-funding consent all pass live checks. CLI/MCP-generated timestamps can differ; old scripts are not blindly reapplied or history rewritten.
+
+## Configuration exceptions — assessment complete
+
+**O4: leaked-password protection.** The organization is still on the Free plan, reconfirmed 21 November. Supabase's current [password security documentation](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection) states that leaked-password protection is available on Pro and above. It cannot be enabled within this plan. No upgrade, substitute provider or new charge was made. Existing signup strength checks and the owner-verified SMTP/reset flow remain.
+
+**O5: managed pg_net.** The installed 0.20.0 extension is not relocatable and owns 28 extension objects. No application public/private SQL routine references net HTTP calls. A zero-row anonymous Data API probe with `Accept-Profile: net` returns 406/PGRST106 (`Invalid schema: net`), so that schema is not exposed through this API. Its placement warning remains an explicit managed-extension exception. Moving/rebuilding it is maintenance requiring hosting-supported dependency review; nothing was dropped or rebuilt merely to silence a warning. This does not claim the privileged service role has no network capability.
+
+Advisors retain the known two backend-bookkeeping no-policy informational entries, extension placement warning, six anonymous/fifteen authenticated intentional definer findings and plan-restricted password warning. The findings are not presented as zero warnings or all-new vulnerabilities.
+
+## Operational observation and limits
+
+On 21 November, the database has **560 scheduled-job receipts in the preceding 24 hours**. The latest ordinary job receipts are successful, including automatic funding, due orders, campaign dispatch, cart scanning, birthday processing, decay, anniversary, tier/grace and squad recovery. Weekly rollover also recorded success at **00:01 WAT on 16 November**. These are actual saved executions across deployed revisions, not inferred from build success. A controlled financial/provider interruption proof is distinct from a real production interruption or actual customer inbox/device receipt.
+
+Monthly next-run observation, real scheduled-reminder receipt and provider settlement/failover acceptance remain O1–O3. No genuine leaderboard was manually reset, worker killed, card charged or customer blasted as a test. Optional schema deletion and deferred product expansion remain deferred. Wider A2/A5 editor/reporting combinations owned by the other audit chat are not silently certified by this inventory.
+
+Final application integration: **1,950 backend tests** and frontend lint/typecheck/full build pass after incorporating main `a0f69ec`. Native Settings/System recovery/legacy labels also pass at 393/1280 px. No new database write was required for this completion report.

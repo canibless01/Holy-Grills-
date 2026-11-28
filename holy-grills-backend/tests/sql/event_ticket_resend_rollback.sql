@@ -1,0 +1,32 @@
+BEGIN;
+SET LOCAL request.jwt.claims='{"role":"service_role"}';
+DO $$
+DECLARE c uuid:=gen_random_uuid();a uuid:=gen_random_uuid();u uuid:=gen_random_uuid();o uuid:=gen_random_uuid();e uuid:=gen_random_uuid();t uuid:=gen_random_uuid();r uuid:=gen_random_uuid();r2 uuid:=gen_random_uuid();answer jsonb;
+BEGIN
+ INSERT INTO campuses(id,name,slug) VALUES(c,'[AUDIT rollback] Resend','audit-'||c);
+ INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES(a,'audit-'||a||'@example.invalid','{}'),(u,'audit-'||u||'@example.invalid','{}'),(o,'audit-'||o||'@example.invalid','{}');
+ UPDATE profiles SET campus_id=c,is_active=true WHERE id IN(a,u,o);UPDATE profiles SET role='admin' WHERE id=a;UPDATE profiles SET role='event_organizer' WHERE id=o;
+ INSERT INTO events(id,title,slug,location,starts_at,ends_at,is_published,campus_id,organizer_id) VALUES(e,'[AUDIT rollback] Resend','audit-'||e,'Hall',now()-interval '1 hour',now()+interval '1 day',true,c,o);
+ INSERT INTO event_tickets(id,event_id,is_guest,guest_email,status,payment_status,campus_id) VALUES(t,e,true,'audit-guest@example.invalid','confirmed','not_required',c);
+ BEGIN PERFORM hg_resend_event_ticket(e,t,r,u,'wrong@example.invalid',false,'Ticket','Confirmed');RAISE EXCEPTION 'Unrelated user resent ticket';EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+ BEGIN PERFORM hg_resend_event_ticket(e,t,r,null,'wrong@example.invalid',false,'Ticket','Confirmed');RAISE EXCEPTION 'Wrong guest resent ticket';EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+ EXECUTE 'SET LOCAL ROLE service_role';answer:=hg_resend_event_ticket(e,t,r,null,' AUDIT-GUEST@example.invalid ',false,'Ticket','Confirmed');EXECUTE 'RESET ROLE';
+ IF answer->>'state'<>'queued' OR (SELECT dispatch_payload->'notification'->>'email' FROM notification_deliveries WHERE id=r)<>'audit-guest@example.invalid' THEN RAISE EXCEPTION 'Guest resend destination wrong';END IF;
+ UPDATE notification_deliveries SET dispatch=jsonb_set(dispatch,'{state}','"accepted"'),status='sent' WHERE id=r;
+ answer:=hg_resend_event_ticket(e,t,r,null,'audit-guest@example.invalid',false,'Ticket','Confirmed');
+ IF NOT(answer->>'replayed')::boolean OR answer->>'state'<>'accepted' THEN RAISE EXCEPTION 'Accepted resend was requeued';END IF;
+ BEGIN PERFORM hg_resend_event_ticket(e,t,r2,a,null,false,'Ticket','Confirmed');RAISE EXCEPTION 'Cooldown bypass';EXCEPTION WHEN raise_exception THEN IF SQLERRM<>'HG_TICKET_RESEND_COOLDOWN' THEN RAISE;END IF;END;
+ UPDATE notification_deliveries SET created_at=now()-interval '3 minutes' WHERE id=r;
+ answer:=hg_resend_event_ticket(e,t,r2,o,'attacker@example.invalid',false,'Ticket','Confirmed');
+ IF answer->>'state'<>'queued' OR (SELECT dispatch_payload->'notification'->>'email' FROM notification_deliveries WHERE id=r2)<>'audit-guest@example.invalid' THEN RAISE EXCEPTION 'Organizer changed recipient';END IF;
+ BEGIN PERFORM hg_resend_event_ticket(e,t,r2,a,null,false,'Ticket','Confirmed');RAISE EXCEPTION 'Changed actor reused request';EXCEPTION WHEN raise_exception THEN IF SQLERRM<>'HG_TICKET_RESEND_CONFLICT' THEN RAISE;END IF;END;
+ UPDATE notification_deliveries SET created_at=now()-interval '3 minutes' WHERE id=r2;
+ UPDATE event_tickets SET user_id=u,is_guest=false WHERE id=t;
+ BEGIN PERFORM hg_resend_event_ticket(e,t,gen_random_uuid(),null,'audit-guest@example.invalid',false,'Ticket','Confirmed');RAISE EXCEPTION 'Old guest email bypassed ownership';EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+ answer:=hg_resend_event_ticket(e,t,gen_random_uuid(),u,'attacker@example.invalid',false,'Ticket','Confirmed');
+ IF answer->>'state'<>'queued' OR (SELECT dispatch_payload->'notification'->>'email' FROM notification_deliveries WHERE id=(answer->>'delivery_id')::uuid)<>('audit-'||u||'@example.invalid') THEN RAISE EXCEPTION 'Owner destination wrong';END IF;
+ UPDATE event_tickets SET payment_status='pending' WHERE id=t;
+ BEGIN PERFORM hg_resend_event_ticket(e,t,gen_random_uuid(),a,null,false,'Ticket','Confirmed');RAISE EXCEPTION 'Unpaid ticket resent';EXCEPTION WHEN raise_exception THEN IF SQLERRM<>'HG_TICKET_RESEND_INVALID' THEN RAISE;END IF;END;
+ IF has_function_privilege('anon','public.hg_resend_event_ticket(uuid,uuid,uuid,uuid,text,boolean,text,text)','execute') OR has_function_privilege('authenticated','public.hg_resend_event_ticket(uuid,uuid,uuid,uuid,text,boolean,text,text)','execute') THEN RAISE EXCEPTION 'Resend helper exposed';END IF;
+END $$;
+ROLLBACK;

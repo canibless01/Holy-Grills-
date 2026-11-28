@@ -9,9 +9,9 @@ def _safe_campus(campus_id):
         return None
 
 
-def resolve_level(db, value, campus_id, active_only=True):
+def resolve_level(db, value, campus_id, active_only=True, row_id=None):
     """The level row for `value` as seen from `campus_id`: the campus's own row beats the global one."""
-    q = db.table("academic_levels").select("id,name,value,rank,campus_id").eq("value", str(value).strip())
+    q = db.table("academic_levels").select("id,name,value,rank,campus_id").eq("id" if row_id else "value", row_id or str(value).strip())
     if active_only:
         q = q.eq("is_active", True)
     rows = campus_or_global(q, _safe_campus(campus_id)).execute() or []
@@ -19,9 +19,9 @@ def resolve_level(db, value, campus_id, active_only=True):
     return picked[0] if picked else None
 
 
-def resolve_department(db, name, campus_id, active_only=True):
+def resolve_department(db, name, campus_id, active_only=True, row_id=None):
     """The department row for `name` as seen from `campus_id`: the campus's own row beats the global one."""
-    q = db.table("departments").select("id,name,faculty,campus_id").eq("name", str(name).strip())
+    q = db.table("departments").select("id,name,faculty,campus_id").eq("id" if row_id else "name", row_id or str(name).strip())
     if active_only:
         q = q.eq("is_active", True)
     rows = campus_or_global(q, _safe_campus(campus_id)).execute() or []

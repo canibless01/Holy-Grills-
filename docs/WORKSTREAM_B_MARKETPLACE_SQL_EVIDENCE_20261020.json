@@ -1,0 +1,22 @@
+{
+  "kind": "Native Postgres assertions inside rolled-back synthetic fixtures",
+  "checks": [
+    "foreign campus admin denied",
+    "student actor denied",
+    "replacement atomically revokes old and assigns one new code; preserves answers; sold-out reflected",
+    "closed action replay has one audit and no new assignment",
+    "conflicting final report action denied",
+    "sold-out replacement preserves original assignment and open report",
+    "cash plus card wallet refund and stock restoration once; replay conserved",
+    "post-write failure rolls back refund/status/stock/audit together",
+    "report refund retires defective code without stock return",
+    "exact spent HP restored once without multiplier or mutable listing price",
+    "stale completion cannot reopen cancelled purchase",
+    "manual completion persisted; backward pending transition rejected",
+    "manual purchase problem can be rejected without allocating code",
+    "financial mutations restricted; customer report submission grant retained",
+    "only service role can execute new invoker transaction"
+  ],
+  "allRolledBack": true,
+  "requiresAllThreeMarketplaceMigrations": true
+}

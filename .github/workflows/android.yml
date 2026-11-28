@@ -1,0 +1,101 @@
+name: Android APK
+on:
+  push:
+    branches: [main, android-app]
+    paths: ['holy-grills-frontend/**', '!holy-grills-frontend/public/android-release.json', '.github/workflows/android.yml']
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: Build type
+        type: choice
+        options: [debug, release]
+        default: debug
+permissions:
+  contents: write
+concurrency:
+  group: android-${{ github.ref }}-${{ inputs.build_type || (github.ref_name == 'main' && 'release' || 'debug') }}
+  cancel-in-progress: true
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: holy-grills-frontend
+    env:
+      BUILD_KIND: ${{ inputs.build_type || (github.ref_name == 'main' && 'release' || 'debug') }}
+      VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.HG_ANDROID_GOOGLE_MAPS_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: holy-grills-frontend/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-36 build-tools;36.0.0
+      - run: npm ci
+      - run: npm run typecheck && npm run lint && npm run test:native && npm run test:push-registration
+      - name: Set monotonic release version
+        if: env.BUILD_KIND == 'release'
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const run=Number(process.env.GITHUB_RUN_NUMBER),attempt=Number(process.env.GITHUB_RUN_ATTEMPT);
+          if(!Number.isInteger(run)||run<1||!Number.isInteger(attempt)||attempt<1||attempt>99)throw Error('Invalid build sequence');
+          const base=fs.readFileSync('android/app/build.gradle','utf8').match(/versionName.*?"([0-9]+\.[0-9]+\.[0-9]+)"/)?.[1];
+          if(!base)throw Error('Cannot read base Android version');
+          fs.appendFileSync(process.env.GITHUB_ENV,`ANDROID_VERSION_CODE=${10000+run*100+attempt}\nANDROID_VERSION_NAME=${base}+${run}.${attempt}\n`);
+          JS
+      - name: Prepare release signing
+        if: env.BUILD_KIND == 'release'
+        env:
+          HG_ANDROID_KEYSTORE_BASE64: ${{ secrets.HG_ANDROID_KEYSTORE_BASE64 }}
+          HG_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.HG_ANDROID_KEYSTORE_PASSWORD }}
+          HG_ANDROID_KEY_ALIAS: ${{ secrets.HG_ANDROID_KEY_ALIAS }}
+          HG_ANDROID_KEY_PASSWORD: ${{ secrets.HG_ANDROID_KEY_PASSWORD }}
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const required=['HG_ANDROID_KEYSTORE_BASE64','HG_ANDROID_KEYSTORE_PASSWORD','HG_ANDROID_KEY_ALIAS','HG_ANDROID_KEY_PASSWORD','VITE_GOOGLE_MAPS_API_KEY'];
+          const missing=required.filter(key=>!process.env[key]);
+          if(missing.length)throw Error('Configure release secrets: '+missing.join(', '));
+          const file=process.env.RUNNER_TEMP+'/holy-grills-release.jks';
+          fs.writeFileSync(file,Buffer.from(process.env.HG_ANDROID_KEYSTORE_BASE64,'base64'),{mode:0o600});
+          fs.appendFileSync(process.env.GITHUB_ENV,`ANDROID_KEYSTORE_PATH=${file}\n`);
+          JS
+      - name: Build debug APK
+        if: env.BUILD_KIND != 'release'
+        run: npm run android:debug
+      - name: Build signed release APK
+        if: env.BUILD_KIND == 'release'
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.HG_ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.HG_ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.HG_ANDROID_KEY_PASSWORD }}
+        run: npm run android:release
+      - name: Verify package and signing certificate
+        run: |
+          APK_PATH=$(find android/app/build/outputs/apk -name '*.apk' | head -1)
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          APKSIGNER="$BUILD_TOOLS/apksigner" AAPT="$BUILD_TOOLS/aapt" node scripts/android-artifacts.mjs "$APK_PATH"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Holy-Grills-Android-${{ env.BUILD_KIND }}
+          path: |
+            holy-grills-frontend/android/app/build/outputs/apk/**/*.apk
+            holy-grills-frontend/android/app/build/outputs/apk/**/*.sha256
+            holy-grills-frontend/android-artifacts/assetlinks.json
+            holy-grills-frontend/android-artifacts/package.json
+          retention-days: 14
+
+      - name: Publish public Android release and website pointer
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.BUILD_KIND == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/publish-android-release.mjs

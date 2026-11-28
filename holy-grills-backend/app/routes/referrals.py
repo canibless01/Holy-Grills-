@@ -42,6 +42,9 @@ def _complete_referral_award(referral: dict, order_id: str):
                      referral["referred_user_id"], result)
         return {"hp_awarded": 0, "error": MSG.REFERRAL_COMPLETE_FAILED}
 
+    from app.services.notification_outbox import start_balance_dispatch
+    start_balance_dispatch(referrer_id)
+
     # 2. Handle idempotent case
     if result.get("already_completed"):
         return {
@@ -138,7 +141,7 @@ def my_referrals():
         frontend_url = current_app.config.get("FRONTEND_URL", "")
         return jsonify({
             "referral_code": referral_code,
-            "referral_link": f"{frontend_url}?ref={referral_code}" if referral_code else None,
+            "referral_link": f"{frontend_url.rstrip('/')}/register?ref={referral_code}" if referral_code else None,
             "total_referrals": len(enriched_referrals),
             "completed_referrals": len(completed),
             "total_hp_earned": total_hp,
@@ -186,7 +189,7 @@ def referral_stats():
         frontend_url = current_app.config.get("FRONTEND_URL", "")
         return jsonify({
             "referral_code": referral_code,
-            "referral_link": f"{frontend_url}?ref={referral_code}" if referral_code else None,
+            "referral_link": f"{frontend_url.rstrip('/')}/register?ref={referral_code}" if referral_code else None,
             "total_referrals": len(referrals),
             "completed_referrals": len(completed),
             "pending_referrals": len(referrals) - len(completed),
