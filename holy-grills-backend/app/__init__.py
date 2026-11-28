@@ -62,6 +62,7 @@ def create_app(config_class=Config, *, background=False):
 
     from flask_cors import CORS
     from flasgger import Swagger
+    from app.routes.team_workspace import team_workspace_bp
     from app.routes.engagement_campaigns import engagement_campaigns_bp
     from app.routes.engagement import engagement_bp
     from app.routes.health import health_bp
@@ -204,6 +205,7 @@ def create_app(config_class=Config, *, background=False):
     else:
         app.logger.info("API docs disabled (set API_DOCS_ENABLED=true to expose /api/docs/)")
 
+    app.register_blueprint(team_workspace_bp, url_prefix="/api/team")
     app.register_blueprint(delivery_costs_bp, url_prefix="/api/admin/delivery-costs")
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(users_bp, url_prefix="/api/users")

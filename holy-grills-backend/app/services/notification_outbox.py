@@ -24,6 +24,9 @@ def dispatch_notification(notification_id):
         status_email=claim['payload'].get('kind')=='event_status_email'
         ticket_email=status_email or refund_email or claim['payload'].get('kind')=='event_ticket_email'
         guest_cart=claim['payload'].get('kind')=='guest_cart_recovery_email'
+        if snapshot.get('type') in ('team_reminder','team_digest'):
+            if db.rpc('hg_team_notice_valid', {'p_user':snapshot['user_id'],'p_metadata':snapshot.get('metadata') or {}}) is not True:
+                return finish({'state':'cancelled','error':'team_notice_no_longer_due'})
         scheduled_reminder=snapshot.get('type')=='scheduled_order_reminder'
         if scheduled_reminder:
             from app.services import scheduled_order_reminders

@@ -381,7 +381,10 @@ class NoSendTimeRegistrationTests(unittest.TestCase):
                           return_value=_reply(200, {"errors": ["All included players are not subscribed"]})) as post, \
              patch.object(email_usage, "reserve", return_value=1), \
              patch.object(email_usage, "release"), \
-             patch.object(onesignal_email, "ensure_email_subscription") as ensure:
+             patch.object(onesignal_email, "ensure_email_subscription") as ensure, \
+             patch.object(email.requests, "post", return_value=_reply(400, {"message": "test fallback refusal"})):
+            # Transactional refusals may fall back to Resend. Keep that provider
+            # deterministic here: this test checks no send-time registration.
             receipt = {}
             accepted = email.send_email_routed("a@example.invalid", "A", "S", "<p>b</p>",
                                                provider="onesignal", receipt=receipt,
