@@ -64,6 +64,7 @@
                 <data android:pathPrefix="/referrals" />
                 <data android:pathPrefix="/squads" />
                 <data android:pathPrefix="/streak" />
+                <data android:pathPrefix="/team" />
 
             </intent-filter>
         </activity>

@@ -22,12 +22,13 @@ CREATE TABLE public.team_memberships (
 CREATE TABLE public.team_weeks (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), campus_id uuid NOT NULL REFERENCES public.campuses(id), week_start date NOT NULL CHECK(extract(isodow FROM week_start)=1),
  due_at timestamptz NOT NULL, meeting_at timestamptz NOT NULL, reopened_until timestamptz,
+ period_start date NOT NULL, period_end date NOT NULL CHECK(period_end>=period_start AND period_end-period_start<=13),
  coverage_target numeric NOT NULL DEFAULT 75 CHECK(coverage_target BETWEEN 0 AND 100), version integer NOT NULL DEFAULT 1,
  UNIQUE(campus_id,week_start), UNIQUE(id,campus_id)
 );
 CREATE TABLE public.team_entries (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), campus_id uuid NOT NULL, week_id uuid NOT NULL, member_id uuid NOT NULL,
- targets jsonb NOT NULL DEFAULT '[]', results jsonb NOT NULL DEFAULT '{}', narrative jsonb NOT NULL DEFAULT '{}', content jsonb NOT NULL DEFAULT '[]',
+ targets jsonb NOT NULL DEFAULT '[]', results jsonb NOT NULL DEFAULT '{}', daily_results jsonb NOT NULL DEFAULT '{}', narrative jsonb NOT NULL DEFAULT '{}', content jsonb NOT NULL DEFAULT '[]',
  status text NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','submitted','changes_requested','approved')),
  feedback text NOT NULL DEFAULT '', submitted_at timestamptz, reviewed_at timestamptz, reviewed_by uuid REFERENCES public.profiles(id), version integer NOT NULL DEFAULT 1,
  FOREIGN KEY(week_id,campus_id) REFERENCES public.team_weeks(id,campus_id), FOREIGN KEY(member_id,campus_id) REFERENCES public.team_memberships(id,campus_id), UNIQUE(week_id,member_id)
@@ -50,7 +51,7 @@ CREATE TABLE public.team_reminder_rules (
 );
 CREATE TABLE public.team_audit (
  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, campus_id uuid NOT NULL, actor_id uuid NOT NULL REFERENCES public.profiles(id),
- request_id uuid NOT NULL, action text NOT NULL, payload jsonb NOT NULL, result jsonb NOT NULL,
+ request_id uuid NOT NULL, action text NOT NULL, payload jsonb NOT NULL, result jsonb NOT NULL, before_state jsonb NOT NULL DEFAULT '{}',
  created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(actor_id,request_id)
 );
 CREATE TABLE public.team_notice_receipts (
@@ -94,7 +95,7 @@ BEGIN
    OR jsonb_typeof(t->'target') IS DISTINCT FROM 'number' OR jsonb_typeof(t->'tolerance') IS DISTINCT FROM 'number'
    OR (t->>'target')::numeric<0 OR (t->>'tolerance')::numeric<0 OR (t->>'target')::numeric>1000000
    OR (t->>'unit'='percent' AND (t->>'target')::numeric>100)
-   OR (t->>'id') IS NULL OR (t->>'id')=ANY(seen) THEN RETURN false; END IF;
+   OR (coalesce(t->>'cadence','weekly') NOT IN ('weekly','daily')) OR (t->>'id') IS NULL OR (t->>'id')=ANY(seen) THEN RETURN false; END IF;
   PERFORM (t->>'id')::uuid; seen:=array_append(seen,t->>'id');
   IF NOT (t ? 'target' AND t ? 'tolerance' AND t ? 'direction' AND t ? 'unit') THEN RETURN false; END IF;
  END LOOP;
@@ -106,9 +107,9 @@ DECLARE wid uuid; cfg team_settings%ROWTYPE;
 BEGIN
  SELECT * INTO cfg FROM team_settings WHERE campus_id=p_campus;
  IF NOT FOUND OR extract(isodow FROM p_start)<>1 THEN RETURN NULL; END IF;
- INSERT INTO team_weeks(campus_id,week_start,due_at,meeting_at,coverage_target)
+ INSERT INTO team_weeks(campus_id,week_start,due_at,meeting_at,coverage_target,period_start,period_end)
  VALUES(p_campus,p_start,((p_start+cfg.due_weekday-1)::timestamp+make_interval(mins=>cfg.due_minute)) AT TIME ZONE 'Africa/Lagos',
- ((p_start+cfg.due_weekday-1)::timestamp+make_interval(mins=>cfg.due_minute)) AT TIME ZONE 'Africa/Lagos',cfg.coverage_target)
+ ((p_start+cfg.due_weekday-1)::timestamp+make_interval(mins=>cfg.due_minute)) AT TIME ZONE 'Africa/Lagos',cfg.coverage_target,p_start+cfg.due_weekday-7,p_start+cfg.due_weekday-1)
  ON CONFLICT(campus_id,week_start) DO NOTHING;
  SELECT id INTO wid FROM team_weeks WHERE campus_id=p_campus AND week_start=p_start;
  INSERT INTO team_entries(campus_id,week_id,member_id,targets)
@@ -121,7 +122,7 @@ CREATE FUNCTION public.hg_team_workspace(p_actor uuid,p_scope uuid,p_action text
 RETURNS jsonb LANGUAGE plpgsql SECURITY INVOKER SET search_path=public AS $$
 DECLARE actor profiles%ROWTYPE; membership team_memberships%ROWTYPE; adm boolean; reviewer boolean; scope uuid; start_day date;
  w team_weeks%ROWTYPE; e team_entries%ROWTYPE; r team_responsibilities%ROWTYPE; rec record; obj jsonb; item jsonb; vals jsonb;
- result jsonb; previous team_audit%ROWTYPE; entry_id uuid; mid uuid; rid uuid; n integer; closed boolean; read_only boolean;
+ result jsonb; before_state jsonb:='{}'; daily_vals jsonb; day_rec record; result_rec record; seen_daily boolean; previous team_audit%ROWTYPE; entry_id uuid; mid uuid; rid uuid; n integer; closed boolean; read_only boolean;
 BEGIN
  SELECT * INTO actor FROM profiles WHERE id=p_actor AND is_active;
  IF NOT FOUND THEN RETURN '{"error":"forbidden"}'; END IF;
@@ -206,20 +207,20 @@ BEGIN
  ELSIF p_action IN ('save','submit','review','targets') THEN
   SELECT * INTO e FROM team_entries WHERE id=(p_data->>'id')::uuid AND campus_id=scope FOR UPDATE;
   IF NOT FOUND THEN RETURN '{"error":"forbidden"}'; END IF;
+  before_state:=to_jsonb(e);
   SELECT * INTO w FROM team_weeks WHERE id=e.week_id FOR SHARE;
   IF e.version IS DISTINCT FROM (p_data->>'version')::int THEN RETURN '{"error":"stale"}'; END IF;
   closed:=clock_timestamp()>=greatest(w.due_at,coalesce(w.reopened_until,w.due_at));
   IF p_action IN ('save','submit') THEN
    IF membership.id IS DISTINCT FROM e.member_id THEN RETURN '{"error":"forbidden"}'; END IF;
    IF closed THEN RETURN '{"error":"closed"}'; END IF;
-   IF e.status NOT IN ('draft','changes_requested') THEN RETURN '{"error":"submitted"}'; END IF;
    vals:=p_data->'results';
    IF vals IS NULL OR jsonb_typeof(vals)<>'object' OR jsonb_typeof(p_data->'narrative') IS DISTINCT FROM 'object'
     OR jsonb_typeof(p_data->'content') IS DISTINCT FROM 'array' OR jsonb_array_length(p_data->'content')>50
     OR octet_length((p_data->'narrative')::text)>16000 THEN RETURN '{"error":"invalid"}'; END IF;
    FOR rec IN SELECT key,value FROM jsonb_each(vals) LOOP
     SELECT t INTO obj FROM jsonb_array_elements(e.targets) t WHERE t->>'id'=rec.key;
-    IF NOT FOUND OR jsonb_typeof(rec.value)<>'object' THEN RETURN '{"error":"invalid"}'; END IF;
+    IF NOT FOUND OR coalesce(obj->>'cadence','weekly')='daily' OR jsonb_typeof(rec.value)<>'object' THEN RETURN '{"error":"invalid"}'; END IF;
     IF rec.value->>'actual' IS NOT NULL AND rec.value->>'actual'<>'' THEN
      IF (rec.value->>'actual')::numeric<0 OR (rec.value->>'actual')::numeric>1000000 OR (obj->>'unit'='percent' AND (rec.value->>'actual')::numeric>100) THEN RETURN '{"error":"invalid"}'; END IF;
     END IF;
@@ -229,14 +230,32 @@ BEGIN
     IF jsonb_typeof(item)<>'object' OR length(coalesce(item->>'title','')) NOT BETWEEN 1 AND 200 OR length(coalesce(item->>'caption',''))>6000
      OR (item->>'status') NOT IN ('planned','ready','scheduled','published') OR (coalesce(item->>'asset_url','')<>'' AND item->>'asset_url' !~ '^https://[^[:space:]]+$') THEN RETURN '{"error":"invalid"}'; END IF;
    END LOOP;
+   daily_vals:=coalesce(p_data->'daily_results','{}'::jsonb);
+   IF jsonb_typeof(daily_vals)<>'object' THEN RETURN '{"error":"invalid"}'; END IF;
+   FOR day_rec IN SELECT key,value FROM jsonb_each(daily_vals) LOOP
+    IF day_rec.key !~ '^\d{4}-\d{2}-\d{2}$' OR day_rec.key::date NOT BETWEEN w.period_start AND w.period_end
+     OR day_rec.key::date>(now() AT TIME ZONE 'Africa/Lagos')::date OR jsonb_typeof(day_rec.value)<>'object' THEN RETURN '{"error":"invalid"}'; END IF;
+    FOR result_rec IN SELECT key,value FROM jsonb_each(day_rec.value) LOOP
+     SELECT t INTO obj FROM jsonb_array_elements(e.targets) t WHERE t->>'id'=result_rec.key AND t->>'cadence'='daily';
+     IF NOT FOUND OR jsonb_typeof(result_rec.value)<>'object' THEN RETURN '{"error":"invalid"}'; END IF;
+     IF coalesce(result_rec.value->>'actual','')<>'' AND ((result_rec.value->>'actual')::numeric<0 OR (result_rec.value->>'actual')::numeric>1000000 OR (obj->>'unit'='percent' AND (result_rec.value->>'actual')::numeric>100)) THEN RETURN '{"error":"invalid"}'; END IF;
+     IF length(coalesce(result_rec.value->>'evidence',''))>2000 OR (coalesce(result_rec.value->>'evidence','')<>'' AND result_rec.value->>'evidence' !~ '^https://[^[:space:]]+$') THEN RETURN '{"error":"invalid"}'; END IF;
+     IF p_action='submit' AND coalesce(result_rec.value->>'actual','')<>'' AND coalesce((obj->>'evidence_required')::boolean,true) AND coalesce(result_rec.value->>'evidence','')='' THEN RETURN '{"error":"incomplete"}'; END IF;
+    END LOOP;
+   END LOOP;
    IF p_action='submit' THEN
     FOR obj IN SELECT * FROM jsonb_array_elements(e.targets) LOOP
-     item:=vals->(obj->>'id');
-     IF item IS NULL OR coalesce(item->>'actual','')='' OR (coalesce((obj->>'evidence_required')::boolean,true) AND coalesce(item->>'evidence','')='') THEN RETURN '{"error":"incomplete"}'; END IF;
+     IF obj->>'cadence'='daily' THEN
+      SELECT EXISTS(SELECT 1 FROM jsonb_each(daily_vals) d WHERE coalesce(d.value->(obj->>'id')->>'actual','')<>'') INTO seen_daily;
+      IF NOT seen_daily THEN RETURN '{"error":"incomplete"}'; END IF;
+     ELSE
+      item:=vals->(obj->>'id');
+      IF item IS NULL OR coalesce(item->>'actual','')='' OR (coalesce((obj->>'evidence_required')::boolean,true) AND coalesce(item->>'evidence','')='') THEN RETURN '{"error":"incomplete"}'; END IF;
+     END IF;
     END LOOP;
    END IF;
-   UPDATE team_entries SET results=vals,narrative=p_data->'narrative',content=p_data->'content',status=CASE WHEN p_action='submit' THEN 'submitted' ELSE status END,
-    submitted_at=CASE WHEN p_action='submit' THEN now() ELSE submitted_at END,version=version+1 WHERE id=e.id;
+   UPDATE team_entries SET results=vals,daily_results=daily_vals,narrative=p_data->'narrative',content=p_data->'content',status=CASE WHEN p_action='submit' THEN 'submitted' ELSE 'draft' END,
+    submitted_at=CASE WHEN p_action='submit' THEN now() ELSE submitted_at END,reviewed_at=NULL,reviewed_by=NULL,feedback='',version=version+1 WHERE id=e.id;
   ELSIF p_action='review' THEN
    IF NOT reviewer OR membership.id=e.member_id THEN RETURN '{"error":"forbidden"}'; END IF;
    IF p_data->>'status'='changes_requested' AND coalesce(length(btrim(p_data->>'feedback')),0)=0 THEN RETURN '{"error":"invalid"}'; END IF;
@@ -245,8 +264,9 @@ BEGIN
   ELSE
    IF NOT adm THEN RETURN '{"error":"forbidden"}'; END IF;
    IF closed THEN RETURN '{"error":"closed"}'; END IF;
-   IF e.status NOT IN ('draft','changes_requested') OR NOT hg_team_targets_valid(p_data->'targets') THEN RETURN '{"error":"invalid"}'; END IF;
-   UPDATE team_entries SET targets=p_data->'targets',version=version+1 WHERE id=e.id;
+   IF NOT hg_team_targets_valid(p_data->'targets') THEN RETURN '{"error":"invalid"}'; END IF;
+   UPDATE team_entries SET targets=p_data->'targets',status='draft',reviewed_at=NULL,reviewed_by=NULL,feedback='',
+    results=(SELECT coalesce(jsonb_object_agg(k,v),'{}') FROM jsonb_each(e.results) x(k,v) WHERE EXISTS(SELECT 1 FROM jsonb_array_elements(p_data->'targets') t WHERE t->>'id'=k AND coalesce(t->>'cadence','weekly')<>'daily')),daily_results=(SELECT coalesce(jsonb_object_agg(dk,(SELECT coalesce(jsonb_object_agg(k,v),'{}') FROM jsonb_each(dv) x(k,v) WHERE EXISTS(SELECT 1 FROM jsonb_array_elements(p_data->'targets') t WHERE t->>'id'=k AND t->>'cadence'='daily'))),'{}') FROM jsonb_each(e.daily_results) d(dk,dv)),version=version+1 WHERE id=e.id;
   END IF;
   result:=jsonb_build_object('id',e.id,'version',e.version+1);
  ELSIF p_action='log' THEN
@@ -283,7 +303,7 @@ BEGIN
   result:=jsonb_build_object('id',rid);
  ELSE RETURN '{"error":"invalid"}';
  END IF;
- INSERT INTO team_audit(campus_id,actor_id,request_id,action,payload,result) VALUES(scope,p_actor,p_request,p_action,p_data,result);
+ INSERT INTO team_audit(campus_id,actor_id,request_id,action,payload,result,before_state) VALUES(scope,p_actor,p_request,p_action,p_data,result,before_state);
  RETURN result;
 EXCEPTION WHEN invalid_text_representation OR numeric_value_out_of_range OR check_violation OR not_null_violation OR invalid_datetime_format OR datetime_field_overflow THEN RETURN '{"error":"invalid"}';
  WHEN unique_violation THEN RETURN '{"error":"conflict"}';
@@ -305,6 +325,7 @@ BEGIN
  minutes:=extract(hour FROM now() AT TIME ZONE 'Africa/Lagos')::int*60+extract(minute FROM now() AT TIME ZONE 'Africa/Lagos')::int;
  FOR c IN SELECT DISTINCT m.campus_id FROM team_memberships m JOIN profiles p ON p.id=m.profile_id JOIN campuses cp ON cp.id=m.campus_id WHERE m.active AND p.is_active AND p.campus_id=m.campus_id AND cp.is_active LOOP
   PERFORM hg_team_ensure_week(c.campus_id,date_trunc('week',day_wat)::date);
+  IF EXISTS(SELECT 1 FROM team_weeks WHERE campus_id=c.campus_id AND week_start=date_trunc('week',day_wat)::date AND due_at<=now()) THEN PERFORM hg_team_ensure_week(c.campus_id,date_trunc('week',day_wat)::date+7); END IF;
  END LOOP;
  WITH members AS (
  SELECT m.*,coalesce(nullif(p.nickname,''),split_part(p.full_name,' ',1),'friend') nickname,r.name responsibility,w.id week_id,w.due_at,w.reopened_until,w.version week_version,e.id entry_id,e.status
@@ -378,3 +399,6 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION public.hg_team_profile_flag() FROM PUBLIC,anon,authenticated;
 CREATE TRIGGER team_profile_flag BEFORE UPDATE OF campus_id,is_active ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.hg_team_profile_flag();
+
+UPDATE public.team_responsibilities SET targets=(SELECT jsonb_agg(t||jsonb_build_object('cadence',CASE WHEN name='WhatsApp Manager' THEN 'daily' ELSE 'weekly' END)) FROM jsonb_array_elements(targets) t);
+UPDATE public.team_responsibilities SET targets=targets||jsonb_build_array(jsonb_build_object('id',gen_random_uuid(),'title','Views on today’s status','direction','higher','unit','count','target',0,'tolerance',0,'evidence_required',false,'cadence','daily','tracking_only',true)) WHERE name='WhatsApp Manager';

@@ -11,6 +11,8 @@ def metric_status(target, result):
     actual = result.get('actual') if isinstance(result, dict) else None
     if actual is None or actual == '':
         return {'status': 'not_reported', 'attainment': None}
+    if target.get('tracking_only'):
+        return {'status':'reported','attainment':None,'target_met':None}
     actual, goal = float(actual), float(target['target'])
     if target['direction'] == 'lower':
         state = 'on_track' if actual <= goal else 'watch' if actual <= goal + float(target.get('tolerance', 0)) else 'below_target'
@@ -24,7 +26,8 @@ def decorate(data):
     if not isinstance(data, dict) or data.get('error'):
         return data
     for entry in data.get('entries', []):
-        entry['scores'] = {t['id']: metric_status(t, (entry.get('results') or {}).get(t['id'])) for t in entry.get('targets', [])}
+        entry['scores'] = {t['id']: metric_status(t, (entry.get('results') or {}).get(t['id'])) for t in entry.get('targets', []) if t.get('cadence') != 'daily'}
+        entry['daily_scores'] = {day:{t['id']:metric_status(t,values.get(t['id'])) for t in entry.get('targets',[]) if t.get('cadence')=='daily'} for day,values in (entry.get('daily_results') or {}).items()}
     return data
 
 

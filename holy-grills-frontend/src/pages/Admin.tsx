@@ -29,6 +29,7 @@ const AdminDepartments = lazy(() => import('@/components/admin/AdminDepartments'
 const AdminStorefront = lazy(() => import('@/components/admin/AdminStorefront'));
 const AdminOnboarding = lazy(() => import('@/components/admin/AdminOnboarding'));
 const AdminDeliveryPass = lazy(() => import('@/components/admin/AdminDeliveryPass'));
+const TeamWorkspace = lazy(() => import('@/team/TeamWorkspace'));
 const AdminStores = lazy(() => import('@/components/admin/AdminStores'));
 const AdminCampuses = lazy(() => import('@/components/admin/AdminCampuses'));
 const AdminHpMultipliers = lazy(() => import('@/components/admin/AdminHpMultipliers'));
@@ -189,6 +190,7 @@ export default function Admin({ communityWorkspace = false }: { communityWorkspa
       case 'academiccalendar': return <AdminAcademicCalendar />;
       case 'campuses': return <AdminCampuses />;
       case 'deliverypass': return <AdminDeliveryPass />;
+      case 'teamworkspace': return <TeamWorkspace embedded />;
       case 'stores': return <AdminStores />;
       case 'webhooks': return <AdminWebhooks />;
       case 'system': return <AdminSystem />;

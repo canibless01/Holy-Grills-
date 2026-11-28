@@ -33,12 +33,13 @@ const ROLE_LABEL: Record<string, string> = {
 export default function PanelSwitcher({ className = '', labelClassName = undefined }: { className?: string; labelClassName?: string | null }) {
   const { user } = useHolyGrill();
   const { pathname } = useLocation();
-  const home = user ? HOME_PANEL[user.role] : undefined;
+  const teamMember = !!user?.profile?.team_workspace;
+  const home = teamMember ? '/team' : user ? HOME_PANEL[user.role] : undefined;
   if (!home) return null;
 
   const onHomePanel = pathname === home || (user.role === 'community_manager' && pathname === '/admin');
   const target = onHomePanel ? '/' : home;
-  const roleLabel = ROLE_LABEL[user.role] ?? 'Panel';
+  const roleLabel = teamMember ? msg('FE_TEAM_TEAM_LABEL', 'Team') : ROLE_LABEL[user.role] ?? 'Panel';
   const title = onHomePanel ? msg('FE_PANEL_STUDENT', 'View student page') : msg('FE_PANEL_OPEN', 'Open {role} panel', { role: roleLabel });
 
   return (

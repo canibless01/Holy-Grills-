@@ -13,7 +13,8 @@ import { haptic } from '@/lib/haptic';
 // admin/super_admin → /admin, kitchen → /kitchen, rider → /rider, student → /.
 const ROLE_HOME = { admin: '/admin', super_admin: '/admin', community_manager: '/admin', event_organizer: '/event-manager', kitchen: '/kitchen', rider: '/rider', student: '/' };
 
-const loginDestination = (role, from) => {
+const loginDestination = (role, from, teamMember = false) => {
+  if (teamMember && (!from || from === '/team')) return '/team';
   const isStaff = ['admin', 'super_admin', 'kitchen', 'rider'].includes(role);
   const studentRoutes = ['/', '/menu', '/cart', '/checkout', '/orders', '/track-orders', '/dashboard', '/hp-education', '/rewards', '/wallet', '/profile', '/addresses', '/notifications', '/notification-preferences', '/referrals', '/order-locks', '/streak', '/leaderboard', '/events', '/marketplace', '/faq', '/terms', '/our-story', '/hall-of-fame'];
   const isStudentRoute = (p) => {
@@ -60,9 +61,9 @@ export default function Login() {
 
   useEffect(() => {
     if (!isLoading && user?.role && !loading) {
-      navigate(loginDestination(user.role, location.state?.from), { replace: true });
+      navigate(loginDestination(user.role, location.state?.from, !!user.profile?.team_workspace), { replace: true });
     }
-  }, [isLoading, user?.role, loading, location.state?.from, navigate]);
+  }, [isLoading, user?.role, user?.profile?.team_workspace, loading, location.state?.from, navigate]);
 
   const doLogin = async (emailVal, passwordVal) => {
     setLoading(true);
@@ -72,7 +73,7 @@ export default function Login() {
       const role = data?.role || data?.user?.role || 'student';
       haptic('success');
       toast({ title: msg('FE_LOGIN_WELCOME_TITLE', '🔥 Welcome back!'), description: msg('FE_LOGIN_WELCOME_BODY', 'Good to see you again, {name}.', { name: data?.user?.full_name?.split(' ')[0] || 'griller' }) });
-      navigate(loginDestination(role, location.state?.from), { replace: true });
+      navigate(loginDestination(role, location.state?.from, !!data?.team_workspace), { replace: true });
     } catch (err) {
       haptic('error');
       setError(err.message || msg('FE_LOGIN_FAILED', 'Login failed'));

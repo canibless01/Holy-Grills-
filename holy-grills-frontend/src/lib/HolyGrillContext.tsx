@@ -397,9 +397,10 @@ export const HolyGrillProvider = ({ children }) => {
     // on slow/cold backend calls. The user gets to their dashboard instantly.
     // Warm the destination chunk in the same breath, so the redirect lands on a
     // rendered page instead of the Suspense fallback.
-    warmPostLoginChunks(profile?.role || data?.user?.role);
+    if (profile.profile?.team_workspace) warmRouteChunk(() => import('@/team/TeamWorkspace'));
+    else warmPostLoginChunks(profile?.role || data?.user?.role);
     Promise.allSettled([refreshCart(), refreshNotifications(), refreshHp(), refreshWallet(), refreshSavedItems(), loadSystemSettings().then(setSystemSettings).catch(() => {}), loadFeatureFlags().catch(() => {}), loadTiers().catch(() => {})]);
-    return { ...data, role: profile.role || data?.user?.role || 'student' };
+    return { ...data, role: profile.role || data?.user?.role || 'student', team_workspace: !!profile.profile?.team_workspace };
   };
 
   const register = async (body) => {
